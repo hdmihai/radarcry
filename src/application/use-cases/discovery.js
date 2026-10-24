@@ -14,6 +14,7 @@
 import { isNum, round, toNum } from '../../domain/shared/math.js';
 import { buildBaseline, compareToBaseline, metricRow } from '../../domain/discovery/baseline.js';
 import { whatChanged } from '../../domain/discovery/changes.js';
+import { prescreenScore } from '../../domain/discovery/prescreen.js';
 import { preExpansionScore } from '../../domain/discovery/pre-expansion.js';
 import { classify } from '../../domain/discovery/classify.js';
 import { classifyHolders, createLabelIndex, emptyLabelIndex } from '../../domain/onchain/labels.js';
@@ -75,12 +76,93 @@ export function derivativesFacts(asset, { coinalyze = null, baselineCmp = null }
 }
 
 /**
+ * The change engine, run cheaply on one eligible project, with only the facts every scan already
+ * holds for the whole universe: price, capitalisation, volume, turnover, open interest and funding
+ * from the venues' bulk endpoints, and the listing catalysts from the registry diff. No call is
+ * made. Detectors whose facts are absent here (holders, liquidity, development…) return nothing,
+ * which is the same "UNKNOWN is not bearish" rule the full read applies.
+ *
+ * Two things come out of it: the market-level metric row that is stored as this project's point of
+ * history, so every eligible project builds its own norm from the first run; and a prescreen score
+ * that lets the change engine claim part of the deep-research budget.
+ *
+ * @param {{asset:any, points?:any[], config:any, nowMs:number}} input
+ */
+export function prescreenAsset({ asset, points = [], config, nowMs }) {
+  const view = { ...asset, derivatives: derivativesFacts(asset) };
+  const baseline = buildBaseline(points, {
+    nowMs,
+    windowDays: config.discovery?.baselineWindowDays ?? 30,
+    minPoints: config.discovery?.baselineMinPoints ?? 4,
+  });
+  const current = metricRow(view);
+  const changed = whatChanged({ asset: view, cmp: compareToBaseline(current, baseline), windowDays: config.discovery?.changeWindowDays ?? 7 });
+  return {
+    key: asset.key,
+    current,
+    changed,
+    score: prescreenScore(changed),
+    baselinePoints: baseline.points,
+    baselineSufficient: baseline.sufficient,
+  };
+}
+
+/**
+ * Translate the security port payload (GoPlus vocabulary, as normalised by the adapter) into the
+ * facts the risk engine reads. This is the only place where the two vocabularies meet.
+ *
+ * Getting this wrong fails in the worst possible direction, which is why it is a separate, tested
+ * function: if the risk engine receives an object whose fields it does not recognise, every check
+ * reads `undefined`, none fires, and — because an object *was* received — the "contract not
+ * scanned" invalidator is not raised either. A honeypot would be published as a clean contract.
+ *
+ * Taxes arrive as fractions (0.1 = 10 %) and leave as percent. A payload in which no security field
+ * is known at all is returned as null, so the risk engine reports the scan as missing rather than
+ * as passed.
+ *
+ * @param {any} raw one entry of OnchainPort.security(): {holders, top10Pct, top10EffectivePct,
+ *   creatorAddress, ownerAddress, lpLockedPct, security:{honeypot, cannotSell, buyTax, sellTax, ...}}
+ */
+export function securityFacts(raw) {
+  const s = raw?.security;
+  if (!s || typeof s !== 'object') return null;
+  const asPct = (fraction) => (isNum(toNum(fraction)) ? round(toNum(fraction) * 100, 2) : null);
+  const tri = (v) => (v === true ? true : v === false ? false : null);
+  // "Cannot sell all" is treated like a honeypot, as the legacy risk model already does: an exit
+  // that the contract can restrict is not an exit a researcher can rely on.
+  const blocked = s.honeypot === true || s.cannotSell === true;
+  const facts = {
+    source: 'goplus',
+    isHoneypot: blocked ? true : tri(s.honeypot),
+    cannotSellAll: tri(s.cannotSell),
+    isMintable: tri(s.mintable),
+    ownerRenounced: tri(s.ownerRenounced),
+    hiddenOwner: tri(s.hiddenOwner),
+    canTakeBackOwnership: tri(s.canTakeBackOwnership),
+    transferPausable: tri(s.transferPausable),
+    blacklist: tri(s.blacklist),
+    slippageModifiable: tri(s.slippageModifiable),
+    isProxy: tri(s.proxy),
+    isOpenSource: tri(s.openSource),
+    buyTaxPct: asPct(s.buyTax),
+    sellTaxPct: asPct(s.sellTax),
+    lpLockedPct: isNum(raw.lpLockedPct) ? raw.lpLockedPct : null,
+    creatorAddress: raw.creatorAddress ?? null,
+    ownerAddress: raw.ownerAddress ?? null,
+  };
+  const measured = ['isHoneypot', 'isMintable', 'hiddenOwner', 'canTakeBackOwnership', 'transferPausable', 'isProxy', 'buyTaxPct', 'sellTaxPct']
+    .some((k) => facts[k] !== null);
+  return measured ? facts : null;
+}
+
+/**
  * Turn the raw deep payload into the on-chain facts block, with holders classified into actors.
  */
 export function onchainFacts({ asset, deep, labelIndex, flowHistory, nowMs }) {
   const dex = deep?.dex ?? null;
   const info = deep?.holdersInfo ?? null;
   const holderList = deep?.holders?.holders ?? null;
+  const goplus = deep?.security ?? null;
 
   const liquidityUsd = toNum(dex?.liquidityUsd) ?? toNum(info?.liquidityUsd) ?? null;
   // `dex.pairs` is a *count* in the DexScreener adapter; the addresses live on topPair / pairList.
@@ -97,8 +179,8 @@ export function onchainFacts({ asset, deep, labelIndex, flowHistory, nowMs }) {
     classified = classifyHolders(holderList, {
       labelIndex,
       arkham,
-      creator: deep?.security?.creatorAddress ?? null,
-      owner: deep?.security?.ownerAddress ?? null,
+      creator: goplus?.creatorAddress ?? null,
+      owner: goplus?.ownerAddress ?? null,
       pairs,
       chain: asset.primary?.chain ?? null,
     });
@@ -109,9 +191,19 @@ export function onchainFacts({ asset, deep, labelIndex, flowHistory, nowMs }) {
     ? holderFlows({ current: classified, history: flowHistory ?? [], nowMs })
     : null;
 
-  const holders = isNum(deep?.holders?.holderCount) ? deep.holders.holderCount
-    : isNum(info?.holders) ? info.holders
-      : Array.isArray(holderList) ? null : null;
+  /*
+   * Holder count and concentration, best source first: a full holder list (NodeReal / Solana RPC),
+   * then GeckoTerminal's token info, then GoPlus — which already answered in the security pass and
+   * reports the holder count plus the top-10 holders on EVM chains with no key at all. Without this
+   * last fallback, a run with no NodeReal key had holder data for a handful of tokens only.
+   */
+  const sources = [
+    { id: deep?.holdersSource ?? null, count: toNum(deep?.holders?.holderCount), top10: null },
+    { id: 'geckoterminal', count: toNum(info?.holders), top10: toNum(info?.top10Pct) },
+    { id: 'goplus', count: toNum(goplus?.holders), top10: toNum(goplus?.top10Pct) },
+  ];
+  const countSource = sources.find((x) => isNum(x.count)) ?? null;
+  const top10Source = sources.find((x) => isNum(x.top10)) ?? null;
 
   return {
     liquidityUsd,
@@ -119,12 +211,12 @@ export function onchainFacts({ asset, deep, labelIndex, flowHistory, nowMs }) {
     pools: dex?.pairs ?? null,
     volume24hDex: toNum(dex?.volume24h) ?? null,
     txns24h: toNum(dex?.txns24h) ?? null,
-    holders: holders ?? (isNum(info?.holders) ? info.holders : null),
-    holdersSource: deep?.holdersSource ?? (info ? 'geckoterminal' : null),
+    holders: countSource?.count ?? null,
+    holdersSource: countSource?.id ?? deep?.holdersSource ?? null,
     holderListSize: Array.isArray(holderList) ? holderList.length : null,
     classified,
-    top10Pct: classified?.top10Pct ?? (isNum(info?.top10Pct) ? info.top10Pct : null),
-    top10EffectivePct: classified?.top10EffectivePct ?? null,
+    top10Pct: classified?.top10Pct ?? top10Source?.top10 ?? null,
+    top10EffectivePct: classified?.top10EffectivePct ?? (isNum(toNum(goplus?.top10EffectivePct)) ? toNum(goplus.top10EffectivePct) : null),
     top20EffectivePct: classified?.top20EffectivePct ?? null,
     effectiveSharePct: classified?.effectiveSharePct ?? null,
     cexBalancePct: classified?.cexSharePct ?? null,
@@ -135,7 +227,7 @@ export function onchainFacts({ asset, deep, labelIndex, flowHistory, nowMs }) {
     flaggedSharePct: classified?.flaggedSharePct ?? null,
     flows,
     arkhamFlows: deep?.arkhamFlows ?? null,
-    security: deep?.security ?? null,
+    security: securityFacts(goplus),
     snapshot,
     note: classified
       ? `${classified.holders.length} dețineri clasificate în actori; concentrarea efectivă exclude pool-uri, bridge-uri, staking, lock-uri și adrese de ardere`

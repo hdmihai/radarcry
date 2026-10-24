@@ -113,7 +113,7 @@
   "$defs": {
     "score01": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
     "score100": { "type": ["number", "null"], "minimum": 0, "maximum": 100 },
-    "providerStatus": { "enum": ["OK", "NOT_CONFIGURED", "RATE_LIMITED", "TIMEOUT", "HTTP_ERROR", "NETWORK_ERROR", "INVALID_PAYLOAD", "GEO_BLOCKED", "CIRCUIT_OPEN", "BUDGET_EXHAUSTED", "QUOTA_EXHAUSTED", "SKIPPED"] },
+    "providerStatus": { "enum": ["OK", "PARTIAL", "NOT_CONFIGURED", "RATE_LIMITED", "TIMEOUT", "HTTP_ERROR", "NETWORK_ERROR", "INVALID_PAYLOAD", "GEO_BLOCKED", "CIRCUIT_OPEN", "BUDGET_EXHAUSTED", "QUOTA_EXHAUSTED", "SKIPPED"] },
     "provider": {
       "type": "object",
       "required": ["id", "label", "status", "plan"],

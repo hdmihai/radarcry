@@ -17,6 +17,17 @@ export function notConfigured(provider, endpoint, message) {
   return { ok: false, status: STATUS.NOT_CONFIGURED, data: null, message, meta: { provider, endpoint, fetchedAt: new Date().toISOString(), latencyMs: 0, httpStatus: null } };
 }
 
+/**
+ * The provider is configured and reachable, but cannot answer *this input* — a chain it does not
+ * cover, an empty address list. That is a different fact from NOT_CONFIGURED (no key), and the
+ * difference is load-bearing: use cases stop calling a provider for the rest of the run when it
+ * reports NOT_CONFIGURED, so reporting an unsupported chain that way would let one SUI token switch
+ * off holder or security coverage for every BSC token that follows it.
+ */
+export function unsupported(provider, endpoint, message) {
+  return { ok: false, status: STATUS.SKIPPED, data: null, message, meta: { provider, endpoint, fetchedAt: new Date().toISOString(), latencyMs: 0, httpStatus: null } };
+}
+
 export function disabled(provider, endpoint) {
   return { ok: false, status: STATUS.SKIPPED, data: null, message: 'dezactivat din configurație', meta: { provider, endpoint, fetchedAt: new Date().toISOString(), latencyMs: 0, httpStatus: null } };
 }

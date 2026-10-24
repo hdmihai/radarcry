@@ -40,11 +40,13 @@ export const SIGNAL_HELP = {
 
 export const PROVIDER_STATUS = {
   OK: { label: 'OK', tone: 'good' },
+  PARTIAL: { label: 'Parțial', tone: 'warning' },
   NOT_CONFIGURED: { label: 'Neconfigurat (opțional)', tone: 'muted' },
   SKIPPED: { label: 'Nefolosit', tone: 'muted' },
   RATE_LIMITED: { label: 'Limită de rată', tone: 'warning' },
   TIMEOUT: { label: 'Timeout', tone: 'warning' },
   BUDGET_EXHAUSTED: { label: 'Buget de apeluri atins', tone: 'warning' },
+  QUOTA_EXHAUSTED: { label: 'Cuotă gratuită în pauză', tone: 'warning' },
   CIRCUIT_OPEN: { label: 'Circuit deschis', tone: 'warning' },
   HTTP_ERROR: { label: 'Eroare HTTP', tone: 'serious' },
   NETWORK_ERROR: { label: 'Eroare de rețea', tone: 'serious' },

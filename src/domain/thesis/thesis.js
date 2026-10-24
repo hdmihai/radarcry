@@ -41,8 +41,14 @@ export function buildThesis({ asset, verdict, changed, pre, risk, market, levels
   bits.push(`${name} are o capitalizare de ${money(m.marketCap)} și un volum de ${money(m.volume24h)} pe 24 de ore`);
   if (isNum(asset.derived?.turnover)) bits.push(`o rotație de ${round(asset.derived.turnover * 100, 1)}% din capitalizare pe zi`);
   const changesPart = changed.count
-    ? `Peste propria normă de 30 de zile s-au schimbat ${changed.count} lucruri, în ${changed.familyCount} ${changed.familyCount === 1 ? 'familie de factori' : 'familii distincte de factori'}: ${changed.changes.slice(0, 4).map((c) => `${c.label.toLowerCase()} (${c.detail})`).join('; ')}.`
+    ? `Peste propria normă de 30 de zile ${changed.count === 1 ? 's-a schimbat un lucru' : `s-au schimbat ${changed.count} lucruri`}, în ${changed.familyCount} ${changed.familyCount === 1 ? 'familie de factori' : 'familii distincte de factori'}: ${changed.changes.slice(0, 4).map((c) => `${c.label.toLowerCase()} (${c.detail})`).join('; ')}.`
     : 'Nimic nu s-a schimbat semnificativ peste propria normă de 30 de zile.';
+  // Standing conditions are context for the thesis, never part of the count: a hot sector or a mostly
+  // circulating float supports a reading, but nothing about them is moving.
+  const conditions = changed.conditions ?? [];
+  const contextPart = conditions.length
+    ? `Context favorabil, care nu se numără ca schimbare: ${conditions.map((c) => `${c.label.toLowerCase()} (${c.detail})`).join('; ')}.`
+    : '';
   const earlyPart = isNum(changed.earliness)
     ? `Precocitatea este ${changed.earliness}/100: ${changed.earliness >= 65 ? 'mișcarea nu este încă evidentă public' : changed.earliness >= 40 ? 'o parte a mișcării este deja vizibilă' : 'mișcarea este în mare parte deja făcută'} (preț ${pct(m.change?.d30)} pe 30 de zile, ${pct(m.change?.d7)} pe 7 zile).`
     : '';
@@ -54,7 +60,7 @@ export function buildThesis({ asset, verdict, changed, pre, risk, market, levels
     : 'Riscul nu a putut fi agregat.';
   const regimePart = market?.regime ? `Contextul general de piață: ${market.regime.label ?? market.regime.state}${isNum(market.altseason?.value) ? `, indice altseason ${Math.round(market.altseason.value)}/100` : ''}.` : '';
 
-  const paragraph = [`${bits.join(', ')}.`, changesPart, earlyPart, scorePart, riskPart, regimePart].filter(Boolean).join(' ');
+  const paragraph = [`${bits.join(', ')}.`, changesPart, contextPart, earlyPart, scorePart, riskPart, regimePart].filter(Boolean).join(' ');
 
   /* ── what would confirm ────────────────────────────────────────────────────────────────────── */
   const confirms = [];
@@ -109,6 +115,7 @@ export function buildThesis({ asset, verdict, changed, pre, risk, market, levels
     headline,
     paragraph,
     whatChanged: changed.changes,
+    context: conditions,
     confirms,
     invalidates: (risk?.invalidators ?? []).map((r) => ({ label: r.label, severity: r.severity, category: r.category, invalidates: r.invalidates, watch: r.watch })),
     timing,

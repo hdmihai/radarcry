@@ -30,6 +30,7 @@ import { watchlistChanges } from '../../domain/lifecycle/watchlist.js';
 import { updateJournal } from '../../domain/signals/journal.js';
 import { coverageReport } from '../../domain/quality/data-quality.js';
 import { rankCandidates } from '../../domain/discovery/classify.js';
+import { prescreenPicks } from '../../domain/discovery/prescreen.js';
 import { buildAlerts, lastSeenRecord } from '../../domain/alerts/alerts.js';
 import { familyPerformance, openEntry, qualifiesForCohort, scoreEntries, trackRecord } from '../../domain/backtest/journal.js';
 import { parity } from '../../domain/benchmark/parity.js';
@@ -38,7 +39,7 @@ import { quotaPlan } from '../../domain/budget/quota.js';
 import { ensureReferences, referencesView } from './references.js';
 import { researchAsset, toCandidateView } from './research.js';
 import { collectDeepData } from './deep-research.js';
-import { discoverAsset, labelIndexFrom } from './discovery.js';
+import { discoverAsset, labelIndexFrom, prescreenAsset } from './discovery.js';
 import { futuresView, pickWatchlist, runFuturesRadar } from './futures-radar.js';
 import { appendCatalysts, appendDiscoveryHistory, appendFlows, appendHistory, appendTelemetry, discoveryPoint, historyPoint, providerSuccessRates } from './state-update.js';
 import { buildProviderHealth, chartPayload, methodology, overallHealth, quotaView, SCHEMA_VERSION } from './snapshot.js';
@@ -197,9 +198,28 @@ export async function runScan(deps, config) {
   //    ∪ continuity (open signals, previous setups, the reference tokens themselves).
   const openKeys = new Set((state.journal?.entries ?? []).filter((e) => e.status === 'OPEN').map((e) => e.key));
   const prevSetups = new Set(Object.entries(state.lastSeen ?? {}).filter(([, v]) => ['BUY_SETUP', 'ACCUMULATE'].includes(v.signal) || v.earlyResearchCandidate).map(([k]) => k));
+  // Discovery continuity: a project the change engine rated as building last run (multi-factor stage,
+  // early candidate, or simultaneous changes — but not one already in public expansion) stays in
+  // depth, so its holder, liquidity and development norms accumulate instead of restarting every
+  // time it drops out of the shortlist and comes back.
+  const prevBuilding = new Set(Object.entries(state.lastSeenV4 ?? {})
+    .filter(([, v]) => (v.stage ?? 0) <= 2 && ((v.stage ?? 0) === 2 || v.earlyResearchCandidate || v.simultaneous))
+    .map(([k]) => k));
   const refSymbols = new Set(references.map((r) => r.symbol));
   const limit = config.deep.limit;
-  const shortKeys = new Set(light.slice(0, Math.ceil(limit * 0.6)).map((r) => r.asset.key));
+  const shares = { prescreen: config.deep.shares?.prescreen ?? 0.4, legacy: config.deep.shares?.legacy ?? 0.35 };
+
+  // 7a) PRESCREEN — the change engine, run on every eligible project against its own norm, with
+  //     the facts this run already holds for the whole universe (no extra call). It claims the first
+  //     share of the deep budget: the projects where something is moving right now.
+  const prescreen = new Map(eligible.map((a) => [a.key, prescreenAsset({ asset: a, points: state.discovery?.[a.key]?.points ?? [], config, nowMs })]));
+  const prescreenKeys = prescreenPicks([...prescreen.values()], Math.round(limit * shares.prescreen));
+  const shortKeys = new Set(prescreenKeys);
+  // 7b) the legacy score, then 7c) the strongest structural (DNA) matches, as before.
+  for (const r of light) {
+    if (shortKeys.size >= Math.round(limit * (shares.prescreen + shares.legacy))) break;
+    shortKeys.add(r.asset.key);
+  }
   const dnaOf = (r) => Math.max(0, ...r.analogs.all.map((x) => x.dnaSim ?? 0));
   for (const r of [...light].filter((x) => !['EXPANSION', 'POST_EXPANSION'].includes(x.stageInfo.stage) && x.hype.state !== 'HYPED').sort((a, b) => dnaOf(b) - dnaOf(a))) {
     if (shortKeys.size >= limit) break;
@@ -207,9 +227,30 @@ export async function runScan(deps, config) {
   }
   for (const r of light) {
     if (shortKeys.size >= limit + config.deep.keepWatchlist) break;
-    if (openKeys.has(r.asset.key) || prevSetups.has(r.asset.key) || refSymbols.has(r.asset.symbol)) shortKeys.add(r.asset.key);
+    if (openKeys.has(r.asset.key) || prevSetups.has(r.asset.key) || prevBuilding.has(r.asset.key) || refSymbols.has(r.asset.symbol)) shortKeys.add(r.asset.key);
   }
-  const shortlist = light.filter((r) => shortKeys.has(r.asset.key)).map((r) => r.asset);
+  /*
+   * Research priority inside the shortlist. Several deep tasks are capped (contract security and
+   * holders at 45 projects, coin details at 25, GitHub at 24), and they take the shortlist from the
+   * top. Ordered by the legacy score, the projects the change engine brought in — chosen precisely
+   * because the legacy score does not rank them — would sit at the bottom and miss exactly the
+   * checks they were brought in for. So the two discovery-driven groups go first, interleaved —
+   * projects that were building last run (strongest first) and projects moving now (strongest
+   * change first) — and everything else follows in legacy order.
+   */
+  const prescreenRank = new Map(prescreenKeys.map((k, i) => [k, i]));
+  const lightRank = new Map(light.map((r, i) => [r.asset.key, i]));
+  const continuityList = [...prevBuilding].filter((k) => shortKeys.has(k))
+    .sort((a, b) => (state.lastSeenV4?.[b]?.opportunity ?? 0) - (state.lastSeenV4?.[a]?.opportunity ?? 0));
+  const movingList = prescreenKeys.filter((k) => shortKeys.has(k));
+  const priority = new Map();
+  for (let i = 0; i < Math.max(continuityList.length, movingList.length); i += 1) {
+    for (const k of [continuityList[i], movingList[i]]) if (k && !priority.has(k)) priority.set(k, priority.size);
+  }
+  const shortlist = light.filter((r) => shortKeys.has(r.asset.key)).map((r) => r.asset)
+    .sort((a, b) => (priority.get(a.key) ?? 1e9) - (priority.get(b.key) ?? 1e9) || lightRank.get(a.key) - lightRank.get(b.key));
+  /** Why a project was researched in depth this run — published with its row. */
+  const selectedBy = (key) => (prevBuilding.has(key) ? 'CONTINUITY' : prescreenRank.has(key) ? 'CHANGE_ENGINE' : 'SCORE');
 
   // 8) Deep research.
   logger.info(`deep research pe ${shortlist.length} candidați (timp rămas ${Math.round(timeLeft() / 1000)}s)`);
@@ -252,6 +293,24 @@ export async function runScan(deps, config) {
   const earlyCandidates = ranked.filter((r) => r.verdict.earlyResearchCandidate);
   const answering = ranked.filter((r) => r.verdict.answersQuestion);
   logger.info(`discovery: ${ranked.length} analizați · ${earlyCandidates.length} candidați timpurii · ${answering.length} răspund exact la întrebarea proiectului`);
+
+  // How far the per-project norms have got. On the first runs the honest answer to the project's
+  // question is usually "nothing yet", and this block is what lets the dashboard say *why*: a change
+  // can only be measured against a norm, and a norm needs several runs of the project's own history.
+  const minPoints = config.discovery?.baselineMinPoints ?? 4;
+  const pre = [...prescreen.values()];
+  const missingPoints = pre.map((p) => Math.max(0, minPoints - (p.baselinePoints ?? 0))).sort((a, b) => a - b);
+  const discoveryCoverage = {
+    eligible: eligible.length,
+    normsTracked: pre.filter((p) => (p.baselinePoints ?? 0) > 0).length,
+    withBaseline: pre.filter((p) => p.baselineSufficient).length,
+    minPoints,
+    windowDays: config.discovery?.baselineWindowDays ?? 30,
+    moving: pre.filter((p) => p.score > 0).length,
+    prescreened: prescreenKeys.length,
+    runsToNorms: missingPoints.length ? missingPoints[Math.floor(missingPoints.length / 2)] : minPoints,
+  };
+  logger.info(`norme proprii: ${discoveryCoverage.withBaseline}/${discoveryCoverage.eligible} proiecte cu istoric suficient · ${discoveryCoverage.moving} cu schimbări față de propria normă · ${discoveryCoverage.prescreened} aduse în profunzime de motorul de schimbări`);
 
   // 10) FUTURES RADAR.
   const watchlist = pickWatchlist({ assets: merged, radarRows: ranked, cfg: config.futures });
@@ -308,7 +367,8 @@ export async function runScan(deps, config) {
   const ledger = deps.quotaGate?.ledger ? deps.quotaGate.ledger() : (state.ledger ?? {});
   const plan = quotaPlan(ledger, config.quotas ?? {}, nowMs, { keyed });
   const providerHealth = buildProviderHealth(results, telemetrySummary, providerSuccessRates(telemetryLog), keyed, plan);
-  const liveStatus = Object.fromEntries(providerHealth.map((p) => [p.id, p.status === 'OK']));
+  // PARTIAL still delivers the capability, on part of the list; its coverage gap is in the health row.
+  const liveStatus = Object.fromEntries(providerHealth.map((p) => [p.id, p.status === 'OK' || p.status === 'PARTIAL']));
   liveStatus['eth-labels'] = labelIndex.size > 0;
   const parityReport = parity({ keys: keyed, liveStatus });
 
@@ -414,12 +474,16 @@ export async function runScan(deps, config) {
       analysed: ranked.length,
       // Full evidence for the rows that matter (every early candidate, plus the top of the ranking);
       // the tail ships its verdict, thesis and changes, which is what a list needs.
-      rows: ranked.map((r, i) => discoveryView(r, {
-        keys: keyed,
-        links: platformLinks(r.asset, { keys: keyed }),
-        full: r.verdict.earlyResearchCandidate || r.changed.simultaneous || i < (config.snapshot?.fullDetail ?? 24),
+      rows: ranked.map((r, i) => ({
+        ...discoveryView(r, {
+          keys: keyed,
+          links: platformLinks(r.asset, { keys: keyed }),
+          full: r.verdict.earlyResearchCandidate || r.changed.simultaneous || i < (config.snapshot?.fullDetail ?? 24),
+        }),
+        selectedBy: selectedBy(r.asset.key),
       })),
       note: 'Rândurile sunt ordonate punând candidații timpurii primii, apoi după produsul dintre oportunitate, precocitate și încredere — un scor puțin mai mic, dar încă invizibil, trece înaintea unuia mai mare pe care îl vede toată lumea.',
+      coverage: discoveryCoverage,
     },
     // ① Futures Radar.
     futures: {
@@ -448,12 +512,26 @@ export async function runScan(deps, config) {
   // 16) Persist research memory.
   const keepKeys = new Set([...openKeys, ...researched.filter((r) => r.depth === 'deep').map((r) => r.asset.key), ...researched.slice(0, config.history.trackTopLight).map((r) => r.asset.key)]);
   const historyRows = researched.filter((r) => keepKeys.has(r.asset.key)).map((r) => ({ key: r.asset.key, point: historyPoint(r) }));
-  const discoveryRows = discovery.map((r) => ({ key: r.asset.key, point: discoveryPoint(r, nowMs) }));
+  // Every eligible project gets a point, not only the sixty researched in depth: a project's norm
+  // must already exist on the run where it starts to move, because that is the run that matters.
+  // Researched projects store their full row; the rest store the market-level metrics of the
+  // prescreen, with deep metrics and verdict left null (unmeasured, not zero).
+  const deepKeys = new Set(discovery.map((r) => r.asset.key));
+  const discoveryRows = [
+    ...discovery.map((r) => ({ key: r.asset.key, point: discoveryPoint(r, nowMs) })),
+    ...eligible.filter((a) => !deepKeys.has(a.key) && prescreen.has(a.key))
+      .map((a) => ({ key: a.key, point: discoveryPoint({ asset: a, current: prescreen.get(a.key).current, verdict: null, changed: null }, nowMs) })),
+  ];
   const flowRows = discovery.map((r) => ({ key: r.asset.key, snapshot: r.asset.onchain?.snapshot ?? null }));
   const nextState = {
     ...state,
     history: appendHistory(state.history, historyRows, nowMs, config.history),
-    discovery: appendDiscoveryHistory(state.discovery, discoveryRows, nowMs, config.history),
+    // The baseline reads only the last `baselineWindowDays`; older points would be dead weight on a
+    // state branch that every run fetches, so discovery history keeps that window plus one day.
+    discovery: appendDiscoveryHistory(state.discovery, discoveryRows, nowMs, {
+      ...config.history,
+      maxDays: Math.min(config.history.maxDays, (config.discovery?.baselineWindowDays ?? 30) + 1),
+    }),
     flows: appendFlows(state.flows, flowRows, nowMs, config.history),
     registry: registryNext,
     journal: { entries: journal.entries },

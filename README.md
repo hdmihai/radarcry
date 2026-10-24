@@ -84,7 +84,7 @@ npm run build && npm run serve
 | `npm run probe` | o cerere mică per furnizor; raportează stare, latență, chei lipsă și pașii de înscriere |
 | `npm run labels` | reconstruiește setul de etichete on-chain din eth-labels (MIT) |
 | `npm run demo` | scanare simulată + build + server local |
-| `npm run ci` | verificare de sintaxă + 143 de teste (arhitectură, motoare, contract, end-to-end) |
+| `npm run ci` | verificare de sintaxă + 164 de teste (arhitectură, motoare, contract, end-to-end) |
 | `npm run summary` | raportul de rulare, așa cum apare în GitHub Actions |
 
 ---
@@ -212,7 +212,7 @@ Dashboard-ul este mobile-first: fiecare ecran a fost verificat la 390 px fără 
 |---|---|---|
 | `Scan & deploy` | la 4 ore, la :17 | scanare completă, validare contract, salvare stare, deploy Pages |
 | `Pulse` | la 15 minute | preț, funding, open interest; nu atinge nicio cuotă lunară |
-| `CI` | la fiecare push | sintaxă, reguli de arhitectură, 143 de teste, build DEMO offline |
+| `CI` | la fiecare push | sintaxă, reguli de arhitectură, 164 de teste, build DEMO offline |
 | `Probe surse` | săptămânal | o cerere per furnizor; eșuează doar dacă o sursă fără cheie a căzut |
 | `Actualizare etichete` | lunar | reconstruiește setul eth-labels și deschide un pull request |
 
@@ -221,11 +221,22 @@ rulare, deci nu crește niciodată. Programările GitHub sunt *best effort*: un 
 fiindcă următorul republică aceleași fapte, iar dashboard-ul își declară mereu propria vechime.
 
 ### Pași de configurare
-1. **Settings → Pages → Source: GitHub Actions.**
-2. Rulează o dată `Scan & deploy` din tab-ul Actions (prima rulare doar înregistrează starea de bază:
-   fără istoric propriu nu există încă normă, iar asta se vede în încrederea raportată).
+1. **Settings → Pages → Build and deployment → Source: GitHub Actions** — *înainte* de prima
+   scanare. Un push pe `main` care atinge `src/`, `web/`, `config/`, `schema/` sau `scripts/`
+   pornește automat `Scan & deploy`; fără Pages activat, scanarea își salvează starea, dar pasul de
+   publicare se oprește cu un mesaj care spune exact această setare.
+2. Rulează o dată `Scan & deploy` din tab-ul Actions, dacă nu a pornit deja de la push.
 3. Opțional, adaugă oricare dintre cheile gratuite din tabelul de mai sus în **Settings → Secrets and
    variables → Actions**. `npm run probe` îți spune exact care lipsesc și de unde se iau.
+
+### Primele rulări: normele proprii se construiesc
+Radarul măsoară o schimbare față de **norma fiecărui proiect** (mediana și dispersia lui din ultimele
+30 de zile), nu față de o medie a pieței. Fiecare scanare salvează un punct de istoric pentru *toate*
+proiectele eligibile, iar detectoarele de volum, rotație și open interest se activează după minimum
+4 puncte, adică după aproximativ 16 ore la o scanare la 4 ore. Până atunci, Small-Cap Radar poate
+semnala doar schimbările care nu cer istoric (listări noi, funding negativ, structură 4H, TVL pe 7
+zile din DefiLlama) și afișează explicit câte proiecte au deja normă. Un rezultat gol în primele
+rulări înseamnă „încă nu se poate măsura”, nu „piață liniștită”.
 
 > Workflow-urile programate se dezactivează automat după 60 de zile fără activitate în repository.
 
@@ -251,7 +262,7 @@ src/
 web/               dashboard static, ES module native, fără build step
 schema/            contractul backend ↔ dashboard, validat la fiecare publicare
 config/labels/     setul de etichete on-chain inclus în repo (MIT)
-test/              143 de teste, inclusiv cele de arhitectură
+test/              164 de teste, inclusiv cele de arhitectură
 ```
 
 Detalii de proiectare, inclusiv de ce fiecare prag este unde este: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).

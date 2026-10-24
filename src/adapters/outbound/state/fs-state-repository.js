@@ -9,6 +9,7 @@
  */
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { sig } from '../../../domain/shared/math.js';
 
 const FILES = {
   history: 'history.json',
@@ -84,13 +85,28 @@ export function decodeHistory(raw) {
 
 /**
  * Columnar codec for the discovery history. The field list travels with the file, so adding a
- * tracked metric later does not invalidate a state written by an older version.
+ * tracked metric later — or reordering the list, as below — does not invalidate a state written by
+ * an older version: the decoder always reads the order stored in the file it is given.
+ *
+ * Every eligible project stores a point each run (about 900 projects, up to ~50 points each), and
+ * most of those points are market-level only. The metrics are therefore ordered market-first, so a
+ * market-level point is a short row once its trailing nulls are trimmed, and values are kept to six
+ * significant digits — far finer than any robust z-score or percentile can resolve.
  */
 export const D_METRICS = [
-  'price', 'marketCap', 'volume24h', 'turnover', 'liquidityUsd', 'holders', 'holdersEffective',
-  'top10Pct', 'oiUsd', 'fundingPct8h', 'tvl', 'devCommits30d', 'mentions7d', 'cexBalancePct',
-  'whaleBalancePct', 'circulating',
+  'price', 'marketCap', 'volume24h', 'turnover', 'circulating', 'oiUsd', 'fundingPct8h',
+  'liquidityUsd', 'holders', 'holdersEffective', 'top10Pct', 'tvl', 'devCommits30d', 'mentions7d',
+  'cexBalancePct', 'whaleBalancePct',
 ];
+
+const compactValue = (v) => (typeof v === 'number' && Number.isFinite(v) ? sig(v, 6) : v ?? null);
+
+/** Drop trailing nulls: the decoder reads a missing tail as null, so nothing is lost. */
+function trimTail(values) {
+  let end = values.length;
+  while (end > 0 && values[end - 1] === null) end -= 1;
+  return values.slice(0, end);
+}
 const D_VERDICT = ['stage', 'opportunity', 'risk', 'earliness', 'confidence', 'changes', 'families'];
 
 export function encodeDiscovery(discovery) {
@@ -98,11 +114,11 @@ export function encodeDiscovery(discovery) {
   for (const [key, h] of Object.entries(discovery ?? {})) {
     out.assets[key] = {
       l: h.lastSeen ? Math.round(Date.parse(h.lastSeen) / 1000) : null,
-      p: (h.points ?? []).map((pt) => [
-        Math.round(pt.at / 1000),
-        D_METRICS.map((m) => pt.metrics?.[m] ?? null),
-        D_VERDICT.map((v) => pt.verdict?.[v] ?? null),
-      ]),
+      p: (h.points ?? []).map((pt) => {
+        const m = trimTail(D_METRICS.map((name) => compactValue(pt.metrics?.[name])));
+        const v = trimTail(D_VERDICT.map((name) => compactValue(pt.verdict?.[name])));
+        return v.length ? [Math.round(pt.at / 1000), m, v] : [Math.round(pt.at / 1000), m];
+      }),
     };
   }
   return out;

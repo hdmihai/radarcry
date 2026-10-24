@@ -219,3 +219,31 @@ test('the fixture adapters implement the same port surface as the live ones', as
     assert.deepEqual(missing, [], `fixture provider "${key}" nu implementează ${missing.join(', ')} — demo-ul ar ocoli o cale reală de cod`);
   }
 });
+
+test('workflows never share a concurrency group, and the pulse yields to a running scan', async () => {
+  /*
+   * Concurrency groups are repository-wide: a run that arrives with `cancel-in-progress: true`
+   * cancels whatever is running in its group, from any workflow. When the 15-minute pulse shared a
+   * group with the full scan, the :22 pulse cancelled every :17 scan still in progress — i.e. all of
+   * them — and the research state could never grow. Each workflow now has its own group, and the
+   * pulse checks for a running scan explicitly and steps aside.
+   */
+  const dir = join(ROOT, '.github', 'workflows');
+  const groups = new Map();
+  for (const f of (await readdir(dir)).filter((x) => x.endsWith('.yml'))) {
+    const lines = (await readFile(join(dir, f), 'utf8')).split('\n');
+    const start = lines.findIndex((l) => /^concurrency:\s*$/.test(l));
+    if (start < 0) continue;
+    const groupLine = lines.slice(start + 1).find((l) => /^\s+group:\s*\S/.test(l));
+    assert.ok(groupLine, `${f}: blocul concurrency nu are group`);
+    const group = groupLine.replace(/^\s+group:\s*/, '').replace(/\s+#.*$/, '').trim();
+    assert.ok(!groups.has(group), `${f} și ${groups.get(group)} împart grupul de concurență „${group}” — unul l-ar putea anula pe celălalt`);
+    groups.set(group, f);
+  }
+  assert.ok(groups.size >= 2, 'scan and pulse both declare their own group');
+  const scan = await readFile(join(dir, 'scan-and-deploy.yml'), 'utf8');
+  assert.match(scan, /cancel-in-progress:\s*false/, 'a scan is never cancelled halfway through a state update');
+  const pulse = await readFile(join(dir, 'pulse.yml'), 'utf8');
+  assert.match(pulse, /--workflow scan-and-deploy\.yml/, 'the pulse looks for a running scan before writing');
+  assert.match(pulse, /actions:\s*read/, 'and has the permission to see it');
+});

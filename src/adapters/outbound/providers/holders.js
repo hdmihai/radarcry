@@ -12,7 +12,7 @@
  * list came from: { address, balance, share, isContract }.
  */
 import { isNum, toNum } from '../../../domain/shared/math.js';
-import { disabled, mapResult, notConfigured } from './common.js';
+import { disabled, mapResult, notConfigured, unsupported } from './common.js';
 
 /* ───────────────────────────────────── NodeReal (EVM) ──────────────────────────────────────── */
 
@@ -103,7 +103,7 @@ export function createNodeReal({ http, cfg, apiKey = null }) {
         'lipsește NODEREAL_API_KEY — planul Free oferă 10 mil. unități de calcul/lună fără abonament și deblochează lista de deținători pe lanțurile EVM');
     }
     const url = endpointFor(chain);
-    if (!url) return notConfigured('nodereal', endpoint, `lanțul ${chain} nu este acoperit de acest furnizor`);
+    if (!url) return unsupported('nodereal', endpoint, `lanțul ${chain} nu este acoperit de acest furnizor`);
     const res = await http.postJson(
       url,
       { jsonrpc: '2.0', id: 1, method: 'nr_getTokenHolders', params: [address, hex(Math.min(top, 1000)), '0x0'] },

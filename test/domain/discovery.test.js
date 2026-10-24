@@ -334,3 +334,54 @@ test('ranking puts candidates first, then prefers the finding nobody has seen ye
   assert.equal(ranked[0].asset.symbol, 'CAND', 'a confirmed candidate outranks everything');
   assert.equal(ranked[1].asset.symbol, 'QUIET', 'a lower score that is still invisible beats a higher one everyone sees');
 });
+
+/* ─────────────────────────── prescreen: who gets the deep-research budget ────────────────────── */
+
+test('the prescreen ranks events by confluence and earliness, and ignores standing conditions', async () => {
+  const { prescreenScore, prescreenPicks, STATE_DETECTORS } = await import('../../src/domain/discovery/prescreen.js');
+  const ev = (key, family, weight = 1, magnitude = 2) => ({ key, family, weight, magnitude });
+
+  assert.equal(prescreenScore(null), 0);
+  assert.equal(prescreenScore({ changes: [], earliness: 90 }), 0);
+  // A standing condition alone is not a reason to spend the budget.
+  assert.ok(STATE_DETECTORS.has('SUPPLY_RELIEF'));
+  assert.equal(prescreenScore({ changes: [ev('SUPPLY_RELIEF', 'FUNDAMENTALS', 0.5, 1)], earliness: 100 }), 0);
+
+  const one = prescreenScore({ changes: [ev('VOLUME_EXPANSION', 'FLOW')], earliness: 100 });
+  const broad = prescreenScore({ changes: [ev('VOLUME_EXPANSION', 'FLOW'), ev('OI_BUILDUP', 'DERIVATIVES', 0.8)], earliness: 100 });
+  const obvious = prescreenScore({ changes: [ev('VOLUME_EXPANSION', 'FLOW'), ev('OI_BUILDUP', 'DERIVATIVES', 0.8)], earliness: 20 });
+  assert.ok(broad > one, 'two families beat one');
+  assert.ok(obvious < broad, 'the same changes, already public, rank lower');
+  assert.ok(obvious > 0, 'but an obvious move is damped, not discarded');
+
+  const picks = prescreenPicks([{ key: 'a', score: 0 }, { key: 'b', score: 2 }, { key: 'c', score: 5 }, { key: 'd', score: 1 }], 2);
+  assert.deepEqual(picks, ['c', 'b']);
+  assert.deepEqual(prescreenPicks([{ key: 'a', score: 3 }], 0), []);
+});
+
+test('standing conditions are context, never counted as changes', async () => {
+  const { whatChanged, CONDITION_KEYS } = await import('../../src/domain/discovery/changes.js');
+  assert.deepEqual([...CONDITION_KEYS].sort(), ['NARRATIVE_MOMENTUM', 'SUPPLY_RELIEF']);
+  const n = (value, z = null, changePct = null, extra = {}) => ({ value, z, changePct, n: 8, median: value, ...extra });
+  const quietCmp = Object.fromEntries(['volume24h', 'turnover', 'liquidityUsd', 'holders', 'top10Pct', 'oiUsd', 'tvl', 'devCommits30d', 'mentions7d', 'cexBalancePct'].map((k) => [k, n(1, 0, 0)]));
+  // Nothing moved; the float is mostly circulating and the sector is hot.
+  const asset = { market: { change: { d7: 1, d30: 2 } }, risk: { supply: { floatRatio: 0.8, unlockWithin30d: false } }, narrative: { label: 'AI', score: 80 }, derived: { turnover: 0.05 } };
+
+  const still = whatChanged({ asset, cmp: quietCmp });
+  assert.equal(still.count, 0, 'a project in which nothing moved has no changes');
+  assert.equal(still.familyCount, 0);
+  assert.deepEqual(still.conditions.map((c) => c.key).sort(), ['NARRATIVE_MOMENTUM', 'SUPPLY_RELIEF']);
+  assert.equal(still.confluence, 0);
+
+  // Two real changes plus a condition are two changes — not "three things at once".
+  const moving = whatChanged({
+    asset: { ...asset, derived: { turnover: 0.3 } },
+    cmp: { ...quietCmp, volume24h: n(5e6, 3.2, 180), turnover: n(0.3, 2.8, 150), liquidityUsd: n(4e5, null, 40) },
+  });
+  assert.deepEqual(moving.changes.map((c) => c.key).sort(), ['LIQUIDITY_GROWTH', 'TURNOVER_JUMP', 'VOLUME_EXPANSION']);
+  assert.equal(moving.count, 3);
+  assert.equal(moving.simultaneous, true, 'three events in two families');
+  const twoOnly = whatChanged({ asset, cmp: { ...quietCmp, volume24h: n(5e6, 3.2, 180), liquidityUsd: n(4e5, null, 40) } });
+  assert.equal(twoOnly.count, 2);
+  assert.equal(twoOnly.simultaneous, false, 'the two conditions do not top two events up to three');
+});

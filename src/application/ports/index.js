@@ -97,11 +97,36 @@
 /**
  * OnchainPort — DEX pairs and liquidity (DexScreener), pool/holder detail (GeckoTerminal),
  * contract security (GoPlus). All three are keyless and public.
+ *
+ * An input the provider cannot answer (a chain it does not cover, an empty address list) comes back
+ * as SKIPPED, never NOT_CONFIGURED: use cases switch a provider off for the rest of the run on
+ * NOT_CONFIGURED, which must only mean "no key".
+ *
  * @typedef {Object} OnchainPort
  * @property {(chain:string, addresses:string[]) => Promise<ProviderResult<Record<string, any>>>} [tokens]
  * @property {() => Promise<ProviderResult<any[]>>} [boosts]
  * @property {(chain:string, address:string) => Promise<ProviderResult<any>>} [tokenInfo]
- * @property {(chain:string, addresses:string[]) => Promise<ProviderResult<Record<string, any>>>} [security]
+ * @property {(chain:string, addresses:string[]) => Promise<ProviderResult<Record<string, SecurityPayload>>>} [security]
+ */
+
+/**
+ * SecurityPayload — one token's entry from OnchainPort.security(), keyed by normalised address.
+ * This is the provider's vocabulary; the application translates it into the risk engine's facts in
+ * exactly one place, `securityFacts()` in use-cases/discovery.js, and a test pins that seam.
+ * Taxes are fractions (0.1 = 10 %); booleans are true / false / null (unknown).
+ *
+ * @typedef {Object} SecurityPayload
+ * @property {number|null} holders              holder count reported by the provider
+ * @property {number|null} top10Pct             share of supply in the top 10 holders, percent
+ * @property {number|null} top10EffectivePct    same, excluding locked / burned / LP / exchange holders
+ * @property {string|null} creatorAddress
+ * @property {string|null} ownerAddress
+ * @property {number|null} lpLockedPct          share of the main pool's LP that is locked or burned, percent
+ * @property {{honeypot:boolean|null, cannotSell:boolean|null, buyTax:number|null, sellTax:number|null,
+ *   mintable:boolean|null, ownerRenounced:boolean|null, hiddenOwner:boolean|null,
+ *   canTakeBackOwnership:boolean|null, transferPausable:boolean|null, blacklist:boolean|null,
+ *   slippageModifiable:boolean|null, proxy:boolean|null, openSource:boolean|null,
+ *   trustList:boolean|null}} security
  */
 
 /**

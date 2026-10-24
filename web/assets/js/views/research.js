@@ -191,6 +191,7 @@ export function researchMarkup(s) {
             <div class="small">${c.detail}</div>
           </li>`)}</ul>
           ${row.changed.changes.length ? '' : html`<p class="muted small">Nicio schimbare peste propria normă.</p>`}
+          ${(row.changed.conditions ?? []).length ? html`<p class="muted xs" style="margin-top:8px">Context, nu schimbări: ${row.changed.conditions.map((c) => c.label.toLowerCase()).join(' · ')}</p>` : ''}
         </section>
 
         <section class="panel">

@@ -43,8 +43,10 @@ permissions:
   id-token: write
 
 concurrency:
-  # Shared with the pulse workflow: the two must never publish on top of each other.
-  group: cri-publish
+  # Scans queue behind scans only. This group is deliberately not shared with the pulse: concurrency
+  # groups are repository-wide, so a shared group let every 15-minute pulse cancel a running scan.
+  # The pulse now checks for a running scan itself and yields (see pulse.yml).
+  group: cri-scan
   cancel-in-progress: false # never kill a scan halfway through a state update
 
 jobs:
@@ -140,6 +142,22 @@ jobs:
 
       - name: Run summary
         run: node scripts/run-summary.js data/latest.json >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Check that GitHub Pages publishes from Actions
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # The research state is already saved at this point, so a failure here loses nothing —
+          # but it must say exactly which setting to change, in the dashboard's language.
+          if ! build_type=$(gh api "repos/${GITHUB_REPOSITORY}/pages" --jq '.build_type' 2>/dev/null); then
+            echo "::error title=GitHub Pages nu este activat::Settings → Pages → Build and deployment → Source: GitHub Actions. Starea cercetării este deja salvată pe ramura cri-state; după activare, rulează din nou „Scan & deploy”."
+            exit 1
+          fi
+          if [ "$build_type" != "workflow" ]; then
+            echo "::error title=GitHub Pages publică dintr-o ramură::Settings → Pages → Source trebuie să fie „GitHub Actions” (acum: ${build_type})."
+            exit 1
+          fi
+          echo "GitHub Pages publică din Actions."
 
       - uses: actions/configure-pages@v6
 

@@ -49,7 +49,7 @@ Regula de dependență nu este o convenție, ci un **test care rulează la fieca
 - `adapters` nu importă niciodată `main.js`.
 - `web` importă doar din `web`. Frontend-ul vorbește cu motorul exclusiv prin `data/latest.json`.
 
-Și, specific acestui proiect, cinci teste în plus:
+Și, specific acestui proiect, șase teste în plus:
 
 - **lista de surse aprobate** — orice URL absolut din `adapters/outbound` trebuie să rezolve la un
   host aflat pe o listă explicită, fiecare cu planul gratuit declarat;
@@ -65,7 +65,18 @@ Regula de dependență nu este o convenție, ci un **test care rulează la fieca
 - **paritatea adaptoarelor** — harta de provideri construită pentru fixtures trebuie să ofere exact
   aceleași chei și aceleași metode ca cea live. O metodă existentă doar live este o cale de cod pe
   care nicio rulare demo nu o atinge; una existentă doar în fixtures este un test care trece pe
-  ceva ce nu există în producție. Testul a găsit trei astfel de nepotriviri la auditul final.
+  ceva ce nu există în producție. Testul a găsit trei astfel de nepotriviri la auditul final;
+- **concurența workflow-urilor** — niciun workflow nu împarte grupul de concurență cu altul, iar
+  pulsul de 15 minute verifică explicit dacă rulează o scanare completă și îi cedează rândul.
+  Grupurile sunt comune la nivel de repository: când pulsul împărțea grupul cu scanarea, fiecare
+  puls de la :22 anula scanarea pornită la :17, iar starea de cercetare nu putea crește.
+
+Testele de arhitectură verifică direcția dependențelor, dar nu și *forma datelor* care trec granița.
+Pentru granița cea mai periculoasă — securitatea contractului, unde un vocabular greșit nu produce o
+eroare, ci un „curat” fals — `test/application/security-wiring.test.js` pornește de la un răspuns
+GoPlus în forma exactă a API-ului public și îl trece prin adaptorul real, prin `securityFacts()` și
+prin motorul de risc. Traducerea dintre vocabularul furnizorului și cel al domeniului se face într-un
+singur loc, iar testul îl fixează.
 
 De ce mecanic și nu prin review: constrângerea „doar gratuit, fără abonament” este ușor de respectat
 în prima zi și ușor de încălcat în a treizecea, cu un singur endpoint care „oricum merge acum”.

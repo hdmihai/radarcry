@@ -212,8 +212,16 @@ export async function collectDeepData(shortlist, P, cfg, rt) {
     }
   };
 
+  /*
+   * Development activity depends on the coin detail payload: CoinGecko's `links.repos_url` is where
+   * the repository URL comes from, since market listings carry no links. Started side by side, the
+   * dev task scanned the shortlist before the first detail had arrived, found no repository for
+   * anyone and finished in a millisecond — which is how the first live run made zero GitHub calls.
+   * The dependency is therefore expressed as a sequence, while everything else stays parallel.
+   */
+  const detailsThenDev = coingeckoTask().finally(() => devTask());
   const results = await Promise.allSettled([
-    klinesTask(), coingeckoTask(), dexTask(), securityTask(), holdersTask(), devTask(), attentionTask(),
+    klinesTask(), detailsThenDev, dexTask(), securityTask(), holdersTask(), attentionTask(),
   ]);
   // Entity resolution needs the holder lists, so it runs after the first wave.
   const second = await Promise.allSettled([entitiesTask(), flowsTask()]);

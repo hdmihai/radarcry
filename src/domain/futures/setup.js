@@ -11,6 +11,9 @@ import { smcFeatures } from '../features/smc.js';
 
 export const CHASE_LIMIT_PCT = 8;
 
+/** The closest a stop may sit to the entry, in 4H ATRs: anything nearer is inside ordinary noise. */
+export const MIN_STOP_ATR = 1;
+
 /**
  * @param {{t:number,o:number,h:number,l:number,c:number,v:number|null}[]} candles  4H, oldest → newest
  * @returns {null|{score:number, smc:any, entryZone:{top:number,bottom:number,kind:string}|null,
@@ -96,8 +99,27 @@ export function tradeLevels(setup, trend) {
   // recent swing low, the swing low is not an invalidation for this entry, the zone's own floor is.
   const candidates = [setup.invalidation, setup.smc.swingLow, zone ? zone.bottom * 0.985 : null]
     .filter((x) => isNum(x) && x > 0 && x < entry);
-  const stop = candidates.length ? Math.max(...candidates) : null;
   const atr = setup.smc.atr14;
+  let stop = candidates.length ? Math.max(...candidates) : null;
+  /*
+   * Volatility floor. A structural stop closer than one 4H ATR sits inside ordinary noise: the next
+   * average candle reaches it without the structure having changed at all. In the first live run a
+   * stop 2.7 % under the entry of a token with a 27 % 4H ATR produced a reward/risk of 116, which is
+   * a number that describes the stop, not the opportunity. The stop is therefore pushed out to one
+   * ATR below the entry, and the levels say so, so that R:R — and the R:R < 2 hard filter that
+   * depends on it — is computed against a risk the market can actually respect.
+   */
+  let stopBasis = isNum(stop) ? 'STRUCTURE' : null;
+  if (isNum(stop) && isNum(atr) && atr > 0 && entry - stop < MIN_STOP_ATR * atr) {
+    const widened = entry - MIN_STOP_ATR * atr;
+    if (widened > 0) {
+      stop = widened;
+      stopBasis = 'ATR_FLOOR';
+    } else {
+      stop = null; // one ATR is larger than the price itself: no meaningful long invalidation exists
+      stopBasis = null;
+    }
+  }
   const swingHigh = setup.smc.swingHigh;
   const risk = isNum(stop) && stop > 0 ? entry - stop : null;
 
@@ -112,12 +134,15 @@ export function tradeLevels(setup, trend) {
     entryZone: zone,
     entry: round(entry, 8),
     stop: isNum(stop) ? round(stop, 8) : null,
+    stopBasis,
     target1: isNum(t1) ? round(t1, 8) : null,
     target2: isNum(t2) ? round(t2, 8) : null,
     riskPct: isNum(risk) && entry > 0 ? round((risk / entry) * 100, 2) : null,
     rr1: isNum(rr1) ? round(rr1, 2) : null,
     rr2: isNum(rr2) ? round(rr2, 2) : null,
     atrPct: isNum(atr) && close > 0 ? round((atr / close) * 100, 2) : null,
-    note: 'Nivele de research, derivate din structura 4H. Proiectul nu execută și nu transmite ordine.',
+    note: stopBasis === 'ATR_FLOOR'
+      ? 'Nivele de research, derivate din structura 4H. Invalidarea structurală era în interiorul zgomotului, așa că stopul a fost lărgit la 1 ATR(4H) sub intrare. Proiectul nu execută și nu transmite ordine.'
+      : 'Nivele de research, derivate din structura 4H. Proiectul nu execută și nu transmite ordine.',
   };
 }

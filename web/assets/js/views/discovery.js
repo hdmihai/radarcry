@@ -73,12 +73,20 @@ function testStrip(tests) {
     </span>`)}</div>`;
 }
 
+/** Standing conditions: shown as context, visibly apart from the changes they are not. */
+function conditionChips(changed) {
+  const list = changed.conditions ?? [];
+  if (!list.length) return '';
+  return html`<div class="chips">${list.map((c) => html`
+    <span class="chip muted" data-tip="${tip(html`<b>${c.label}</b><br>${c.detail}<br><span class="muted">context — o stare, nu o schimbare: nu intră în numărul de schimbări simultane</span>`)}">context: ${c.label}</span>`)}</div>`;
+}
+
 function changeChips(changed, { max = 8 } = {}) {
-  if (!changed.changes.length) return html`<p class="muted small">Nicio schimbare peste propria normă de 30 de zile.</p>`;
+  if (!changed.changes.length) return html`<p class="muted small">Nicio schimbare peste propria normă de 30 de zile.</p>${conditionChips(changed)}`;
   return html`<div class="chips">${changed.changes.slice(0, max).map((c) => html`
     <span class="chip" data-fam="${c.family}" data-tip="${tip(html`<b>${c.label}</b><br>${c.detail}<br><span class="muted">familie: ${c.familyLabel ?? FAMILY_SHORT[c.family]} · pondere ${c.weight} · amplitudine ${c.magnitude}</span>`)}">
       <i></i>${c.label}
-    </span>`)}${changed.changes.length > max ? html`<span class="chip muted">+${changed.changes.length - max}</span>` : ''}</div>`;
+    </span>`)}${changed.changes.length > max ? html`<span class="chip muted">+${changed.changes.length - max}</span>` : ''}</div>${conditionChips(changed)}`;
 }
 
 function invalidatorList(risk, { max = 6 } = {}) {
@@ -120,6 +128,13 @@ function platformRow(row, catalogue) {
   </div>`;
 }
 
+/** Why the project was researched in depth this run. */
+const SELECTED_BY = {
+  CHANGE_ENGINE: { label: 'adus de motorul de schimbări', tip: 'Motorul de schimbări a rulat pe toate proiectele eligibile, față de norma fiecăruia, și a cerut o analiză în profunzime pentru acesta: ceva se mișcă acum peste propria normă.' },
+  CONTINUITY: { label: 'urmărit în continuare', tip: 'La rularea anterioară proiectul era în construcție (confirmare multi-factor, candidat timpuriu sau schimbări simultane), așa că rămâne în profunzime pentru ca normele lui de deținători și lichiditate să se acumuleze.' },
+  SCORE: { label: 'selectat după scor', tip: 'Adus în profunzime de scorul CRI sau de similaritatea structurală cu LAB/BTW/AGT.' },
+};
+
 function card(row, s) {
   const v = row.verdict;
   const t = row.thesis;
@@ -134,6 +149,7 @@ function card(row, s) {
         <span class="pill" data-tone="${STAGE_TONE[v.stage] ?? 'muted'}" data-tip="${tip(html`<b>Stage ${v.stage} — ${v.stageLabel}</b><br>${v.stageMeaning}`)}">Stage ${v.stage} · ${v.stageLabel}</span>
         <span class="pill" data-tone="${BAND_TONE[v.band] ?? 'muted'}">${v.bandLabel}</span>
         ${v.answersQuestion ? html`<span class="pill" data-tone="good" data-tip="${tip('Îndeplinește toate cele trei condiții pentru candidat timpuriu ȘI are schimbări simultane în cel puțin două familii — exact forma întrebării proiectului.')}">${icon('target', 12)} răspunde la întrebare</span>` : ''}
+        ${SELECTED_BY[row.selectedBy] ? html`<span class="pill" data-tone="muted" data-tip="${tip(SELECTED_BY[row.selectedBy].tip)}">${SELECTED_BY[row.selectedBy].label}</span>` : ''}
       </div>
       <div class="dcard-nums">
         ${meter('Oportunitate', v.opportunity, { tone: BAND_TONE[v.band] ?? 'muted', tip: html`Scorul de pre-expansiune din 8 factori ponderați. Bandă: ${v.bandLabel}.` })}
@@ -236,6 +252,10 @@ export function discoveryMarkup(s) {
   rows = sortRows(rows, discoveryState.sort);
   // When nothing clears all three conditions, say so where the eye lands first.
   const shortfall = counts.answer === 0 ? nearMiss(all) : null;
+  // On the first runs the empty answer has a structural cause — no project has a norm yet — and the
+  // reader must see that cause, not mistake a radar that cannot measure yet for a quiet market.
+  const cov = d.coverage ?? null;
+  const normsBuilding = Boolean(cov && cov.eligible > 0 && cov.withBaseline < cov.eligible * 0.5);
 
   return html`
     <div class="view-head">
@@ -258,9 +278,20 @@ export function discoveryMarkup(s) {
       </div>
       <div class="qstat">
         <b class="num">${d.analysed}</b><span>proiecte analizate în adâncime</span>
-        <small class="muted">din ${num(s.health?.universe?.eligible)} eligibile după filtrul de small-cap</small>
+        <small class="muted">din ${num(s.health?.universe?.eligible)} eligibile după filtrul de small-cap${cov ? html`; ${num(cov.prescreened)} aduse de motorul de schimbări` : ''}</small>
       </div>
+      ${cov ? html`<div class="qstat" data-tone="${normsBuilding ? 'muted' : 'good'}">
+        <b class="num">${num(cov.withBaseline)}<small class="muted">/${num(cov.eligible)}</small></b><span>cu normă proprie</span>
+        <small class="muted">istoric de minim ${num(cov.minPoints)} rulări în ${num(cov.windowDays)} zile · ${num(cov.moving)} se mișcă acum față de propria normă</small>
+      </div>` : ''}
     </div>
+
+    ${normsBuilding ? html`<div class="notice" data-kind="demo" style="margin:10px 0 0;border-radius:10px"><div class="frame" style="padding:10px 12px">${icon('info', 15)}<p>
+      <b>Normele proprii sunt în construcție.</b> ${num(cov.withBaseline)} din ${num(cov.eligible)} proiecte eligibile au deja istoric suficient.
+      Radarul măsoară o schimbare față de norma fiecărui proiect, nu față de o medie a pieței, așa că detectoarele de volum, rotație și open interest
+      se activează după ${cov.runsToNorms > 0 ? html`încă aproximativ <b>${num(cov.runsToNorms)} ${cov.runsToNorms === 1 ? 'rulare' : 'rulări'}</b>` : 'următoarea rulare'} (una la 4 ore).
+      Până atunci pot apărea doar schimbările care nu cer istoric — listări noi, funding negativ — iar un rezultat gol înseamnă „încă nu se poate măsura”, nu „piață liniștită”.
+    </p></div></div>` : ''}
 
     ${shortfall ? html`<div class="notice" data-kind="demo" style="margin:10px 0 0;border-radius:10px"><div class="frame" style="padding:10px 12px">${icon('info', 15)}<p>
       <b>Niciun proiect nu îndeplinește simultan toate cele trei condiții în această rulare.</b>

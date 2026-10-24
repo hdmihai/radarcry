@@ -4,6 +4,7 @@
  */
 import { candlesAt, hashSeed, mulberry32, stateAt } from './demo-market.js';
 import { normChain } from '../../../domain/shared/symbols.js';
+import { isNum } from '../../../domain/shared/math.js';
 import { normalizeTopFlows } from '../providers/onchain.js';
 
 const DAY = 86_400_000;
@@ -114,7 +115,7 @@ export function createFixtureProviders({ market, clock }) {
       const days = (now() - market.startMs) / DAY;
       const ph = phase(a);
       const growth = ph === 'pre' ? 1.012 : ph === 'hyped' ? 1.03 : 1.001;
-      return ok('coingecko', '/coins/{id}', { id, categories: a.categories, genesisDate: null, homepage: `https://example.org/${a.symbol.toLowerCase()}`, twitter: null, telegram: null, github: null, watchlistUsers: Math.round(a.watch0 * growth ** Math.max(0, days - 380)), sentimentUpPct: 70, twitterFollowers: null, telegramUsers: null, commits4w: a.devCommits, stars: null, description: 'Proiect fictiv din setul DEMO.' });
+      return ok('coingecko', '/coins/{id}', { id, categories: a.categories, genesisDate: null, homepage: `https://example.org/${a.symbol.toLowerCase()}`, twitter: null, telegram: null, github: isNum(a.devCommits) ? `https://github.com/demo-labs/${a.id}` : null, watchlistUsers: Math.round(a.watch0 * growth ** Math.max(0, days - 380)), sentimentUpPct: 70, twitterFollowers: null, telegramUsers: null, commits4w: a.devCommits, stars: null, description: 'Proiect fictiv din setul DEMO.' });
     },
     search: async (q) => ok('coingecko', '/search', market.assets.filter((a) => a.symbol === q.toUpperCase() || a.name.toLowerCase().includes(q.toLowerCase())).map((a) => ({ id: a.id, symbol: a.symbol, name: a.name, rank: null }))),
     marketChart: async (id, days) => {
@@ -223,6 +224,10 @@ export function createFixtureProviders({ market, clock }) {
           holders: holdersAt(a),
           top10Pct: Math.min(100, a.top10 + 4),
           top10EffectivePct: a.top10,
+          // Same port vocabulary as the live GoPlus normaliser (normalizeEvm), field for field.
+          creatorAddress: null,
+          ownerAddress: null,
+          lpLockedPct: a.honeypot ? 12 : 60 + (hashSeed(`${a.id}:lp`) % 40),
           security: { honeypot: a.honeypot, cannotSell: a.honeypot, buyTax: 0, sellTax: a.sellTax, mintable: false, ownerRenounced: true, hiddenOwner: false, canTakeBackOwnership: false, transferPausable: false, blacklist: false, slippageModifiable: false, proxy: hashSeed(a.id) % 9 === 0, openSource: true, trustList: false },
         };
       }

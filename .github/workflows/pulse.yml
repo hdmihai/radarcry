@@ -26,26 +26,59 @@ permissions:
   contents: write
   pages: write
   id-token: write
+  actions: read # to see whether a full scan is running before touching the shared state
 
 concurrency:
-  # Shared with the full scan: the two must never publish on top of each other.
-  group: cri-publish
-  cancel-in-progress: true # a queued pulse is stale by definition — drop it and run the next one
+  # Pulses queue behind pulses only, and never cancel one another mid-push (a newer *queued* pulse
+  # still replaces an older queued one, which is the "stale pulse" rule we want).
+  #
+  # This group must not be shared with the full scan. Concurrency groups are repository-wide, and a
+  # run arriving with `cancel-in-progress: true` cancels whatever is running in its group, from any
+  # workflow. With a shared group, the :22 pulse cancelled every :17 full scan that was still running
+  # — which is all of them, since a live scan takes ten minutes — so the research state could never
+  # grow. Mutual exclusion with the scan is done explicitly below, in the direction that is safe:
+  # the pulse yields, the scan never waits.
+  group: cri-pulse
+  cancel-in-progress: false
 
 jobs:
   pulse:
     runs-on: ubuntu-latest
     timeout-minutes: 8
+    outputs:
+      published: ${{ steps.done.outputs.published }}
     steps:
+      - name: Yield to a full scan that is running or queued
+        id: yield
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # A scan rewrites the whole state branch and republishes the dashboard ten minutes later;
+          # a pulse published in between would only be overwritten. If the check itself fails, the
+          # pulse also yields: a missed pulse costs nothing, two writers on one branch cost a run.
+          if ! active=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow scan-and-deploy.yml --limit 20 \
+              --json status --jq '[.[] | select(.status != "completed")] | length'); then
+            echo "::warning::Nu am putut verifica dacă rulează o scanare completă — pulsul cedează rândul."
+            echo "go=false" >> "$GITHUB_OUTPUT"
+          elif [ "${active:-0}" -gt 0 ]; then
+            echo "::notice::O scanare completă rulează sau așteaptă — pulsul cedează rândul; următorul puls republică peste rezultatul ei."
+            echo "go=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "go=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/checkout@v7
+        if: steps.yield.outputs.go == 'true'
 
       - uses: actions/setup-node@v7
+        if: steps.yield.outputs.go == 'true'
         with:
           node-version-file: .nvmrc
           package-manager-cache: false
 
       - name: Restore the published snapshot from the cri-state branch
         id: restore
+        if: steps.yield.outputs.go == 'true'
         run: |
           mkdir -p .state data
           if git fetch --no-tags --depth=1 origin cri-state 2>/dev/null; then
@@ -96,9 +129,16 @@ jobs:
         with:
           path: dist
 
+      - name: Mark the pulse as published
+        id: done
+        if: steps.restore.outputs.have_snapshot == 'true'
+        run: echo "published=true" >> "$GITHUB_OUTPUT"
+
   deploy:
     needs: pulse
-    if: needs.pulse.result == 'success'
+    # Only a pulse that actually built a site deploys one: a pulse that yielded or found no snapshot
+    # has no artifact, and deploying nothing used to end in a (silenced) failure on every such run.
+    if: needs.pulse.outputs.published == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment:

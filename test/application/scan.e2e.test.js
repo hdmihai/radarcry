@@ -42,8 +42,11 @@ test('universe funnel: top 1000 from both aggregators, exclusions documented, de
   assert.ok(u.eligible > 500 && u.eligible <= u.merged);
   assert.ok(Object.keys(last.health.exclusions).includes('STABLECOIN'));
   const deep = last.candidates.filter((c) => c.depth === 'deep');
-  assert.equal(deep.length, run.config.deep.limit);
-  assert.ok(last.candidates.length <= run.config.deep.limit + run.config.snapshot.maxLight);
+  // The deep budget is `limit`, plus up to `keepWatchlist` slots of continuity for projects that
+  // were building on the previous run (their holder and liquidity norms must keep accumulating).
+  assert.ok(deep.length >= run.config.deep.limit, `deep research covers the full budget (${deep.length})`);
+  assert.ok(deep.length <= run.config.deep.limit + run.config.deep.keepWatchlist, `deep research stays bounded (${deep.length})`);
+  assert.ok(last.candidates.length <= deep.length + run.config.snapshot.maxLight, 'every deep row, plus at most maxLight light rows');
   // Candle payloads are the heaviest part of the contract, so they ship for the first
   // `snapshot.charts` deep rows; the rest keep their sparkline. Within that budget, a token with a
   // spot market must always carry both series.
@@ -157,4 +160,40 @@ test('market-cap growth: 24h from CoinGecko, 7d from the own history once a week
   assert.ok(last.candidates.some((c) => Number.isFinite(c.market.mcapChange?.h24)));
   assert.ok(last.candidates.some((c) => Number.isFinite(c.market.mcapChange?.d7)));
   assert.ok(last.candidates.some((c) => Number.isFinite(c.market.rankChange7d)));
+});
+
+test('every eligible project builds its own norm, not only the ones researched in depth', async () => {
+  const cov = last.discovery.coverage;
+  assert.ok(cov, 'the snapshot reports how far the per-project norms have got');
+  assert.equal(cov.eligible, last.health.universe.eligible);
+  assert.equal(cov.minPoints, run.config.discovery.baselineMinPoints);
+  // Nine daily runs: every project that stayed eligible has had at least four points of history.
+  assert.ok(cov.withBaseline >= cov.eligible * 0.8, `${cov.withBaseline}/${cov.eligible} projects with a sufficient norm`);
+  assert.equal(cov.runsToNorms, 0);
+
+  const raw = JSON.parse(await readFile(join(run.stateDir, 'discovery.json'), 'utf8'));
+  const tracked = Object.keys(raw.assets ?? raw).length;
+  assert.ok(tracked >= cov.eligible * 0.9, `${tracked} projects tracked in discovery history, ${cov.eligible} eligible`);
+  assert.ok(tracked > run.config.deep.limit + run.config.deep.keepWatchlist, 'history is no longer limited to the deep shortlist');
+});
+
+test('the change engine claims part of the deep budget once norms exist', () => {
+  const cov = last.discovery.coverage;
+  assert.ok(cov.moving > 0, 'on a market with pre-expansion projects, something moves against its own norm');
+  assert.ok(cov.prescreened > 0, 'and the change engine brings some of it into depth');
+  assert.ok(cov.prescreened <= Math.round(run.config.deep.limit * run.config.deep.shares.prescreen));
+  const first = run.snapshots[0].discovery.coverage;
+  assert.equal(first.withBaseline, 0, 'the first run has no history: nothing is measured against a norm yet');
+  assert.equal(first.runsToNorms, run.config.discovery.baselineMinPoints);
+});
+
+test('discovery-driven projects are researched first: the capped checks reach them', () => {
+  // Security and holder checks are capped (45 projects). Projects brought in by the change engine,
+  // or kept for continuity, must not lose them to projects selected by the legacy score alone.
+  const rows = last.discovery.rows;
+  assert.ok(rows.every((r) => ['CHANGE_ENGINE', 'CONTINUITY', 'SCORE'].includes(r.selectedBy)), 'every row says why it was researched');
+  const driven = rows.filter((r) => r.selectedBy !== 'SCORE' && r.contract);
+  assert.ok(driven.length > 0);
+  const scanned = driven.filter((r) => r.onchain?.security).length;
+  assert.ok(scanned >= driven.length * 0.9, `${scanned}/${driven.length} discovery-driven projects have a contract scan`);
 });

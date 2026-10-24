@@ -195,6 +195,7 @@ const DETECTORS = [
   {
     key: 'NARRATIVE_MOMENTUM',
     family: FAMILIES.ATTENTION,
+    kind: 'CONDITION', // the sector is hot — true for weeks, and true of every token in it
     weight: 0.6,
     label: 'Narațiunea sectorului se încălzește',
     test: ({ a }) => {
@@ -253,6 +254,7 @@ const DETECTORS = [
   {
     key: 'SUPPLY_RELIEF',
     family: FAMILIES.FUNDAMENTALS,
+    kind: 'CONDITION', // most supply already circulating — a level, not a movement
     weight: 0.5,
     label: 'Presiunea de supply se relaxează',
     test: ({ a }) => {
@@ -267,6 +269,35 @@ const DETECTORS = [
 const fmtPct = (x) => (isNum(x) ? `${x > 0 ? '+' : ''}${round(x, 1)}%` : 'necunoscut');
 
 /**
+ * Detectors that describe a standing condition rather than something that moved. They are real and
+ * they matter — a hot sector, a float that is already mostly circulating — so they are reported as
+ * context and they keep feeding their own factors of the pre-expansion score. But they are not
+ * *changes*: counting them let a project in which nothing had moved reach "Stage 1 · early activity"
+ * on the strength of its tokenomics alone, and let two real changes plus one condition pass for
+ * "three things changing at once". Only events count toward the project's question.
+ */
+export const CONDITION_KEYS = new Set(DETECTORS.filter((d) => d.kind === 'CONDITION').map((d) => d.key));
+
+/**
+ * Confluence of a set of changes: a weighted count with diminishing returns inside a family (the
+ * second signal of the same kind adds 40 %, not 100 %) and an 18 % bonus per additional family.
+ * Breadth is rewarded because several *different* things moving together is what precedes an
+ * expansion; five readings of one volume spike are still one thing happening.
+ *
+ * @param {{family:string, weight:number, magnitude:number}[]} changes
+ */
+export function confluenceOf(changes) {
+  const byFamily = new Map();
+  for (const c of changes ?? []) byFamily.set(c.family, [...(byFamily.get(c.family) ?? []), c]);
+  let raw = 0;
+  for (const list of byFamily.values()) {
+    const sorted = [...list].sort((a, b) => b.weight * b.magnitude - a.weight * a.magnitude);
+    sorted.forEach((c, i) => { raw += c.weight * Math.min(c.magnitude, 3) * (i === 0 ? 1 : 0.4); });
+  }
+  return round(raw * (1 + 0.18 * Math.max(0, byFamily.size - 1)), 2);
+}
+
+/**
  * Run every detector and build the confluence view.
  *
  * @param {{asset:any, cmp:Record<string, any>, windowDays?:number}} input
@@ -275,7 +306,7 @@ const fmtPct = (x) => (isNum(x) ? `${x > 0 ? '+' : ''}${round(x, 1)}%` : 'necuno
  */
 export function whatChanged({ asset, cmp, windowDays = 7 }) {
   const ctx = { a: asset, cmp: cmp ?? {} };
-  const changes = [];
+  const hits = [];
   for (const d of DETECTORS) {
     let hit = null;
     try {
@@ -284,7 +315,7 @@ export function whatChanged({ asset, cmp, windowDays = 7 }) {
       hit = null;
     }
     if (!hit) continue;
-    changes.push({
+    hits.push({
       key: d.key,
       family: d.family,
       familyLabel: FAMILY_LABEL_RO[d.family],
@@ -295,27 +326,23 @@ export function whatChanged({ asset, cmp, windowDays = 7 }) {
     });
   }
 
+  const byWeight = (a, b) => b.weight * b.magnitude - a.weight * a.magnitude;
+  const changes = hits.filter((c) => !CONDITION_KEYS.has(c.key)).sort(byWeight);
+  const conditions = hits.filter((c) => CONDITION_KEYS.has(c.key)).sort(byWeight);
   const families = [...new Set(changes.map((c) => c.family))];
-  // Confluence: weighted count, with diminishing returns inside a family and a breadth bonus.
-  const byFamily = new Map();
-  for (const c of changes) byFamily.set(c.family, [...(byFamily.get(c.family) ?? []), c]);
-  let raw = 0;
-  for (const list of byFamily.values()) {
-    const sorted = [...list].sort((a, b) => b.weight * b.magnitude - a.weight * a.magnitude);
-    sorted.forEach((c, i) => { raw += c.weight * Math.min(c.magnitude, 3) * (i === 0 ? 1 : 0.4); });
-  }
   const breadth = families.length;
-  const confluence = round(raw * (1 + 0.18 * Math.max(0, breadth - 1)), 2);
+  const confluence = confluenceOf(changes);
 
   const obvious = obviousness(asset);
   const earliness = clamp(Math.round(100 - obvious), 0, 100);
 
   const summary = changes.length
-    ? `${changes.length} schimbări în ${breadth} ${breadth === 1 ? 'familie' : 'familii'} (fereastră ${windowDays}z): ${changes.slice(0, 3).map((c) => c.label.toLowerCase()).join('; ')}`
+    ? `${changes.length} ${changes.length === 1 ? 'schimbare' : 'schimbări'} în ${breadth} ${breadth === 1 ? 'familie' : 'familii'} (fereastră ${windowDays}z): ${changes.slice(0, 3).map((c) => c.label.toLowerCase()).join('; ')}`
     : 'nicio schimbare importantă detectată peste propria normă';
 
   return {
-    changes: changes.sort((a, b) => b.weight * b.magnitude - a.weight * a.magnitude),
+    changes,
+    conditions,
     families,
     familyCount: breadth,
     count: changes.length,

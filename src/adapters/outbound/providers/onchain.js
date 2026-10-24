@@ -7,7 +7,7 @@
  */
 import { isNum, toNum } from '../../../domain/shared/math.js';
 import { CHAINS, normAddress } from '../../../domain/shared/symbols.js';
-import { flag01, disabled, mapResult, notConfigured } from './common.js';
+import { flag01, disabled, mapResult, notConfigured, unsupported } from './common.js';
 
 const opt = (provider, cfg, endpoint, extra = {}) => ({ provider, endpoint, timeoutMs: cfg.timeoutMs, retries: cfg.retries, minIntervalMs: cfg.minIntervalMs, maxCalls: cfg.maxCalls, breakerThreshold: 4, ...extra });
 
@@ -25,7 +25,7 @@ export function createDexScreener({ http, cfg }) {
   const tokens = async (chain, addresses) => {
     if (!cfg.enabled) return disabled('dexscreener', '/tokens/v1');
     const dsChain = CHAINS[chain]?.dexscreener;
-    if (!dsChain) return notConfigured('dexscreener', '/tokens/v1', `lanț nesuportat: ${chain}`);
+    if (!dsChain) return unsupported('dexscreener', '/tokens/v1', `lanț nesuportat: ${chain}`);
     const out = {};
     let last = null;
     for (let i = 0; i < addresses.length; i += 30) {
@@ -53,7 +53,7 @@ export function createDexScreener({ http, cfg }) {
         out[addr] = agg;
       }
     }
-    if (!last) return notConfigured('dexscreener', '/tokens/v1', 'fără adrese');
+    if (!last) return unsupported('dexscreener', '/tokens/v1', 'fără adrese');
     return { ...last, ok: Object.keys(out).length > 0 || last.ok, data: out };
   };
   return { id: 'dexscreener', boosts, tokens };
@@ -77,7 +77,7 @@ export function createGeckoTerminal({ http, cfg }) {
   const tokenInfo = async (chain, address) => {
     if (!cfg.enabled) return disabled('geckoterminal', '/tokens/{address}/info');
     const net = CHAINS[chain]?.geckoterminal;
-    if (!net) return notConfigured('geckoterminal', '/tokens/{address}/info', `lanț nesuportat: ${chain}`);
+    if (!net) return unsupported('geckoterminal', '/tokens/{address}/info', `lanț nesuportat: ${chain}`);
     return mapResult(
       await http.getJson(`https://api.geckoterminal.com/api/v2/networks/${net}/tokens/${address}/info`, opt('geckoterminal', cfg, '/networks/{net}/tokens/{address}/info', { headers, validate: (d) => d?.data?.attributes, retries: 1 })),
       (d) => {
@@ -108,7 +108,7 @@ export function createGoPlus({ http, cfg }) {
   const security = async (chain, addresses) => {
     if (!cfg.enabled) return disabled('goplus', '/token_security');
     const id = CHAINS[chain]?.goplus;
-    if (!id) return notConfigured('goplus', '/token_security', `lanț nesuportat: ${chain}`);
+    if (!id) return unsupported('goplus', '/token_security', `lanț nesuportat: ${chain}`);
     const out = {};
     let last = null;
     const batchSize = Math.max(1, cfg.batchSize ?? 1);
@@ -124,7 +124,7 @@ export function createGoPlus({ http, cfg }) {
         out[normAddress(chain, addr)] = id === 'solana' ? normalizeSolana(info) : normalizeEvm(info);
       }
     }
-    if (!last) return notConfigured('goplus', '/token_security', 'fără adrese');
+    if (!last) return unsupported('goplus', '/token_security', 'fără adrese');
     return { ...last, ok: Object.keys(out).length > 0 || last.ok, data: out };
   };
   return { id: 'goplus', security };
@@ -146,6 +146,25 @@ function holderStats(holders, totalSupply) {
   return { top10Pct: Math.min(100, top10Pct), top10EffectivePct: Math.min(100, effective.reduce((s, h) => s + h.pct, 0)) };
 }
 
+/**
+ * Share of the main pool's LP tokens that cannot be pulled: locked in a locker contract, or burned.
+ * GoPlus reports each LP holder's `percent` as a fraction of the LP supply. An absent list is
+ * UNKNOWN (null), never 0 % — "we could not see the LP" is not "the LP is unlocked".
+ */
+export function lpLockedPct(lpHolders) {
+  if (!Array.isArray(lpHolders) || !lpHolders.length) return null;
+  let locked = 0;
+  let seen = 0;
+  for (const h of lpHolders) {
+    const share = toNum(h?.percent);
+    if (!isNum(share)) continue;
+    seen += 1;
+    if (flag01(h.is_locked) === true || BURN.test(String(h.address ?? ''))) locked += share;
+  }
+  if (!seen) return null;
+  return Math.round(Math.min(1, Math.max(0, locked)) * 1000) / 10;
+}
+
 export function normalizeEvm(x) {
   const owner = String(x.owner_address ?? '');
   const stats = holderStats(x.holders, x.total_supply);
@@ -153,6 +172,11 @@ export function normalizeEvm(x) {
     holders: toNum(x.holder_count),
     top10Pct: stats.top10Pct,
     top10EffectivePct: stats.top10EffectivePct,
+    // Who deployed and who controls the contract: the holder classifier tags both as PROJECT, so a
+    // creator wallet holding 20 % of supply is reported as a team position rather than a "whale".
+    creatorAddress: x.creator_address ? String(x.creator_address).toLowerCase() : null,
+    ownerAddress: owner && !BURN.test(owner) ? owner.toLowerCase() : null,
+    lpLockedPct: lpLockedPct(x.lp_holders),
     security: {
       honeypot: flag01(x.is_honeypot),
       cannotSell: flag01(x.cannot_sell_all),
@@ -179,6 +203,9 @@ export function normalizeSolana(x) {
     holders: toNum(x.holder_count),
     top10Pct: stats.top10Pct,
     top10EffectivePct: stats.top10EffectivePct,
+    creatorAddress: x.creators?.[0]?.address ? String(x.creators[0].address) : null,
+    ownerAddress: null,
+    lpLockedPct: null, // Solana pools report LP burn per DEX program, not as a GoPlus LP holder list
     security: {
       honeypot: null,
       cannotSell: status(x.non_transferable),

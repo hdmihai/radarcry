@@ -74,18 +74,54 @@ export const PROVIDER_CATALOG = {
 /** Providers whose absence makes the run degraded rather than merely thinner. */
 const CORE_PROVIDERS = ['coingecko', 'mexc'];
 
+/** Below this share of successful HTTP calls, a provider that answered at all is reported PARTIAL. */
+export const PARTIAL_BELOW = 0.8;
+
+/** "RATE_LIMITED ×18 · TIMEOUT ×3" — the failure statuses of one provider, most frequent first. */
+function failureMix(statuses) {
+  return Object.entries(statuses ?? {})
+    .filter(([s]) => s !== 'OK')
+    .sort((a, b) => b[1] - a[1])
+    .map(([s, n]) => `${s} ×${n}`)
+    .join(' · ');
+}
+
+/**
+ * One health row per provider. The status is built from two views that can disagree, and the more
+ * honest one wins:
+ *  · the use case's view (`results`), which counts logical requests — one GoPlus *batch* per chain;
+ *  · the HTTP telemetry, which counts every call — one GoPlus call per *token*.
+ * In the first live run GoPlus was reported "OK · 3/4" from the first view while 21 of its 43 calls
+ * had failed, i.e. half the contracts went unscanned. A provider that answered some calls and
+ * failed many is PARTIAL, and its message says how many and why.
+ *
+ * A key-slot provider that was never called because its free key is absent is NOT_CONFIGURED with
+ * the key it needs — never an unexplained SKIPPED.
+ */
 export function buildProviderHealth(results, telemetrySummary, successRates, keyed, quota = null) {
   return Object.entries(PROVIDER_CATALOG).map(([id, info]) => {
     const r = results[id] ?? null;
     const t = telemetrySummary[id] ?? null;
     const q = quota?.providers?.[id] ?? null;
+    let status = r?.status ?? (t ? (t.failures && !t.ok ? 'HTTP_ERROR' : 'OK') : 'SKIPPED');
+    let message = r?.message ?? t?.lastMessage ?? '';
+    if (status === 'OK' && t && t.calls > 0 && t.ok > 0 && t.failures > 0 && t.ok / t.calls < PARTIAL_BELOW) {
+      status = 'PARTIAL';
+      message = `${t.ok}/${t.calls} apeluri reușite · ${failureMix(t.statuses)}${t.lastMessage ? ` · ultimul: ${t.lastMessage}` : ''}`;
+    }
+    const secret = SECRETS.find((s) => s.key === id);
+    if (status === 'SKIPPED' && secret && !keyed[id] && !(t?.calls > 0)) {
+      status = 'NOT_CONFIGURED';
+      message = `lipsește ${secret.env} — ${secret.plan}; deblochează: ${secret.unlocks}`;
+    }
     return {
       id,
       label: info.label,
       role: info.role,
       plan: info.plan,
-      status: r?.status ?? (t ? (t.failures && !t.ok ? 'HTTP_ERROR' : 'OK') : 'SKIPPED'),
-      message: r?.message ?? t?.lastMessage ?? '',
+      status,
+      message,
+      statuses: t?.statuses ?? null,
       mode: r?.meta?.mode ?? null,
       records: r?.meta?.records ?? null,
       latencyMs: t?.avgLatencyMs ?? r?.meta?.latencyMs ?? null,

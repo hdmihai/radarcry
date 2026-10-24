@@ -9,6 +9,7 @@
   "deep": {
     "limit": 60,
     "keepWatchlist": 24,
+    "shares": { "prescreen": 0.4, "legacy": 0.35 },
     "klines": {
       "d1Limit": 260,
       "h4Limit": 260

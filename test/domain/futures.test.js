@@ -225,3 +225,26 @@ test('the liquidation map is a model, says so, and places clusters on the crowde
 
   assert.equal(liquidationMap({ candles: candles(5, () => 100), oiUsd: 1, funding: 'NEUTRAL', price: 100 }), null);
 });
+
+test('a structural stop inside the noise is widened to one 4H ATR, and says so', () => {
+  // The live BIRB case: entry ~0.0508, structural stop 2.7 % lower, 4H ATR ~27 % of price.
+  const smc = { close: 0.0508, structure: 'BULLISH', lastEvent: null, orderBlocks: [], fvgs: [], sweep: null, dealingRange: null, swingLow: 0.04941, swingHigh: 0.21208, atr14: 0.0138 };
+  const setup = { score: 72, smc, entryZone: { top: 0.05144, bottom: 0.05017, kind: 'SWING_LOW' }, chasePct: 0, chasing: false, invalidation: 0.04941, reasons: [] };
+  const levels = tradeLevels(setup, { blocksLong: false });
+  assert.equal(levels.stopBasis, 'ATR_FLOOR');
+  assert.ok(levels.entry - levels.stop >= 0.0138 - 1e-9, `stop distance ${levels.entry - levels.stop} must be at least one ATR`);
+  assert.ok(levels.rr1 < 20, `R:R must describe the opportunity, not a stop inside the noise (got ${levels.rr1})`);
+  assert.match(levels.note, /1 ATR/);
+
+  // A structural stop already wider than one ATR is kept exactly where the structure put it.
+  const calm = { ...setup, smc: { ...smc, atr14: 0.0005 } };
+  const kept = tradeLevels(calm, { blocksLong: false });
+  assert.equal(kept.stopBasis, 'STRUCTURE');
+  assert.equal(kept.stop, Math.round(0.05017 * 0.985 * 1e8) / 1e8, 'the highest structural candidate: the zone floor');
+
+  // One ATR larger than the price leaves no meaningful long invalidation at all.
+  const wild = { ...setup, smc: { ...smc, atr14: 0.09 } };
+  const none = tradeLevels(wild, { blocksLong: false });
+  assert.equal(none.stop, null);
+  assert.equal(none.rr1, null);
+});

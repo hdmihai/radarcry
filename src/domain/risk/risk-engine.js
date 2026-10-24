@@ -57,7 +57,9 @@ export function riskEngine({ asset, market, changed }) {
         invalidates: 'regulile token-ului pot fi schimbate după ce intri',
         watch: 'câmpurile hidden_owner / can_take_back_ownership (GoPlus)' });
     }
-    if (sec.isMintable === true) {
+    // A mint function nobody can call is not a supply risk: with ownership renounced the function
+    // exists in the bytecode but has no caller. The legacy model applies the same rule.
+    if (sec.isMintable === true && sec.ownerRenounced !== true) {
       add({ key: 'MINTABLE', category: RISK_CATEGORY.SUPPLY, severity: SEVERITY.HIGH,
         label: 'Supply-ul poate fi emis suplimentar (mintable)',
         invalidates: 'orice calcul de supply și FDV poate fi anulat printr-un mint',

@@ -109,6 +109,7 @@ export function discoveryView(row, ctx = {}) {
       windowDays: row.changed.windowDays,
       summary: row.changed.summary,
       changes: full ? row.changed.changes : row.changed.changes.slice(0, 5),
+      conditions: row.changed.conditions ?? [],
     },
 
     /* ── the score, factor by factor ─────────────────────────────────────────────────────────── */
@@ -171,8 +172,12 @@ export function discoveryView(row, ctx = {}) {
       flows: full ? oc.flows : compactFlows(oc.flows),
       smartMoney: full ? oc.smartMoney : compactSmartMoney(oc.smartMoney),
       security: oc.security ? {
+        source: oc.security.source ?? null,
         isHoneypot: oc.security.isHoneypot ?? null,
+        cannotSellAll: oc.security.cannotSellAll ?? null,
         isMintable: oc.security.isMintable ?? null,
+        ownerRenounced: oc.security.ownerRenounced ?? null,
+        isOpenSource: oc.security.isOpenSource ?? null,
         isProxy: oc.security.isProxy ?? null,
         canTakeBackOwnership: oc.security.canTakeBackOwnership ?? null,
         hiddenOwner: oc.security.hiddenOwner ?? null,
