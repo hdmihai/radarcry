@@ -1,0 +1,9 @@
+# Keeps the GitHub Actions used by the workflows on their latest major versions.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: ci

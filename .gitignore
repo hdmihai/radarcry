@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.cri-state/
+.cri-state-demo/
+.state/
+*.log
+.DS_Store
+coverage/
+# Snapshot-ul generat local; în CI se publică direct în artefactul Pages
+data/latest.json
+data/summary.json
+
+.state-demo/
+config/local.json

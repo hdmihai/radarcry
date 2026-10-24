@@ -1,0 +1,180 @@
+[
+  {
+    "symbol": "LAB",
+    "name": "LAB",
+    "nameHints": [
+      "LAB",
+      "LAB Token",
+      "Memes Lab"
+    ],
+    "searchQuery": "LAB",
+    "coingeckoId": null,
+    "listedAt": "2025-10-15",
+    "tags": [
+      "bnb-chain",
+      "low-float",
+      "perps",
+      "ai-trading",
+      "binance-ecosystem"
+    ],
+    "outcomeNote": "TGE oct 2025; sub $0.10 la final de 2025; ~+1.500% în ~30 zile (aprilie–mai 2026), +364% pe 3 mai 2026 la $3.18; ATH ulterior ~$27.96 (iunie 2026), apoi −77%.",
+    "static": {
+      "chain": "bsc",
+      "anchorDate": "2026-04-03",
+      "outcome": {
+        "gainPct": 1500,
+        "days": 30
+      },
+      "sequence": [
+        "DECLINE",
+        "BASE",
+        "BUILDING",
+        "ACCELERATION",
+        "PRE_EXPANSION"
+      ],
+      "mcapUsd": 12000000,
+      "turnover": 0.12,
+      "volAccel": 1.0,
+      "slope30": 0.0,
+      "r2_30": 0.15,
+      "rangePos30": 0.3,
+      "compression": 0.9,
+      "athChangePct": -70,
+      "change30": 0,
+      "ageDays": 170,
+      "floatRatio": 0.08,
+      "top10Pct": 85,
+      "perpVenues": 2,
+      "alphaListed": true
+    },
+    "sources": [
+      {
+        "title": "Phemex Academy — What is LAB token (float ~7.7%, FDV/MC ~13×, +364% pe 3 mai 2026)",
+        "url": "https://phemex.com/academy/what-is-lab-token-and-why-it-surged"
+      },
+      {
+        "title": "CCN — LAB +1.500% în 30 zile, 23% din supply în circulație",
+        "url": "https://www.ccn.com/analysis/crypto/lab-token-price-retrace-1500-percent-rally-may-2026-analysis/"
+      },
+      {
+        "title": "BeInCrypto — LAB (BNB Chain) rally parabolic, ATH $27.96, unlock 282M în august",
+        "url": "https://beincrypto.com/lab-price-rally-whale-long-positions/"
+      }
+    ]
+  },
+  {
+    "symbol": "BTW",
+    "name": "Bitway",
+    "nameHints": [
+      "Bitway"
+    ],
+    "searchQuery": "Bitway",
+    "coingeckoId": null,
+    "listedAt": null,
+    "tags": [
+      "bnb-chain",
+      "low-float",
+      "extreme-concentration",
+      "perps",
+      "btcfi",
+      "binance-wallet-campaigns"
+    ],
+    "outcomeNote": "~+5.000% de la listarea Binance; ATH ~$2.75 pe 14 oct 2026; 1.5B din 10B tokeni în circulație; top 10 portofele ~99% din supply; OI $302M, funding negativ (short squeeze).",
+    "static": {
+      "chain": "bsc",
+      "anchorDate": "2026-08-20",
+      "outcome": {
+        "gainPct": 5000,
+        "days": 60
+      },
+      "sequence": [
+        "BASE",
+        "BUILDING",
+        "ACCELERATION",
+        "PRE_EXPANSION"
+      ],
+      "mcapUsd": 60000000,
+      "turnover": 0.12,
+      "volAccel": 1.05,
+      "slope30": 0.1,
+      "r2_30": 0.15,
+      "rangePos30": 0.3,
+      "compression": 0.9,
+      "athChangePct": -35,
+      "change30": 3,
+      "ageDays": 290,
+      "floatRatio": 0.15,
+      "top10Pct": 97,
+      "perpVenues": 3,
+      "alphaListed": true
+    },
+    "sources": [
+      {
+        "title": "BeInCrypto — Bitway (BTW) record ~$2.75, OI $302M, funding negativ, 1.5B/10B în circulație",
+        "url": "https://beincrypto.com/bitway-btw-record-high-short-analysis/"
+      },
+      {
+        "title": "CoinMarketCap AI — Bitway: top wallet 72.9–78%, top 10 = 99%, BNB Chain",
+        "url": "https://coinmarketcap.com/cmc-ai/bitway-btw/latest-updates/"
+      }
+    ]
+  },
+  {
+    "symbol": "AGT",
+    "name": "Alaya AI",
+    "nameHints": [
+      "Alaya AI",
+      "Alaya Governance Token",
+      "Alaya"
+    ],
+    "searchQuery": "Alaya",
+    "coingeckoId": null,
+    "listedAt": "2025-05-21",
+    "tags": [
+      "bnb-chain",
+      "ai-data",
+      "binance-alpha",
+      "perps",
+      "points-redemption"
+    ],
+    "outcomeNote": "$0.0144 (7 aug 2026) → ~$0.0616 (oct 2026), market cap ~$196M; OI futures $67.7M și volum futures 24h $549M — rally condus de derivate.",
+    "static": {
+      "chain": "bsc",
+      "anchorDate": "2026-08-07",
+      "outcome": {
+        "gainPct": 330,
+        "days": 70
+      },
+      "sequence": [
+        "DECLINE",
+        "BASE",
+        "BUILDING",
+        "ACCELERATION"
+      ],
+      "mcapUsd": 47000000,
+      "turnover": 0.12,
+      "volAccel": 1.0,
+      "slope30": 0.0,
+      "r2_30": 0.1,
+      "rangePos30": 0.3,
+      "compression": 0.7,
+      "athChangePct": -70,
+      "change30": -2,
+      "ageDays": 440,
+      "floatRatio": 0.65,
+      "top10Pct": 80,
+      "perpVenues": 2,
+      "alphaListed": true
+    },
+    "sources": [
+      {
+        "title": "CoinGlass — AGT: market cap $195.5M, circulant 3.26B/5B, OI $67.7M, volum futures $549M",
+        "url": "https://www.coinglass.com/currencies/AGT"
+      },
+      {
+        "title": "CoinMarketCap AI — Alaya AI: KuCoin 21 mai 2025, Binance Alpha airdrop aug 2026, $0.01439 pe 7 aug 2026",
+        "url": "https://coinmarketcap.com/cmc-ai/alaya-ai/latest-updates/"
+      }
+    ]
+  }
+]

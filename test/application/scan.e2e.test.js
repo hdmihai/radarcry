@@ -1,0 +1,160 @@
+/**
+ * End-to-end: the real application core + fixture adapters, replayed over several days.
+ * Verifies the published contract, the research-only invariants, persistence and point-in-time
+ * behaviour of references, catalysts, watchlist and the forward journal.
+ */
+import { after, before, test } from 'node:test';
+import assert from 'node:assert/strict';
+import { readFile, readdir } from 'node:fs/promises';
+import { join } from 'node:path';
+import { validateSchema } from '../../src/adapters/outbound/publishing/schema-validator.js';
+import { ROOT, runFixtureDays } from '../fixture-run.js';
+
+let run;
+let last;
+before(async () => {
+  run = await runFixtureDays({ days: 9 });
+  last = run.snapshots.at(-1);
+});
+after(async () => run?.cleanup());
+
+test('every published snapshot satisfies the JSON schema contract', async () => {
+  const schema = JSON.parse(await readFile(join(ROOT, 'schema/latest.schema.json'), 'utf8'));
+  for (const s of run.snapshots) assert.deepEqual(validateSchema(s, schema), []);
+  const onDisk = JSON.parse(await readFile(join(run.outDir, 'latest.json'), 'utf8'));
+  assert.equal(onDisk.meta.runId, last.meta.runId, 'latest.json is the last run');
+  const summary = JSON.parse(await readFile(join(run.outDir, 'summary.json'), 'utf8'));
+  assert.ok(summary.signals || summary.stats || summary.runId, 'summary.json published next to latest.json');
+});
+
+test('research-only invariants are part of the contract', () => {
+  assert.equal(last.meta.scope.researchOnly, true);
+  assert.equal(last.meta.scope.tradeExecution, false);
+  assert.equal(last.meta.scope.automatedTrading, false);
+  assert.equal(last.meta.policy.unknownIsBearish, false);
+  assert.match(last.meta.disclaimer, /nu sfat financiar/i);
+});
+
+test('universe funnel: top 1000 from both aggregators, exclusions documented, deep research bounded', () => {
+  const u = last.health.universe;
+  assert.equal(u.coingecko, 1000);
+  assert.equal(u.coinmarketcap, 1000);
+  assert.ok(u.eligible > 500 && u.eligible <= u.merged);
+  assert.ok(Object.keys(last.health.exclusions).includes('STABLECOIN'));
+  const deep = last.candidates.filter((c) => c.depth === 'deep');
+  assert.equal(deep.length, run.config.deep.limit);
+  assert.ok(last.candidates.length <= run.config.deep.limit + run.config.snapshot.maxLight);
+  // Candle payloads are the heaviest part of the contract, so they ship for the first
+  // `snapshot.charts` deep rows; the rest keep their sparkline. Within that budget, a token with a
+  // spot market must always carry both series.
+  const charted = deep.slice(0, run.config.snapshot.charts);
+  for (const c of charted.filter((x) => x.venues.mexcSpot || x.venues.binanceSpot)) {
+    assert.ok(c.chart?.h4?.length && c.chart?.d1?.length, `${c.symbol} are piață spot dar nu are lumânări`);
+  }
+  assert.ok(deep.filter((c) => c.chart).length >= Math.min(deep.length, run.config.snapshot.charts) * 0.8, 'majoritatea candidaților din buget au lumânări');
+  assert.ok(deep.filter((c) => c.chart).length <= run.config.snapshot.charts, 'bugetul de lumânări este respectat');
+});
+
+test('references are measured strictly before their anchor (no look-ahead)', () => {
+  assert.deepEqual(last.references.map((r) => r.symbol).sort(), ['AGT', 'BTW', 'LAB']);
+  for (const r of last.references) {
+    assert.equal(r.status, 'COMPUTED');
+    const anchor = Date.parse(`${r.window.to}T23:59:59Z`) / 1000;
+    for (const [t] of r.window.closes) assert.ok(t <= anchor, `${r.symbol} pre-window point after anchor`);
+    for (const [t] of r.window.after) assert.ok(t > anchor - 86_400, `${r.symbol} outcome window starts at anchor`);
+  }
+});
+
+test('signals carry plans only when actionable; every plan is geometrically valid', () => {
+  for (const c of last.candidates) {
+    const p = c.signal.plan;
+    if (!['BUY_SETUP', 'ACCUMULATE'].includes(c.signal.type)) assert.equal(p, null, `${c.symbol} ${c.signal.type} has a plan`);
+    if (p) {
+      assert.ok(p.invalidation < p.entryLow && p.entryLow <= p.entryHigh, `${c.symbol} plan order`);
+      assert.ok(p.targets.every((t) => t.price > p.entryHigh), `${c.symbol} targets above entry`);
+    }
+    if (c.risk.critical) assert.equal(c.signal.type, 'AVOID');
+  }
+});
+
+test('change-based catalysts, watchlist transitions and the forward journal accumulate over runs', () => {
+  assert.equal(run.snapshots[0].catalysts.filter((e) => e.source !== 'manual').length, 0, 'first run = silent baseline');
+  assert.ok(last.catalysts.length > 0);
+  assert.ok(last.watchlist.transitions.length > 0);
+  // The similarity engine keeps its own forward journal under `legacy`; the v4 cohort is separate.
+  const recent = last.trackRecord.legacy.recent;
+  assert.ok(recent.length > 0);
+  for (const e of recent) assert.ok(['BUY_SETUP', 'ACCUMULATE'].includes(e.type));
+  const acc = last.trackRecord.legacy.summary.byType.ACCUMULATE;
+  for (const h of acc.horizons) if (h.n) assert.ok(h.ciLow <= h.hitRate && h.hitRate <= h.ciHigh, 'intervalul Wilson încadrează rata');
+  // The v4 cohort reports honestly that it has too few samples rather than quoting a win rate.
+  const cohort = last.trackRecord.cohort;
+  assert.match(cohort.cohort, /Stage 2/);
+  for (const h of Object.values(cohort.horizons)) {
+    if (h.n === 0) assert.equal(h.winRate, null, 'o scadență fără intrări nu raportează o rată');
+    if (h.n > 0 && h.n < 20) assert.equal(h.sufficient, false, 'sub 20 de intrări, rezultatul este marcat ca insuficient');
+    if (h.ci95) assert.ok(h.ci95.low <= h.winRate && h.winRate <= h.ci95.high, 'intervalul Wilson încadrează rata');
+  }
+});
+
+test('state persists in compact, bounded files', async () => {
+  const files = (await readdir(run.stateDir)).sort();
+  const expected = [
+    'catalysts.json', 'cohort.json', 'discovery.json', 'flows.json', 'history.json', 'journal.json',
+    'last-seen-v4.json', 'last-seen.json', 'meta.json', 'quota-ledger.json', 'references.json',
+    'registry.json', 'telemetry.json',
+  ];
+  for (const f of expected) assert.ok(files.includes(f), `lipsește ${f}`);
+  const history = JSON.parse(await readFile(join(run.stateDir, 'history.json'), 'utf8'));
+  assert.ok(Array.isArray(history.fields) && history.fields[0] === 't', 'codec columnar pentru istoric');
+
+  // The discovery history is the point-in-time memory the change engine compares against: it must be
+  // columnar too, carry its own field list, and hold more than one point after several runs.
+  const discovery = JSON.parse(await readFile(join(run.stateDir, 'discovery.json'), 'utf8'));
+  assert.ok(Array.isArray(discovery.metrics) && discovery.metrics.includes('volume24h'), 'metricile urmărite călătoresc cu fișierul');
+  const series = Object.values(discovery.assets);
+  assert.ok(series.length > 0, 'istoricul de descoperire are active');
+  assert.ok(series.some((a) => (a.p ?? []).length >= 3), 'un activ are cel puțin trei puncte după mai multe rulări');
+
+  // Holder snapshots are what make accumulation measurable; they must persist between runs.
+  const flows = JSON.parse(await readFile(join(run.stateDir, 'flows.json'), 'utf8'));
+  assert.ok(Object.keys(flows).length > 0, 'instantaneele de deținători persistă');
+
+  const meta = JSON.parse(await readFile(join(run.stateDir, 'meta.json'), 'utf8'));
+  assert.equal(meta.runs, 9);
+  assert.equal(meta.stateVersion, 3);
+});
+
+test('determinism: the same day on a fresh state reproduces the same ranking', async () => {
+  const a = await runFixtureDays({ days: 1 });
+  const b = await runFixtureDays({ days: 1 });
+  try {
+    const key = (s) => s.candidates.slice(0, 40).map((c) => `${c.key}:${c.score.cri}:${c.signal.type}`).join('|');
+    assert.equal(key(a.snapshots[0]), key(b.snapshots[0]));
+  } finally {
+    await a.cleanup();
+    await b.cleanup();
+  }
+});
+
+test('Arkham wallet intelligence flows through the pipeline (DEMO simulates a configured key)', async () => {
+  const ark = last.health.providers.find((p) => p.id === 'arkham');
+  assert.equal(ark.status, 'OK');
+  const withFlows = last.candidates.filter((c) => c.onchain?.walletFlows);
+  assert.ok(withFlows.length > 0 && withFlows.length <= run.config.deep.arkhamLimit, `${withFlows.length} tokens with flows`);
+  for (const c of withFlows) {
+    assert.equal(c.depth, 'deep');
+    assert.ok(c.onchain.sources.includes('arkham'));
+    const fact = c.domains.find((d) => d.id === 'onchain').facts.find((f) => f.key === 'walletFlow');
+    assert.ok(Number.isFinite(fact.score), `${c.symbol} wallet-flow fact scored`);
+  }
+  assert.ok(withFlows.some((c) => c.onchain.walletFlows.persistence?.total >= 2), 'persistence is built from the own history across runs');
+  const history = JSON.parse(await readFile(join(run.stateDir, 'history.json'), 'utf8'));
+  assert.ok(history.fields.includes('walletNet'));
+});
+
+test('market-cap growth: 24h from CoinGecko, 7d from the own history once a week of runs exists', () => {
+  assert.ok(last.candidates.some((c) => Number.isFinite(c.market.mcapChange?.h24)));
+  assert.ok(last.candidates.some((c) => Number.isFinite(c.market.mcapChange?.d7)));
+  assert.ok(last.candidates.some((c) => Number.isFinite(c.market.rankChange7d)));
+});

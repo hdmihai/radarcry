@@ -1,0 +1,14 @@
+{
+  "_info": "Caiet de cercetare manual: evenimente pe care API-urile gratuite nu le acoperă (deblocări de tokeni, mainnet, TGE, listări anunțate). type: UNLOCK | MANUAL | NEW_PERP | NEW_UPBIT_KRW | BINANCE_CEX_LISTING ...; polarity: POSITIVE | NEGATIVE | NEUTRAL; date: data evenimentului (ISO). Evenimentele din următoarele 30 de zile și din ultimele 14 zile intră în domeniul Catalizatori.",
+  "events": [
+    {
+      "symbol": "LAB",
+      "type": "UNLOCK",
+      "title": "Deblocare programată de 282M LAB (exemplu documentat — actualizează data exactă)",
+      "date": "2026-08-15",
+      "polarity": "NEGATIVE",
+      "confidence": 0.7,
+      "source": "https://beincrypto.com/lab-price-rally-whale-long-positions/"
+    }
+  ]
+}

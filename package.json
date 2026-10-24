@@ -1,0 +1,51 @@
+{
+  "name": "cri-radar",
+  "version": "4.0.0",
+  "description": "CRI Radar — Crypto Research Intelligence: scanează top 1000 CoinMarketCap + CoinGecko și răspunde la întrebarea „arată-mi proiectele mici unde se schimbă simultan mai multe lucruri importante, înainte ca mișcarea să devină evidentă, și spune-mi ce riscuri pot invalida această ipoteză”. Node.js, arhitectură hexagonală, zero dependențe, doar API-uri publice sau cu cont gratuit, GitHub Actions + GitHub Pages.",
+  "type": "module",
+  "license": "MIT",
+  "private": true,
+  "engines": {
+    "node": ">=22.12"
+  },
+  "bin": {
+    "cri": "./src/main.js"
+  },
+  "scripts": {
+    "scan": "node src/main.js scan",
+    "scan:demo": "node src/main.js scan --fixtures --state .cri-state-demo --out data",
+    "pulse": "node src/main.js pulse",
+    "probe": "node src/main.js probe",
+    "labels": "node --max-old-space-size=3072 scripts/update-labels.js",
+    "build": "node scripts/build-site.js",
+    "serve": "node src/main.js serve --dir dist --port 8080",
+    "demo": "npm run scan:demo && npm run build && npm run serve",
+    "validate": "node scripts/validate-snapshot.js data/latest.json",
+    "summary": "node scripts/run-summary.js data/latest.json",
+    "check": "node scripts/check-syntax.js",
+    "test": "node --test --test-reporter=spec \"test/**/*.test.js\"",
+    "ci": "npm run check && npm test"
+  },
+  "keywords": [
+    "crypto",
+    "research",
+    "scanner",
+    "web3",
+    "pre-hype",
+    "small-cap",
+    "on-chain",
+    "holder-analysis",
+    "smart-money",
+    "futures",
+    "funding",
+    "open-interest",
+    "coingecko",
+    "coinmarketcap",
+    "coinalyze",
+    "nodereal",
+    "goplus",
+    "hexagonal-architecture",
+    "github-pages",
+    "zero-dependencies"
+  ]
+}

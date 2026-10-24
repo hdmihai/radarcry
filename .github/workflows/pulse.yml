@@ -1,0 +1,110 @@
+# CRI Radar — the 15-minute pulse.
+#
+# A full scan reads two aggregator universes, candles, holder lists, contract security, development
+# and attention. Running that every 15 minutes would exhaust every free plan within a day. The facts
+# that actually move inside 15 minutes are a small, cheap subset — price, 24-hour change, funding and
+# open interest — and all of them come from keyless exchange endpoints plus one Coinalyze batch.
+#
+# So this workflow refreshes only those, recomputes only what depends on them (the Futures Radar
+# positioning block and its grade, the squeeze watch), and republishes. Everything derived from the
+# full scan keeps that scan's timestamp, so the dashboard shows plainly which numbers are minutes old
+# and which are hours old.
+#
+# Cost per pulse: about eight keyless calls plus at most three Coinalyze batches. Nothing with a
+# monthly quota is touched, so the pulse can never be the reason a free plan runs out.
+name: Pulse
+
+on:
+  schedule:
+    # Four times an hour, off the quarter marks for the same queueing reason as the full scan.
+    # GitHub runs scheduled workflows on a best-effort basis: a skipped pulse is harmless, because
+    # the next one republishes the same facts and the dashboard always states its own age.
+    - cron: '7,22,37,52 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  # Shared with the full scan: the two must never publish on top of each other.
+  group: cri-publish
+  cancel-in-progress: true # a queued pulse is stale by definition — drop it and run the next one
+
+jobs:
+  pulse:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+
+      - name: Restore the published snapshot from the cri-state branch
+        id: restore
+        run: |
+          mkdir -p .state data
+          if git fetch --no-tags --depth=1 origin cri-state 2>/dev/null; then
+            git archive --format=tar FETCH_HEAD | tar -x -C .state
+          fi
+          if [ -f .state/snapshot/latest.json ]; then
+            cp .state/snapshot/latest.json data/latest.json
+            echo "have_snapshot=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::Nu există încă un snapshot publicat. Pulsul se oprește; rulează întâi „Scan & deploy”."
+            echo "have_snapshot=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Pulse (price, funding, open interest)
+        if: steps.restore.outputs.have_snapshot == 'true'
+        env:
+          COINALYZE_API_KEY: ${{ secrets.COINALYZE_API_KEY }}
+        run: node src/main.js pulse --out data
+
+      - name: Validate the published contract
+        if: steps.restore.outputs.have_snapshot == 'true'
+        run: node scripts/validate-snapshot.js data/latest.json
+
+      - name: Store the refreshed snapshot back on the state branch
+        if: steps.restore.outputs.have_snapshot == 'true'
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p .state/snapshot
+          cp data/latest.json .state/snapshot/latest.json
+          cd .state
+          rm -rf .git
+          git init -q -b cri-state
+          git add -A
+          git -c user.name="cri-radar[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -q -m "pulse: run ${GITHUB_RUN_ID} ($(date -u +%Y-%m-%dT%H:%MZ))"
+          git push -q --force "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:refs/heads/cri-state
+
+      - name: Build static site
+        if: steps.restore.outputs.have_snapshot == 'true'
+        run: node scripts/build-site.js
+
+      - uses: actions/configure-pages@v6
+        if: steps.restore.outputs.have_snapshot == 'true'
+
+      - uses: actions/upload-pages-artifact@v5
+        if: steps.restore.outputs.have_snapshot == 'true'
+        with:
+          path: dist
+
+  deploy:
+    needs: pulse
+    if: needs.pulse.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5
+        continue-on-error: true # a pulse that cannot deploy must not mark the schedule as broken

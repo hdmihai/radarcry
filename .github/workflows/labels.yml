@@ -1,0 +1,55 @@
+# CRI Radar — refresh the bundled on-chain label dataset.
+#
+# Holder classification is what turns a top-holder list into a list of actors, and it must work on
+# every run, including when the network is unavailable at scan time. So the eth-labels dataset (MIT)
+# is compacted into config/labels/evm-labels.json and committed to the repository: the scan reads a
+# local file, with zero network cost and zero rate limit.
+#
+# This workflow re-builds that file monthly and opens a pull request when it changed, so the dataset
+# refresh is reviewed like any other change rather than landing silently on main.
+name: Actualizare etichete on-chain
+
+on:
+  schedule:
+    - cron: '23 4 1 * *' # the first of each month, UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  labels:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+
+      - name: Rebuild the label index from eth-labels (MIT)
+        run: node --max-old-space-size=3072 scripts/update-labels.js | tee labels.log
+
+      - name: Verify the rebuilt index still classifies correctly
+        run: npm run ci
+
+      - name: Open a pull request when the dataset changed
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if git diff --quiet -- config/labels/; then
+            echo "Setul de etichete este neschimbat."
+            exit 0
+          fi
+          BRANCH="labels/$(date -u +%Y-%m)"
+          git config user.name "cri-radar[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+          git add config/labels/
+          git commit -q -m "etichete: reconstruire din eth-labels ($(date -u +%Y-%m-%d))"
+          git push -q --force origin "$BRANCH"
+          gh pr create --fill --head "$BRANCH" --title "Etichete on-chain: reconstruire $(date -u +%Y-%m)" \
+            --body "$(printf 'Reconstruire automată a setului de etichete din [eth-labels](https://github.com/dawsbot/eth-labels) (MIT).\n\n```\n%s\n```\n' "$(cat labels.log)")" || true

@@ -1,0 +1,74 @@
+# CRI Radar — weekly verification that every free source still answers.
+#
+# The project's premise is "public or free-account APIs only, no subscription of any kind". A premise
+# has to be checkable, so this workflow makes one small call per provider and publishes the result.
+# It is also the fastest way to learn that a provider started geo-blocking GitHub's runners, which
+# otherwise shows up only as a quietly thinner scan.
+#
+# The probe writes no state and publishes no snapshot.
+name: Probe surse
+
+on:
+  schedule:
+    - cron: '41 6 * * 1' # Monday mornings, UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+
+      - name: Probe every free source
+        id: probe
+        continue-on-error: true # a broken provider is the finding, not a failed workflow
+        env:
+          COINGECKO_API_KEY: ${{ secrets.COINGECKO_API_KEY }}
+          COINGECKO_DEMO_API_KEY: ${{ secrets.COINGECKO_DEMO_API_KEY }}
+          CMC_API_KEY: ${{ secrets.CMC_API_KEY }}
+          COINALYZE_API_KEY: ${{ secrets.COINALYZE_API_KEY }}
+          NODEREAL_API_KEY: ${{ secrets.NODEREAL_API_KEY }}
+          CRYPTOQUANT_API_KEY: ${{ secrets.CRYPTOQUANT_API_KEY }}
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ARKHAM_API_KEY: ${{ secrets.ARKHAM_API_KEY }}
+        run: |
+          node src/main.js probe --json > probe.json || true
+          node src/main.js probe | tee probe.txt
+          {
+            echo '### Verificarea surselor gratuite'
+            echo ''
+            echo '```'
+            cat probe.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: probe-${{ github.run_id }}
+          path: |
+            probe.json
+            probe.txt
+          retention-days: 30
+
+      - name: Fail only when a source that needs no key stopped answering
+        run: |
+          node -e '
+            const fs = require("fs");
+            if (!fs.existsSync("probe.json")) { console.log("fără raport JSON"); process.exit(0); }
+            const r = JSON.parse(fs.readFileSync("probe.json", "utf8"));
+            // A missing optional key is expected. A keyless public endpoint that stopped answering is not.
+            const broken = r.rows.filter((x) => !x.ok && !x.needsKey && !["NOT_CONFIGURED", "SKIPPED"].includes(x.status));
+            if (!broken.length) { console.log(`${r.summary.working}/${r.summary.total} surse funcționale`); process.exit(0); }
+            for (const b of broken) console.log(`::error::${b.label}: ${b.status} ${b.message}`);
+            process.exit(1);
+          '

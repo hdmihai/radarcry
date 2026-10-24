@@ -1,0 +1,601 @@
+/**
+ * USE-CASE: RunResearchScan — the CRI pipeline end to end.
+ *
+ *  providers ─┬─ universe (CoinGecko + CoinMarketCap top N, CoinPaprika as a safety net)
+ *             ├─ venues (MEXC spot/futures, Binance public mirror, Gate, Bitget, OKX, Hyperliquid,
+ *             │          Upbit, Bithumb, Binance Alpha)
+ *             ├─ context (global, trending, categories, Fear & Greed, DefiLlama, DEX attention)
+ *             └─ references (LAB/BTW/AGT pre-pump windows, refreshed weekly)
+ *  → merge + screen (small-cap filter: 1M–500M market cap, ≥ 500k$/day volume)
+ *  → catalysts (listing-registry diff + change detection + manual notebook)
+ *  → light research on every eligible asset (legacy CRI + LAB/BTW/AGT similarity)
+ *  → shortlist → deep research (candles, DEX, security, HOLDER LISTS, entities, dev, attention)
+ *  → DISCOVERY: baseline → what changed → pre-expansion → risk → stage → thesis
+ *  → FUTURES RADAR: 1D trend + 4H structure + positioning + liquidity + volume → grade
+ *  → alerts, track record, parity benchmark, quota report
+ *  → snapshot (the only contract with the dashboard) → publish → persist state
+ *
+ * Depends only on ports (see ../ports/index.js); all I/O is injected.
+ */
+import { isNum, round, sig } from '../../domain/shared/math.js';
+import { toMs } from '../../domain/shared/time.js';
+import { mergeUniverse, screenUniverse } from '../../domain/asset/universe.js';
+import { attachVenues } from '../../domain/asset/venues.js';
+import { buildRegistry, detectChangeEvents, diffRegistry, manualEvents } from '../../domain/catalysts/catalysts.js';
+import { listingFeatures } from '../../domain/features/listing.js';
+import { marketRegime, narrativeBoard, universeBreadth } from '../../domain/market/regime.js';
+import { altseasonIndex } from '../../domain/market/altseason.js';
+import { narrativeLandscape } from '../../domain/narrative/narrative.js';
+import { watchlistChanges } from '../../domain/lifecycle/watchlist.js';
+import { updateJournal } from '../../domain/signals/journal.js';
+import { coverageReport } from '../../domain/quality/data-quality.js';
+import { rankCandidates } from '../../domain/discovery/classify.js';
+import { buildAlerts, lastSeenRecord } from '../../domain/alerts/alerts.js';
+import { familyPerformance, openEntry, qualifiesForCohort, scoreEntries, trackRecord } from '../../domain/backtest/journal.js';
+import { parity } from '../../domain/benchmark/parity.js';
+import { platformLinks } from '../../domain/platforms/registry.js';
+import { quotaPlan } from '../../domain/budget/quota.js';
+import { ensureReferences, referencesView } from './references.js';
+import { researchAsset, toCandidateView } from './research.js';
+import { collectDeepData } from './deep-research.js';
+import { discoverAsset, labelIndexFrom } from './discovery.js';
+import { futuresView, pickWatchlist, runFuturesRadar } from './futures-radar.js';
+import { appendCatalysts, appendDiscoveryHistory, appendFlows, appendHistory, appendTelemetry, discoveryPoint, historyPoint, providerSuccessRates } from './state-update.js';
+import { buildProviderHealth, chartPayload, methodology, overallHealth, quotaView, SCHEMA_VERSION } from './snapshot.js';
+import { discoveryView } from './discovery-view.js';
+
+export class UniverseUnavailableError extends Error {}
+
+const DEFAULT_PROVIDER = { ok: false, status: 'SKIPPED', data: null, message: 'neconfigurat', meta: { provider: 'n/a', endpoint: '', fetchedAt: null, latencyMs: 0, httpStatus: null } };
+const safe = async (fn) => {
+  try { return (await fn()) ?? DEFAULT_PROVIDER; } catch (err) { return { ...DEFAULT_PROVIDER, status: 'NETWORK_ERROR', message: String(err?.message ?? err) }; }
+};
+
+/**
+ * @param {{clock:any, logger:any, telemetry:any, providers:any, stateRepo:any, publisher:any,
+ *          referencesConfig:any[], manualCatalysts:any[], labels:any, keys:any, keyed:any,
+ *          quotaGate:any, mode:'live'|'fixture'}} deps
+ * @param {any} config
+ */
+export async function runScan(deps, config) {
+  const { clock, logger, telemetry, providers: P, stateRepo, publisher } = deps;
+  const startedMs = clock.now();
+  const nowMs = startedMs;
+  const t0 = globalThis.performance?.now?.() ?? Date.now(); // wall-clock duration (domain time may be fixed in replays)
+  const deadline = startedMs + config.runtime.maxMinutes * 60_000;
+  const timeLeft = () => deadline - clock.now();
+  const runId = new Date(nowMs).toISOString().replace(/[-:.]/g, '').slice(0, 15);
+  logger.info(`CRI scan ${runId} — mod ${deps.mode}, top ${config.universe.topN}, deep ${config.deep.limit}`);
+
+  const state = await stateRepo.load();
+  const topN = config.universe.topN;
+  const labelIndex = labelIndexFrom(deps.labels);
+  if (labelIndex.size) logger.info(`etichete on-chain: ${labelIndex.size.toLocaleString('ro-RO')} adrese (${labelIndex.license ?? 'MIT'}, ${labelIndex.source ?? 'eth-labels'})`);
+  else logger.warn('setul de etichete EVM lipsește — clasificarea deținătorilor va folosi doar detecția structurală (rulează "npm run labels")');
+
+  // 1) Universe + venues + context + references, concurrently (each provider paced by its adapter).
+  const [universe, venues, context, refs] = await Promise.all([
+    (async () => {
+      const [cg, cmc, cp, platforms] = await Promise.all([
+        safe(() => P.coingecko.listTop(topN)),
+        safe(() => P.coinmarketcap.listTop(topN)),
+        safe(() => P.coinpaprika.listTop(topN)),
+        safe(() => P.coingecko.platforms()),
+      ]);
+      return { cg, cmc, cp, platforms };
+    })(),
+    (async () => {
+      const [mexcSpot, binanceSpot, mexcPerps, gate, bitget, okx, hyperliquid, upbit, bithumb, alpha] = await Promise.all([
+        safe(() => P.mexc.spotTickers()),
+        safe(() => P.binanceSpot.spotTickers()),
+        safe(() => P.mexc.perps()),
+        safe(() => P.gate.perps()),
+        safe(() => P.bitget.perps()),
+        safe(() => P.okx.perps()),
+        safe(() => P.hyperliquid.perps()),
+        safe(() => P.upbit.markets()),
+        safe(() => P.bithumb.markets()),
+        safe(() => P.binanceAlpha.markets()),
+      ]);
+      return { mexcSpot, binanceSpot, mexcPerps, gate, bitget, okx, hyperliquid, upbit, bithumb, alpha };
+    })(),
+    (async () => {
+      const [global, trending, categories, fearGreed, boosts, gtTrending, llamaProtocols, llamaFees] = await Promise.all([
+        safe(() => P.coingecko.global()),
+        safe(() => P.coingecko.trending()),
+        safe(() => P.coingecko.categories()),
+        safe(() => P.sentiment.fearGreed(90)),
+        safe(() => P.dexscreener.boosts()),
+        safe(() => P.geckoterminal.trendingPools()),
+        safe(() => P.defillama.protocols()),
+        safe(() => P.defillama.fees()),
+      ]);
+      return { global, trending, categories, fearGreed, boosts, gtTrending, llamaProtocols, llamaFees };
+    })(),
+    ensureReferences(state.references, deps.referencesConfig, P.coingecko, nowMs, config.similarity, logger).catch((err) => {
+      logger.warn(`referințe: ${err.message}`);
+      return { items: state.references?.items ?? [], fetchedAt: state.references?.fetchedAt ?? null, configHash: null, reused: true };
+    }),
+  ]);
+
+  // 2) Merge + screen.
+  const merged = mergeUniverse({
+    coingecko: universe.cg.ok ? universe.cg.data : null,
+    coinmarketcap: universe.cmc.ok ? universe.cmc.data : null,
+    coinpaprika: universe.cp.ok ? universe.cp.data : null,
+    cgPlatforms: universe.platforms.ok ? universe.platforms.data : null,
+    nowMs,
+  });
+  if (!merged.length) throw new UniverseUnavailableError('Nicio sursă de univers (CoinGecko / CoinMarketCap / CoinPaprika) nu a răspuns — snapshot-ul anterior rămâne publicat.');
+  const { eligible, excluded } = screenUniverse(merged, config.universe);
+  logger.info(`univers: CG ${universe.cg.data?.length ?? 0} · CMC ${universe.cmc.data?.length ?? 0} · fuzionat ${merged.length} · eligibil ${eligible.length}`);
+
+  // 3) Venues, attention, fundamentals.
+  const perpResults = [
+    ['mexc', venues.mexcPerps], ['gate', venues.gate], ['bitget', venues.bitget],
+    ['okx', venues.okx], ['hyperliquid', venues.hyperliquid],
+  ];
+  const venueStats = attachVenues(merged, {
+    mexcSpot: venues.mexcSpot,
+    binanceSpot: venues.binanceSpot,
+    perps: perpResults.map(([venue, r]) => ({ venue, ok: r.ok, data: r.data ?? [] })),
+    upbit: venues.upbit,
+    bithumb: venues.bithumb,
+    alpha: venues.alpha,
+    cgTrending: context.trending,
+    dexBoosts: context.boosts,
+    gtTrending: context.gtTrending,
+    llamaProtocols: context.llamaProtocols,
+    llamaFees: context.llamaFees,
+  });
+
+  // 4) Catalysts: listing registry diff (whole universe) + change detection + manual notebook.
+  const okVenues = {
+    mexcSpot: venues.mexcSpot.ok,
+    binanceSpot: venues.binanceSpot.ok,
+    perpVenues: perpResults.filter(([, r]) => r.ok).map(([v]) => v),
+    upbit: venues.upbit.ok,
+    bithumb: venues.bithumb.ok,
+    alpha: venues.alpha.ok,
+    universe: universe.cg.ok && universe.cmc.ok,
+  };
+  const byKey = new Map(merged.map((a) => [a.key, a]));
+  const registryNow = buildRegistry(merged, okVenues);
+  const { events: listingEvents, next: registryNext } = diffRegistry(state.registry, registryNow, byKey, nowMs, okVenues);
+  const bySymbol = new Map();
+  for (const a of [...eligible].sort((x, y) => (y.market.marketCap ?? 0) - (x.market.marketCap ?? 0))) if (!bySymbol.has(a.symbol)) bySymbol.set(a.symbol, a);
+  const manual = manualEvents(deps.manualCatalysts, bySymbol, nowMs);
+
+  // 5) Market context: regime, locally computed altseason index, narrative landscape.
+  const breadth = universeBreadth(merged);
+  const altseason = altseasonIndex(merged, { topN: 100 });
+  const fearGreed = context.fearGreed.ok ? context.fearGreed.data : null;
+  const regime = marketRegime({ global: context.global.data, fearGreed, altseason, breadth });
+  const landscape = narrativeLandscape({ assets: merged, categories: context.categories.ok ? context.categories.data : null, nowMs });
+  const marketCtx = { regime, altseason, fearGreed, breadth, landscape };
+
+  // 6) Light research on every eligible asset (legacy CRI + similarity to LAB/BTW/AGT).
+  const references = refs.items ?? [];
+  const recentLogged = (state.catalysts ?? []).filter((e) => nowMs - toMs(e.observedAt) <= 14 * 86_400_000);
+  const eventsByKey = new Map();
+  const pushEvent = (e) => { const list = eventsByKey.get(e.assetKey) ?? []; if (!list.some((x) => x.id === e.id)) list.push(e); eventsByKey.set(e.assetKey, list); };
+  [...recentLogged, ...listingEvents, ...manual].forEach(pushEvent);
+
+  const platformsKnown = universe.platforms.ok;
+  const light = [];
+  const newEvents = [...listingEvents, ...manual];
+  for (const a of eligible) {
+    const points = state.history?.[a.key]?.points ?? [];
+    a.lf = listingFeatures(a, points, nowMs, { platformsKnown });
+    a.catalysts = (eventsByKey.get(a.key) ?? []).map((e) => ({ type: e.type, label: e.title, detail: e.detail ?? null, fresh: nowMs - toMs(e.observedAt) <= 7 * 86_400_000 }));
+    for (const e of detectChangeEvents(a, points, nowMs)) { pushEvent(e); newEvents.push(e); }
+    light.push(researchAsset(a, { events: eventsByKey.get(a.key) ?? [], references, history: points, regime: regime.label, nowMs, config }));
+  }
+  light.sort((x, y) => (y.cri ?? -1) - (x.cri ?? -1));
+
+  // 7) Shortlist = best light CRI ∪ strongest structural (DNA) LAB/BTW/AGT matches not yet expanding
+  //    ∪ continuity (open signals, previous setups, the reference tokens themselves).
+  const openKeys = new Set((state.journal?.entries ?? []).filter((e) => e.status === 'OPEN').map((e) => e.key));
+  const prevSetups = new Set(Object.entries(state.lastSeen ?? {}).filter(([, v]) => ['BUY_SETUP', 'ACCUMULATE'].includes(v.signal) || v.earlyResearchCandidate).map(([k]) => k));
+  const refSymbols = new Set(references.map((r) => r.symbol));
+  const limit = config.deep.limit;
+  const shortKeys = new Set(light.slice(0, Math.ceil(limit * 0.6)).map((r) => r.asset.key));
+  const dnaOf = (r) => Math.max(0, ...r.analogs.all.map((x) => x.dnaSim ?? 0));
+  for (const r of [...light].filter((x) => !['EXPANSION', 'POST_EXPANSION'].includes(x.stageInfo.stage) && x.hype.state !== 'HYPED').sort((a, b) => dnaOf(b) - dnaOf(a))) {
+    if (shortKeys.size >= limit) break;
+    shortKeys.add(r.asset.key);
+  }
+  for (const r of light) {
+    if (shortKeys.size >= limit + config.deep.keepWatchlist) break;
+    if (openKeys.has(r.asset.key) || prevSetups.has(r.asset.key) || refSymbols.has(r.asset.symbol)) shortKeys.add(r.asset.key);
+  }
+  const shortlist = light.filter((r) => shortKeys.has(r.asset.key)).map((r) => r.asset);
+
+  // 8) Deep research.
+  logger.info(`deep research pe ${shortlist.length} candidați (timp rămas ${Math.round(timeLeft() / 1000)}s)`);
+  const { byKey: deepData, usage: deepUsage } = await collectDeepData(shortlist, P, config.deep, { timeLeft, logger });
+  const full = new Map(light.map((r) => [r.asset.key, r]));
+  for (const a of shortlist) {
+    const points = state.history?.[a.key]?.points ?? [];
+    full.set(a.key, researchAsset(a, { events: eventsByKey.get(a.key) ?? [], references, history: points, regime: regime.label, nowMs, config, deep: deepData.get(a.key) ?? {} }));
+  }
+  const researched = [...full.values()].sort((x, y) => rankKey(y) - rankKey(x));
+
+  // 9) DISCOVERY — the v4 engine, on every deep-researched asset.
+  logger.info('discovery: norme proprii, ce s-a schimbat, scor de pre-expansiune, invalidatori');
+  const unlocksBySymbol = new Map();
+  for (const e of deps.manualCatalysts ?? []) {
+    if (e.type !== 'UNLOCK' || !e.symbol) continue;
+    const list = unlocksBySymbol.get(e.symbol) ?? [];
+    list.push({ at: e.at, pctOfSupply: e.pctOfSupply ?? null, note: e.note ?? null });
+    unlocksBySymbol.set(e.symbol, list);
+  }
+  const discovery = [];
+  for (const a of shortlist) {
+    try {
+      discovery.push(discoverAsset({
+        asset: a,
+        deep: deepData.get(a.key) ?? {},
+        state: { history: state.discovery ?? {}, flows: state.flows ?? {} },
+        labelIndex,
+        market: marketCtx,
+        landscape,
+        unlocks: unlocksBySymbol.get(a.symbol) ?? [],
+        config,
+        nowMs,
+      }));
+    } catch (err) {
+      logger.warn(`discovery ${a.symbol}: ${err.message}`);
+    }
+  }
+  const ranked = rankCandidates(discovery);
+  const earlyCandidates = ranked.filter((r) => r.verdict.earlyResearchCandidate);
+  const answering = ranked.filter((r) => r.verdict.answersQuestion);
+  logger.info(`discovery: ${ranked.length} analizați · ${earlyCandidates.length} candidați timpurii · ${answering.length} răspund exact la întrebarea proiectului`);
+
+  // 10) FUTURES RADAR.
+  const watchlist = pickWatchlist({ assets: merged, radarRows: ranked, cfg: config.futures });
+  logger.info(`futures radar: ${watchlist.length} instrumente (timp rămas ${Math.round(timeLeft() / 1000)}s)`);
+  const futures = await runFuturesRadar({ watchlist, providers: P, cfg: config.futures, timeLeft, logger, nowMs });
+
+  // 11) Track record: score what is due, open what qualifies now.
+  const priceByKey = new Map(merged.filter((a) => isNum(a.market.price)).map((a) => [a.key, a.market.price]));
+  const btc = merged.find((a) => a.symbol === 'BTC');
+  const btcChangePct = { 7: btc?.market?.change?.d7 ?? null, 14: null, 30: btc?.market?.change?.d30 ?? null };
+  let cohortEntries = scoreEntries({ entries: state.cohort ?? [], priceByKey, nowMs, btcChangePct });
+  const openIds = new Set(cohortEntries.filter((e) => !e.closed).map((e) => e.key));
+  for (const r of ranked) {
+    if (!qualifiesForCohort(r.verdict, config.trackRecord?.cohort)) continue;
+    if (openIds.has(r.asset.key)) continue;
+    cohortEntries.push(openEntry({ asset: r.asset, verdict: r.verdict, changed: r.changed, risk: r.risk, nowMs }));
+    openIds.add(r.asset.key);
+  }
+  cohortEntries = cohortEntries.filter((e) => nowMs - e.openedAtMs <= (config.trackRecord?.retentionDays ?? 180) * 86_400_000);
+  const record = trackRecord(cohortEntries, { nowMs });
+
+  // 12) Alerts (transitions against the previous run).
+  const { alerts, counts: alertCounts } = buildAlerts({ rows: ranked, lastSeen: state.lastSeenV4 ?? {}, market: marketCtx, nowMs });
+
+  // 13) Legacy watchlist + journal (kept: the LAB/BTW/AGT similarity track record).
+  const nowIso = new Date(nowMs).toISOString();
+  const compactForJournal = researched.map((r) => ({ key: r.asset.key, symbol: r.asset.symbol, price: r.lf.price, signal: r.signal, cri: r.cri, analog: r.analogs.best, stage: r.stageInfo.stage }));
+  const watch = watchlistChanges(compactForJournal, state.lastSeen, nowIso);
+  const journal = updateJournal(state.journal, compactForJournal.filter((c) => full.get(c.key)?.depth === 'deep'), nowMs, { horizonsDays: [7, 14, 30], hitThresholdPct: 25, cooldownDays: 14, retentionDays: 180 }, priceByKey);
+
+  // 14) Health, quota, parity.
+  const telemetrySummary = telemetry.summary();
+  const results = {
+    coingecko: universe.cg, coinmarketcap: universe.cmc, coinpaprika: universe.cp,
+    mexc: venues.mexcSpot, mexc_futures: venues.mexcPerps, binance_spot: venues.binanceSpot,
+    gate: venues.gate, bitget: venues.bitget, okx: venues.okx, hyperliquid: venues.hyperliquid,
+    upbit: venues.upbit, bithumb: venues.bithumb, binance_alpha: venues.alpha,
+    dexscreener: context.boosts, geckoterminal: context.gtTrending, defillama: context.llamaProtocols,
+    alternative_me: context.fearGreed,
+  };
+  const CORE = new Set(['coingecko', 'coinmarketcap', 'coinpaprika', 'mexc', 'binance_spot']);
+  for (const [id, u] of Object.entries({ ...deepUsage, ...futures.usage })) {
+    if (results[id] && !CORE.has(id) && results[id].status !== 'OK' && u.ok > 0) results[id] = { ...results[id], status: 'OK', message: `${u.ok}/${u.calls} apeluri reușite` };
+    if (results[id]) continue;
+    results[id] = {
+      status: u.ok > 0 ? 'OK' : u.lastStatus ?? 'SKIPPED',
+      message: u.ok > 0 ? `${u.ok}/${u.calls} apeluri reușite` : u.lastMessage,
+      meta: { records: u.ok, units: u.units ?? null },
+    };
+  }
+  const runTelemetry = { at: nowIso, providers: Object.fromEntries(Object.entries(telemetrySummary).map(([k, v]) => [k, { calls: v.calls, ok: v.ok, units: v.units ?? 0 }])) };
+  const telemetryLog = appendTelemetry(state.telemetry, runTelemetry);
+  const keyed = deps.keyed ?? {};
+  const ledger = deps.quotaGate?.ledger ? deps.quotaGate.ledger() : (state.ledger ?? {});
+  const plan = quotaPlan(ledger, config.quotas ?? {}, nowMs, { keyed });
+  const providerHealth = buildProviderHealth(results, telemetrySummary, providerSuccessRates(telemetryLog), keyed, plan);
+  const liveStatus = Object.fromEntries(providerHealth.map((p) => [p.id, p.status === 'OK']));
+  liveStatus['eth-labels'] = labelIndex.size > 0;
+  const parityReport = parity({ keys: keyed, liveStatus });
+
+  // 15) Snapshot.
+  const deepViews = [];
+  const lightViews = [];
+  const chartBudget = config.snapshot?.charts ?? 30;
+  for (const r of researched) {
+    const deep = deepData.get(r.asset.key);
+    const points = state.history?.[r.asset.key]?.points ?? [];
+    const ctx = {
+      config,
+      events: (eventsByKey.get(r.asset.key) ?? []).sort((a, b) => toMs(b.observedAt) - toMs(a.observedAt)),
+      // Candle payloads are the heaviest part of the contract, so they ship for the rows at the top
+      // of the ranking; everything else keeps its sparkline, which is what a list renders anyway.
+      chart: r.depth === 'deep' && deepViews.length < chartBudget ? chartPayload(deep) : null,
+      historyView: r.depth === 'deep' ? points.slice(-40).map((p) => [p.t, p.cri, p.stage, p.price]) : [],
+      sparkline: sparkFrom(deep, points, r.lf.price),
+    };
+    const view = toCandidateView(r, ctx);
+    if (r.depth === 'deep') deepViews.push(view);
+    else if (lightViews.length < config.snapshot.maxLight) lightViews.push(trimLight(view));
+  }
+  const candidates = [...deepViews, ...lightViews].sort((x, y) => (y.score.cri ?? -1) - (x.score.cri ?? -1));
+  const signalCounts = {};
+  const stageCounts = {};
+  for (const c of candidates) {
+    signalCounts[c.signal.type] = (signalCounts[c.signal.type] ?? 0) + 1;
+    stageCounts[c.stage] = (stageCounts[c.stage] ?? 0) + 1;
+  }
+  const assetsByCg = new Map(merged.filter((a) => a.ids.coingecko).map((a) => [a.ids.coingecko, a]));
+  const recentEvents = appendCatalysts([], [...eventsByKey.values()].flat(), nowMs, 7).slice(0, 120);
+  const finishedMs = clock.now();
+
+  const sourceCoverage = coverageReport([
+    { key: 'coingecko', label: 'CoinGecko (univers)', required: true, ok: universe.cg.ok, status: universe.cg.status, message: universe.cg.message },
+    { key: 'coinmarketcap', label: 'CoinMarketCap (univers)', required: false, ok: universe.cmc.ok, status: universe.cmc.status, message: universe.cmc.message },
+    { key: 'candles', label: 'Lumânări 1D/4H', required: true, ok: venues.mexcSpot.ok || venues.binanceSpot.ok, status: venues.mexcSpot.status, message: venues.mexcSpot.message },
+    { key: 'derivatives', label: 'Derivate (funding + OI)', required: false, ok: perpResults.some(([, r]) => r.ok), status: perpResults.find(([, r]) => !r.ok)?.[1]?.status ?? 'OK' },
+    { key: 'coinalyze', label: 'Coinalyze (funding agregat)', required: false, ok: Boolean(futures.usage.coinalyze?.ok), status: futures.usage.coinalyze?.lastStatus ?? 'OK', message: futures.usage.coinalyze?.lastMessage },
+    { key: 'liquidity', label: 'Lichiditate DEX', required: false, ok: Boolean(deepUsage.dexscreener?.ok), status: deepUsage.dexscreener?.lastStatus ?? 'OK' },
+    { key: 'holders', label: 'Liste de deținători', required: false, ok: Boolean(deepUsage.nodereal?.ok || deepUsage.solana_rpc?.ok), status: deepUsage.nodereal?.lastStatus ?? deepUsage.solana_rpc?.lastStatus ?? 'OK', message: deepUsage.nodereal?.lastMessage ?? deepUsage.solana_rpc?.lastMessage },
+    { key: 'labels', label: 'Etichete on-chain (eth-labels)', required: false, ok: labelIndex.size > 0, status: labelIndex.size ? 'OK' : 'SKIPPED', message: labelIndex.size ? `${labelIndex.size} adrese` : 'rulează "npm run labels"' },
+    { key: 'security', label: 'Securitate contract (GoPlus)', required: false, ok: Boolean(deepUsage.goplus?.ok), status: deepUsage.goplus?.lastStatus ?? 'OK' },
+    { key: 'fundamentals', label: 'TVL / venituri (DefiLlama)', required: false, ok: context.llamaProtocols.ok, status: context.llamaProtocols.status },
+    { key: 'sentiment', label: 'Fear & Greed (alternative.me)', required: false, ok: context.fearGreed.ok, status: context.fearGreed.status },
+    { key: 'dev', label: 'Activitate de dezvoltare (GitHub)', required: false, ok: Boolean(deepUsage.github?.ok), status: deepUsage.github?.lastStatus ?? 'SKIPPED', message: deepUsage.github?.lastMessage },
+    { key: 'attention', label: 'Atenție video (YouTube)', required: false, ok: Boolean(deepUsage.youtube?.ok), status: deepUsage.youtube?.lastStatus ?? 'SKIPPED', message: deepUsage.youtube?.lastMessage },
+    { key: 'entities', label: 'Entități (Arkham, opțional)', required: false, ok: Boolean(deepUsage.arkham?.ok), status: deepUsage.arkham?.lastStatus ?? 'NOT_CONFIGURED', message: deepUsage.arkham?.lastMessage },
+  ]);
+
+  const snapshot = {
+    schemaVersion: SCHEMA_VERSION,
+    meta: {
+      app: 'CRI Radar',
+      version: config.version,
+      generatedAt: nowIso,
+      runId,
+      mode: deps.mode,
+      durationMs: Math.max(finishedMs - startedMs, Math.round((globalThis.performance?.now?.() ?? Date.now()) - t0)),
+      scope: { researchOnly: true, automatedTrading: false, tradeExecution: false },
+      policy: { unknownIsBearish: false, subscriptionsUsed: false, freeOnly: true },
+      question: 'Arată-mi proiectele mici unde se schimbă simultan mai multe lucruri importante, înainte ca mișcarea să devină evidentă, și spune-mi ce riscuri pot invalida această ipoteză.',
+      disclaimer: 'Cercetare, nu sfat financiar. Scorurile sunt priorități de analiză cu invalidatori expliciți; nicio componentă nu execută și nu transmite ordine.',
+      config: { topN, minMarketCapUsd: config.universe.minMarketCapUsd, maxMarketCapUsd: config.universe.maxMarketCapUsd, minVolume24hUsd: config.universe.minVolume24hUsd, deepLimit: config.deep.limit },
+    },
+    health: {
+      overall: overallHealth(providerHealth),
+      providers: providerHealth,
+      coverage: sourceCoverage,
+      universe: {
+        coingecko: universe.cg.data?.length ?? 0,
+        coinmarketcap: universe.cmc.data?.length ?? 0,
+        coinpaprika: universe.cp.data?.length ?? 0,
+        merged: merged.length,
+        excluded: excluded.length,
+        eligible: eligible.length,
+        deep: deepViews.length,
+        discovered: ranked.length,
+        published: candidates.length,
+        crossListed: merged.filter((a) => a.sources.includes('coingecko') && a.sources.includes('coinmarketcap')).length,
+      },
+      venues: venueStats,
+      exclusions: countBy(excluded, 'reason'),
+      referencesReused: Boolean(refs.reused),
+      labels: { size: labelIndex.size, source: labelIndex.source, license: labelIndex.license, builtAt: labelIndex.builtAt, counts: labelIndex.counts },
+    },
+    quota: quotaView(plan, deps.quotaGate?.runUnits ? deps.quotaGate.runUnits() : {}),
+    parity: parityReport,
+    market: {
+      regime,
+      global: context.global.data ?? null,
+      fearGreed,
+      altseason,
+      breadth,
+      narratives: narrativeBoard(context.categories.data ?? [], candidates, assetsByCg),
+      landscape: { ranked: landscape.ranked.slice(0, 12), coverage: landscape.coverage, note: landscape.note },
+    },
+    // ② Small-Cap Radar — the section that answers the project's question.
+    discovery: {
+      answering: answering.length,
+      earlyCandidates: earlyCandidates.length,
+      analysed: ranked.length,
+      // Full evidence for the rows that matter (every early candidate, plus the top of the ranking);
+      // the tail ships its verdict, thesis and changes, which is what a list needs.
+      rows: ranked.map((r, i) => discoveryView(r, {
+        keys: keyed,
+        links: platformLinks(r.asset, { keys: keyed }),
+        full: r.verdict.earlyResearchCandidate || r.changed.simultaneous || i < (config.snapshot?.fullDetail ?? 24),
+      })),
+      note: 'Rândurile sunt ordonate punând candidații timpurii primii, apoi după produsul dintre oportunitate, precocitate și încredere — un scor puțin mai mic, dar încă invizibil, trece înaintea unuia mai mare pe care îl vede toată lumea.',
+    },
+    // ① Futures Radar.
+    futures: {
+      summary: futures.summary,
+      rows: futures.rows.map(futuresView),
+    },
+    references: referencesView(references, config.similarity).map((ref) => ({ ...ref, live: liveRef(ref, merged, researched) })),
+    candidates,
+    catalysts: recentEvents,
+    alerts: { items: alerts, counts: alertCounts },
+    watchlist: { transitions: watch.transitions.slice(0, 80), alerts: watch.alerts.slice(0, 60) },
+    derivatives: { squeezeWatch: squeezeWatch(candidates) },
+    trackRecord: {
+      cohort: record,
+      families: familyPerformance(cohortEntries, 14),
+      recent: cohortEntries.slice(-40).reverse().map(trimCohort),
+      legacy: { summary: journal.summary, recent: journal.entries.slice(-20).reverse().map(trimEntry) },
+    },
+    stats: { signals: signalCounts, stages: stageCounts, discovery: countBy(ranked.map((r) => ({ band: r.verdict.band })), 'band') },
+    methodology: methodology(config, { keys: keyed }),
+  };
+
+  const published = await publisher.publish(snapshot);
+  logger.info(`snapshot publicat: ${published.path} (${Math.round(published.bytes / 1024)} KB)`);
+
+  // 16) Persist research memory.
+  const keepKeys = new Set([...openKeys, ...researched.filter((r) => r.depth === 'deep').map((r) => r.asset.key), ...researched.slice(0, config.history.trackTopLight).map((r) => r.asset.key)]);
+  const historyRows = researched.filter((r) => keepKeys.has(r.asset.key)).map((r) => ({ key: r.asset.key, point: historyPoint(r) }));
+  const discoveryRows = discovery.map((r) => ({ key: r.asset.key, point: discoveryPoint(r, nowMs) }));
+  const flowRows = discovery.map((r) => ({ key: r.asset.key, snapshot: r.asset.onchain?.snapshot ?? null }));
+  const nextState = {
+    ...state,
+    history: appendHistory(state.history, historyRows, nowMs, config.history),
+    discovery: appendDiscoveryHistory(state.discovery, discoveryRows, nowMs, config.history),
+    flows: appendFlows(state.flows, flowRows, nowMs, config.history),
+    registry: registryNext,
+    journal: { entries: journal.entries },
+    cohort: cohortEntries,
+    references: { items: references, fetchedAt: refs.fetchedAt, configHash: refs.configHash },
+    catalysts: appendCatalysts(state.catalysts, newEvents, nowMs, config.history.catalystRetentionDays).slice(0, config.history.maxCatalysts),
+    telemetry: telemetryLog,
+    ledger,
+    lastSeen: Object.fromEntries(researched.map((r) => [r.asset.key, { stage: r.stageInfo.stage, cri: r.cri, signal: r.signal.type, at: nowIso }])),
+    lastSeenV4: Object.fromEntries(ranked.map((r) => [r.asset.key, lastSeenRecord(r)])),
+    meta: { runs: (state.meta?.runs ?? 0) + 1, firstRunAt: state.meta?.firstRunAt ?? nowIso, lastRunAt: nowIso, lastRunId: runId },
+  };
+  await stateRepo.save(nextState);
+  return {
+    snapshot,
+    published,
+    summary: {
+      runId,
+      eligible: eligible.length,
+      deep: deepViews.length,
+      discovered: ranked.length,
+      earlyCandidates: earlyCandidates.length,
+      answering: answering.length,
+      futures: futures.summary,
+      parity: { permanent: parityReport.permanent, withKeys: parityReport.withKeys, achieved: parityReport.achieved },
+      signals: signalCounts,
+      overall: snapshot.health.overall,
+      durationMs: snapshot.meta.durationMs,
+    },
+  };
+}
+
+function rankKey(r) {
+  return (r.cri ?? -1) + (r.depth === 'deep' ? 0.001 : 0);
+}
+
+function sparkFrom(deep, points, price) {
+  if (deep?.d1?.length) return deep.d1.slice(-30).map((k) => sig(k.c, 5));
+  const xs = points.map((p) => p.price).filter(isNum).slice(-30);
+  if (isNum(price)) xs.push(sig(price, 5));
+  return xs.length >= 3 ? xs : null;
+}
+
+/** Light candidates carry scores and headline facts only — the full evidence ships for deep ones. */
+function trimLight(v) {
+  const m = v.market;
+  const best = v.analogs.best;
+  return {
+    key: v.key,
+    symbol: v.symbol,
+    name: v.name,
+    depth: 'light',
+    rank: v.rank,
+    chain: v.chain,
+    chainLabel: v.chainLabel,
+    contract: v.contract,
+    categories: [],
+    links: { coingecko: v.links.coingecko, coinmarketcap: v.links.coinmarketcap, dexscreener: v.links.dexscreener, mexc: v.links.mexc },
+    market: { price: m.price, marketCap: m.marketCap, fdv: m.fdv, volume24h: m.volume24h, turnover: m.turnover, floatRatio: m.floatRatio, fdvToMcap: m.fdvToMcap, change: { h24: m.change.h24, d7: m.change.d7, d30: m.change.d30 }, mcapChange: m.mcapChange, rankChange7d: m.rankChange7d, athChangePct: m.athChangePct, ageDays: m.ageDays },
+    score: v.score,
+    stage: v.stage,
+    stageLabel: v.stageLabel,
+    stageReasons: v.stageReasons.slice(0, 2),
+    stageProxy: v.stageProxy,
+    hype: v.hype,
+    hypeLabel: v.hypeLabel,
+    hypeReasons: v.hypeReasons.slice(0, 1),
+    signal: { type: v.signal.type, label: v.signal.label, strength: v.signal.strength, reasons: v.signal.reasons.slice(0, 2), blockers: v.signal.blockers.slice(0, 2), plan: null },
+    analogs: {
+      best: best ? { ref: best.ref, similarity: best.similarity, dnaSim: best.dnaSim, phaseSim: best.phaseSim, coverage: best.coverage, topMatches: best.topMatches.slice(0, 3), weakest: best.weakest.slice(0, 2) } : null,
+      consensus: v.analogs.consensus,
+      supporting: v.analogs.supporting,
+      all: v.analogs.all.map((a) => ({ ref: a.ref, similarity: a.similarity, dnaSim: a.dnaSim, phaseSim: a.phaseSim })),
+    },
+    fingerprint: v.fingerprint,
+    domains: v.domains.map((d) => ({ id: d.id, state: d.state, score: d.score, confidence: d.confidence, weight: d.weight, contribution: d.contribution, proxy: d.proxy })),
+    risk: { score: v.risk.score, grade: v.risk.grade, critical: v.risk.critical, sizing: v.risk.sizing, flags: v.risk.flags.slice(0, 4) },
+    whyNow: v.whyNow.slice(0, 3),
+    missing: v.missing,
+    derivatives: { venues: v.derivatives.venues, oiUsd: v.derivatives.oiUsd, oiToMcap: v.derivatives.oiToMcap, oiChangePct: v.derivatives.oiChangePct, fundingAvg: v.derivatives.fundingAvg },
+    onchain: v.onchain ? { holders: v.onchain.holders, holdersChangePct: v.onchain.holdersChangePct } : null,
+    venues: v.venues,
+    attention: { cgTrending: v.attention.cgTrending, dexBoost: v.attention.dexBoost, gtTrending: v.attention.gtTrending },
+    fundamentals: v.fundamentals ? { tvl: v.fundamentals.tvl, mcapToTvl: v.fundamentals.mcapToTvl } : null,
+    technicals: null,
+    chart: null,
+    catalysts: v.catalysts.slice(0, 3).map((e) => ({ type: e.type, title: e.title, polarity: e.polarity, confidence: e.confidence, observedAt: e.observedAt, eventTime: e.eventTime ?? null, source: e.source })),
+    history: [],
+    sparkline: v.sparkline,
+  };
+}
+
+function trimEntry(e) {
+  return { symbol: e.symbol, key: e.key, type: e.type, at: e.at, entryPrice: e.entryPrice, lastPrice: e.lastPrice, returnPct: isNum(e.lastPrice) && isNum(e.entryPrice) ? round((e.lastPrice / e.entryPrice - 1) * 100, 1) : null, maxPct: isNum(e.maxPrice) ? round((e.maxPrice / e.entryPrice - 1) * 100, 1) : null, minPct: isNum(e.minPrice) ? round((e.minPrice / e.entryPrice - 1) * 100, 1) : null, analog: e.analog, cri: e.cri, status: e.status, outcomes: e.outcomes };
+}
+
+function trimCohort(e) {
+  return {
+    symbol: e.symbol,
+    key: e.key,
+    openedAt: e.openedAt,
+    entryPrice: e.entryPrice,
+    stage: e.stage,
+    opportunity: e.opportunity,
+    risk: e.risk,
+    earliness: e.earliness,
+    confidence: e.confidence,
+    changes: e.changes,
+    families: e.families,
+    outcomes: e.outcomes,
+    closed: e.closed,
+  };
+}
+
+function squeezeWatch(candidates) {
+  return candidates
+    .filter((c) => c.derivatives.venues.length && isNum(c.derivatives.fundingAvg))
+    .map((c) => ({
+      key: c.key,
+      symbol: c.symbol,
+      oiUsd: c.derivatives.oiUsd,
+      oiToMcap: c.derivatives.oiToMcap,
+      oiChangePct: c.derivatives.oiChangePct,
+      fundingAvg: c.derivatives.fundingAvg,
+      venues: c.derivatives.venues,
+      change7d: c.market.change.d7,
+      cri: c.score.cri,
+      fuel: (c.derivatives.fundingAvg <= 0 ? 1 : 0) + (isNum(c.derivatives.oiChangePct) && c.derivatives.oiChangePct > 15 ? 1 : 0) + (isNum(c.derivatives.oiToMcap) && c.derivatives.oiToMcap > 0.1 ? 1 : 0),
+    }))
+    .sort((a, b) => b.fuel - a.fuel || (a.fundingAvg - b.fundingAvg))
+    .slice(0, 40);
+}
+
+function liveRef(ref, merged, researched) {
+  const r = researched.find((x) => x.asset.symbol === ref.symbol && (ref.coingeckoId ? x.asset.ids.coingecko === ref.coingeckoId : true));
+  const a = r?.asset ?? merged.find((x) => x.symbol === ref.symbol && (ref.coingeckoId ? x.ids.coingecko === ref.coingeckoId : true));
+  if (!a) return null;
+  return { key: a.key, price: sig(a.market.price, 6), marketCap: a.market.marketCap, change7d: round(a.market.change.d7, 1), change30d: round(a.market.change.d30, 1), athChangePct: round(a.market.athChangePct, 1), stage: r?.stageInfo.stage ?? null, cri: r?.cri ?? null };
+}
+
+function countBy(rows, key) {
+  const out = {};
+  for (const r of rows) out[r[key]] = (out[r[key]] ?? 0) + 1;
+  return out;
+}

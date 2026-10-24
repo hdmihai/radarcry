@@ -1,0 +1,54 @@
+# Continuous integration: syntax, the architecture fitness tests, the unit/contract/e2e suite and an
+# offline DEMO build. No network access to any crypto API is needed — the end-to-end tests run
+# against the deterministic simulated market through the same ports as the live adapters, which is
+# the whole reason those ports exist.
+name: CI
+
+on:
+  push:
+    branches-ignore: [cri-state]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['22', '24']
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+          package-manager-cache: false # zero runtime dependencies
+
+      - name: Syntax + tests (architecture rules, domain engines, contract, end to end)
+        run: npm run ci
+
+      - name: Offline DEMO scan, contract validation and site build
+        run: |
+          node src/main.js scan --fixtures --simulate-days 10 --state .cri-state-demo --out data
+          node scripts/validate-snapshot.js data/latest.json
+          node scripts/build-site.js
+          test -f dist/index.html
+          test -f dist/data/latest.json
+
+      - name: The pulse runs on top of the published snapshot without breaking the contract
+        run: |
+          node src/main.js pulse --out data || true
+          node scripts/validate-snapshot.js data/latest.json
+
+      - name: Run summary
+        if: matrix.node == '24'
+        run: node scripts/run-summary.js data/latest.json >> "$GITHUB_STEP_SUMMARY"
+
+      - name: The committed label dataset is present and classifies
+        run: |
+          test -f config/labels/LICENSE-eth-labels.txt
+          node scripts/verify-labels.js
