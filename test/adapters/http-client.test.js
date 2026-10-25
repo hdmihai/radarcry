@@ -80,3 +80,23 @@ test('network errors after retries surface as NETWORK_ERROR; telemetry records e
   assert.equal(events.length, 1);
   assert.equal(events[0].provider, 'n');
 });
+
+test('an error envelope in an HTTP 200 body keeps the provider\'s reason, and a rate-limit verdict is retried', async () => {
+  const { classifyGoPlus } = await import('../../src/adapters/outbound/providers/onchain.js');
+  const f = scriptedFetch([
+    { status: 200, body: { code: 4029, message: 'too many requests' } },
+    { status: 200, body: { code: 1, message: 'OK', result: { '0xabc': { is_honeypot: '0' } } } },
+  ]);
+  const { client, sleeps } = fastClient(f.impl);
+  const ok = await client.getJson('https://api.gopluslabs.io/api/v1/token_security/56?contract_addresses=0xabc', { provider: 'goplus', retries: 1, classify: classifyGoPlus });
+  assert.equal(ok.ok, true, 'the second attempt succeeds');
+  assert.equal(sleeps.length, 1, 'with one backoff in between');
+
+  const g = scriptedFetch([{ status: 200, body: { code: 2022, message: 'The main chain is not supported' } }]);
+  const { client: c2 } = fastClient(g.impl);
+  const refused = await c2.getJson('https://api.gopluslabs.io/api/v1/token_security/8453?contract_addresses=0xdef', { provider: 'goplus', retries: 1, classify: classifyGoPlus });
+  assert.equal(refused.ok, false);
+  assert.equal(refused.status, STATUS.INVALID_PAYLOAD);
+  assert.match(refused.message, /2022/, 'the provider code reaches the health panel');
+  assert.match(refused.message, /main chain is not supported/);
+});

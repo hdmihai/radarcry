@@ -279,6 +279,13 @@ export function classifyHolders(holders, ctx = {}) {
     top50Pct: topN(sorted, 50),
     top10EffectivePct: rescale(topN(tradable, 10)),
     top20EffectivePct: rescale(topN(tradable, 20)),
+    /*
+     * Share of the tradable float held by the ten largest *independent actors*: exchange wallets are
+     * left out of the numerator (they pool thousands of users' balances, so they are not one sell
+     * decision) but stay in the base (their balances are tradable supply). This is the measure the
+     * concentration invalidator means when it warns that "one decision can undo the move".
+     */
+    top10ActorsPct: rescale(topN(tradable.filter((r) => r.class !== HOLDER_CLASSES.CEX), 10)),
     effectiveSharePct: effectiveBase > 0 ? effectiveBase : null,
     cexSharePct: byClass.cex?.share ?? null,
     lpSharePct: byClass.lp?.share ?? null,

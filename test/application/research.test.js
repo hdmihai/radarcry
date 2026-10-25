@@ -66,3 +66,26 @@ test('provider health tells the HTTP truth: partial coverage is PARTIAL, a missi
   assert.equal(by.cryptoquant.status, 'NOT_CONFIGURED');
   assert.match(by.cryptoquant.message, /CRYPTOQUANT_API_KEY/);
 });
+
+test('for an Alpha token the prescreen measures holders and liquidity growth with no extra call', async () => {
+  const { prescreenAsset } = await import('../../src/application/use-cases/discovery.js');
+  const NOW = Date.parse('2026-10-25T05:00:00Z');
+  const H = 3_600_000;
+  const config = { discovery: { baselineWindowDays: 30, baselineMinPoints: 4, changeWindowDays: 7 } };
+  // Five earlier runs: ~20 000 holders and ~$400k liquidity, both read from Binance Alpha.
+  const points = [0, 1, 2, 3, 4].map((i) => ({
+    at: NOW - (i + 1) * 4 * H,
+    metrics: { price: 0.05, marketCap: 9e6, volume24h: 1.2e6, turnover: 0.13, holders: 20_000 + i * 40, holdersSource: 'binance_alpha', liquidityUsd: 4e5 + i * 2e3, liquiditySource: 'binance_alpha' },
+  })).reverse();
+  const asset = {
+    key: 'cg:quiet-alpha', symbol: 'QA', market: { price: 0.05, marketCap: 9e6, volume24h: 1.25e6, change: { h24: 1 } },
+    derived: { turnover: 0.14 }, venues: { perps: [], alpha: { status: 'LISTED', holders: 23_400, liquidity: 560_000 } }, catalysts: [],
+  };
+  const r = prescreenAsset({ asset, points, config, nowMs: NOW });
+  const keys = r.changed.changes.map((c) => c.key);
+  assert.ok(keys.includes('HOLDER_GROWTH'), keys.join(', '));
+  assert.ok(keys.includes('LIQUIDITY_GROWTH'), keys.join(', '));
+  assert.equal(r.changed.familyCount, 2, 'two families moving on a quiet price: the case the radar exists for');
+  assert.equal(r.current.holdersSource, 'binance_alpha', 'the reading is stored with its source for the next comparison');
+  assert.ok(r.score > 0);
+});

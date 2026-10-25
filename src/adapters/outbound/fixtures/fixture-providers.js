@@ -6,6 +6,7 @@ import { candlesAt, hashSeed, mulberry32, stateAt } from './demo-market.js';
 import { normChain } from '../../../domain/shared/symbols.js';
 import { isNum } from '../../../domain/shared/math.js';
 import { normalizeTopFlows } from '../providers/onchain.js';
+import { alphaMarketRow } from '../providers/exchanges.js';
 
 const DAY = 86_400_000;
 const CG_CHAIN = { bsc: 'binance-smart-chain', ethereum: 'ethereum', solana: 'solana', base: 'base', arbitrum: 'arbitrum-one' };
@@ -170,13 +171,48 @@ export function createFixtureProviders({ market, clock }) {
 
   const krw = (id, flag) => ({ id, markets: async () => ok(id, '/v1/market/all', live().filter(({ a }) => a.venues[flag]).map(({ a }) => ({ market: `KRW-${a.symbol}`, base: a.symbol, englishName: a.name, warning: null }))) });
 
+  // Same port vocabulary as the live normaliser (normalizeAlphaToken), and the universe rows are
+  // built by the live adapter's own alphaMarketRow — so the demo exercises the real mapping.
+  const alphaTokens = () => live().filter(({ a }) => a.venues.alpha && a.chain === 'bsc').map(({ a, s }) => ({
+    tokenId: `T${hashSeed(a.id)}`, alphaId: `ALPHA_${hashSeed(a.id) % 900}`,
+    chainId: '56', chainName: 'BSC', contractAddress: a.address, symbol: a.symbol, name: a.name, image: null,
+    price: s.price, percentChange24h: s.change.h24, marketCap: s.marketCap, fdv: s.marketCap * 1.4,
+    circulating: a.circ, total: a.circ * 1.4, liquidity: poolLiquidity(a, s), volume24h: s.volume24h * 0.2,
+    trades24h: Math.round((s.volume24h * 0.2) / 900), holders: holdersAt(a), listingCex: a.venues.alphaCex,
+    listingTime: a.listedAt + 2 * DAY, hotTag: phase(a) === 'hyped', mulPoint: hashSeed(`${a.id}:mul`) % 3 === 0 ? 2 : 1,
+    onlineTge: false, onlineAirdrop: false,
+  }));
   const binanceAlpha = {
     id: 'binance_alpha',
-    markets: async () => ok('binance_alpha', '/alpha/all/token/list', live().filter(({ a }) => a.venues.alpha && a.chain === 'bsc').map(({ a, s }) => ({
-      chainId: '56', chainName: 'BSC', contractAddress: a.address, symbol: a.symbol, name: a.name, price: s.price, marketCap: s.marketCap, liquidity: s.marketCap * 0.03, volume24h: s.volume24h * 0.2,
-      holders: holdersAt(a), listingCex: a.venues.alphaCex, listingTime: a.listedAt + 2 * DAY, hotTag: phase(a) === 'hyped', alphaId: `ALPHA_${hashSeed(a.id) % 900}`,
-    }))),
+    markets: async () => ok('binance_alpha', '/alpha/all/token/list', alphaTokens()),
+    listTop: async () => ok('binance_alpha', '/alpha/all/token/list', alphaTokens().map(alphaMarketRow)),
   };
+
+  /** A GoPlus-shaped top-10 list: one LP pool, one exchange wallet, the rest ordinary holders. */
+  function fixtureTopHolders(a) {
+    const hex = (n) => `0x${(hashSeed(`${a.id}:h${n}`) >>> 0).toString(16).padStart(8, '0').repeat(5)}`;
+    const rest = Math.max(4, (a.top10 ?? 40) - 16);
+    const wallets = Array.from({ length: 8 }, (_, i) => ({ address: hex(i), share: (rest * (8 - i)) / 36, balance: null, tag: null, locked: false, isContract: false }));
+    return [
+      { address: hex(90), share: 10, balance: null, tag: 'PancakeSwap V2 Pool', locked: false, isContract: true },
+      { address: hex(91), share: 6, balance: null, tag: 'Binance 14', locked: false, isContract: false },
+      ...wallets,
+    ];
+  }
+
+  /*
+   * One model of a project's pools, read by both simulated sources that report it (DexScreener and
+   * Binance Alpha), as the real ones read the same pools. A stable share of market cap per project,
+   * a ramp while the project is setting up (liquidity providers arrive, as holders do in holdersAt),
+   * and a few percent of daily noise. The earlier DexScreener model drew a fresh 0.8–5.8 % share
+   * every day: any "liquidity growth" it produced was noise, not a planted signal.
+   */
+  function poolLiquidity(a, s) {
+    const share = 0.012 + (hashSeed(`${a.id}:liq`) % 30) / 1000;
+    const setup = phase(a) === 'pre' ? 1 + 0.012 * Math.max(0, 25 + rel(a)) : 1;
+    const noise = 1 + (mulberry32(hashSeed(`${a.id}:liqd:${Math.floor(now() / DAY)}`))() - 0.5) * 0.08;
+    return s.marketCap * share * setup * noise;
+  }
 
   function holdersAt(a) {
     const days = (now() - market.startMs) / DAY;
@@ -197,7 +233,7 @@ export function createFixtureProviders({ market, clock }) {
         const r = mulberry32(hashSeed(`${a.id}:dex:${Math.floor(now() / DAY)}`));
         const buys = Math.round(800 + r() * 3000);
         const ratio = ph === 'pre' ? 1.25 + r() * 0.3 : ph === 'hyped' ? 1.1 : 0.85 + r() * 0.3;
-        out[addr] = { pairs: 1 + Math.floor(r() * 4), liquidityUsd: s.marketCap * (0.008 + r() * 0.05), volume24h: s.volume24h * 0.25, buys24h: buys, sells24h: Math.round(buys / ratio), buys6h: Math.round(buys / 4), sells6h: Math.round(buys / 4 / ratio), oldestPairAt: a.listedAt, topPair: { url: `https://dexscreener.com/${chain}/${addr}`, dexId: 'demo', pairAddress: addr, liquidityUsd: s.marketCap * 0.02, priceUsd: s.price }, websites: [], socials: [] };
+        out[addr] = { pairs: 1 + Math.floor(r() * 4), liquidityUsd: poolLiquidity(a, s), volume24h: s.volume24h * 0.25, buys24h: buys, sells24h: Math.round(buys / ratio), buys6h: Math.round(buys / 4), sells6h: Math.round(buys / 4 / ratio), oldestPairAt: a.listedAt, topPair: { url: `https://dexscreener.com/${chain}/${addr}`, dexId: 'demo', pairAddress: addr, liquidityUsd: s.marketCap * 0.02, priceUsd: s.price }, websites: [], socials: [] };
       }
       return ok('dexscreener', '/tokens/v1/{chain}/{addresses}', out);
     },
@@ -225,6 +261,7 @@ export function createFixtureProviders({ market, clock }) {
           top10Pct: Math.min(100, a.top10 + 4),
           top10EffectivePct: a.top10,
           // Same port vocabulary as the live GoPlus normaliser (normalizeEvm), field for field.
+          topHolders: fixtureTopHolders(a),
           creatorAddress: null,
           ownerAddress: null,
           lpLockedPct: a.honeypot ? 12 : 60 + (hashSeed(`${a.id}:lp`) % 40),

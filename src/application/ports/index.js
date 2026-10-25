@@ -122,6 +122,8 @@
  * @property {string|null} creatorAddress
  * @property {string|null} ownerAddress
  * @property {number|null} lpLockedPct          share of the main pool's LP that is locked or burned, percent
+ * @property {{address:string, share:number|null, balance:number|null, tag:string|null, locked:boolean,
+ *   isContract:boolean}[]} topHolders          the provider's top-holder list, in the classifier's vocabulary
  * @property {{honeypot:boolean|null, cannotSell:boolean|null, buyTax:number|null, sellTax:number|null,
  *   mintable:boolean|null, ownerRenounced:boolean|null, hiddenOwner:boolean|null,
  *   canTakeBackOwnership:boolean|null, transferPausable:boolean|null, blacklist:boolean|null,
@@ -281,7 +283,7 @@
  * @property {DerivativesAggregatorPort} coinalyze
  * @property {ListingRegistryPort} upbit
  * @property {ListingRegistryPort} bithumb
- * @property {ListingRegistryPort} binanceAlpha
+ * @property {ListingRegistryPort & UniversePort} binanceAlpha  one memoised call serves both: venue tags and universe rows
  * @property {OnchainPort} dexscreener
  * @property {OnchainPort} geckoterminal
  * @property {OnchainPort} goplus

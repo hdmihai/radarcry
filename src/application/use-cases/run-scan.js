@@ -77,13 +77,16 @@ export async function runScan(deps, config) {
   // 1) Universe + venues + context + references, concurrently (each provider paced by its adapter).
   const [universe, venues, context, refs] = await Promise.all([
     (async () => {
-      const [cg, cmc, cp, platforms] = await Promise.all([
+      const [cg, cmc, cp, alpha, platforms] = await Promise.all([
         safe(() => P.coingecko.listTop(topN)),
         safe(() => P.coinmarketcap.listTop(topN)),
         safe(() => P.coinpaprika.listTop(topN)),
+        // Binance Alpha joins the universe in full — see mergeUniverse for why. Same single call
+        // that also tags venues below (the adapter memoises it).
+        safe(() => P.binanceAlpha.listTop()),
         safe(() => P.coingecko.platforms()),
       ]);
-      return { cg, cmc, cp, platforms };
+      return { cg, cmc, cp, alpha, platforms };
     })(),
     (async () => {
       const [mexcSpot, binanceSpot, mexcPerps, gate, bitget, okx, hyperliquid, upbit, bithumb, alpha] = await Promise.all([
@@ -124,12 +127,14 @@ export async function runScan(deps, config) {
     coingecko: universe.cg.ok ? universe.cg.data : null,
     coinmarketcap: universe.cmc.ok ? universe.cmc.data : null,
     coinpaprika: universe.cp.ok ? universe.cp.data : null,
+    binanceAlpha: universe.alpha.ok ? universe.alpha.data : null,
     cgPlatforms: universe.platforms.ok ? universe.platforms.data : null,
     nowMs,
   });
   if (!merged.length) throw new UniverseUnavailableError('Nicio sursă de univers (CoinGecko / CoinMarketCap / CoinPaprika) nu a răspuns — snapshot-ul anterior rămâne publicat.');
   const { eligible, excluded } = screenUniverse(merged, config.universe);
-  logger.info(`univers: CG ${universe.cg.data?.length ?? 0} · CMC ${universe.cmc.data?.length ?? 0} · fuzionat ${merged.length} · eligibil ${eligible.length}`);
+  const alphaOnly = merged.filter((a) => a.sources.length === 1 && a.sources[0] === 'binance_alpha');
+  logger.info(`univers: CG ${universe.cg.data?.length ?? 0} · CMC ${universe.cmc.data?.length ?? 0} · Binance Alpha ${universe.alpha.data?.length ?? 0} (${alphaOnly.length} în afara top 1000) · fuzionat ${merged.length} · eligibil ${eligible.length}`);
 
   // 3) Venues, attention, fundamentals.
   const perpResults = [
@@ -443,6 +448,11 @@ export async function runScan(deps, config) {
         coingecko: universe.cg.data?.length ?? 0,
         coinmarketcap: universe.cmc.data?.length ?? 0,
         coinpaprika: universe.cp.data?.length ?? 0,
+        binanceAlpha: universe.alpha.data?.length ?? 0,
+        // Alpha tokens the aggregators' top 1000 does not reach, and how many of them pass the
+        // small-cap screen: the part of the universe that exists only because Alpha is a source.
+        alphaOnly: alphaOnly.length,
+        alphaOnlyEligible: eligible.filter((a) => a.sources.length === 1 && a.sources[0] === 'binance_alpha').length,
         merged: merged.length,
         excluded: excluded.length,
         eligible: eligible.length,

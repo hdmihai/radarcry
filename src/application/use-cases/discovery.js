@@ -89,7 +89,17 @@ export function derivativesFacts(asset, { coinalyze = null, baselineCmp = null }
  * @param {{asset:any, points?:any[], config:any, nowMs:number}} input
  */
 export function prescreenAsset({ asset, points = [], config, nowMs }) {
-  const view = { ...asset, derivatives: derivativesFacts(asset) };
+  // Binance Alpha publishes holders and liquidity for every Alpha token in the same free list the
+  // universe comes from, so for those tokens two more families (holders, liquidity) are measurable
+  // against the token's own norm on every run, at no extra cost.
+  const alpha = alphaFacts(asset);
+  const onchain = alpha ? {
+    holders: alpha.holders,
+    holdersSource: isNum(alpha.holders) ? 'binance_alpha' : null,
+    liquidityUsd: alpha.liquidityUsd,
+    liquiditySource: isNum(alpha.liquidityUsd) ? 'binance_alpha' : null,
+  } : null;
+  const view = { ...asset, derivatives: derivativesFacts(asset), onchain };
   const baseline = buildBaseline(points, {
     nowMs,
     windowDays: config.discovery?.baselineWindowDays ?? 30,
@@ -105,6 +115,15 @@ export function prescreenAsset({ asset, points = [], config, nowMs }) {
     baselinePoints: baseline.points,
     baselineSufficient: baseline.sufficient,
   };
+}
+
+/** Holder and liquidity readings Binance Alpha reports for a listed token, or null. */
+export function alphaFacts(asset) {
+  const a = asset?.venues?.alpha;
+  if (!a || a.status !== 'LISTED') return null;
+  const holders = isNum(toNum(a.holders)) && toNum(a.holders) > 0 ? toNum(a.holders) : null;
+  const liquidityUsd = isNum(toNum(a.liquidity)) && toNum(a.liquidity) > 0 ? toNum(a.liquidity) : null;
+  return holders === null && liquidityUsd === null ? null : { holders, liquidityUsd };
 }
 
 /**
@@ -163,8 +182,21 @@ export function onchainFacts({ asset, deep, labelIndex, flowHistory, nowMs }) {
   const info = deep?.holdersInfo ?? null;
   const holderList = deep?.holders?.holders ?? null;
   const goplus = deep?.security ?? null;
+  const alpha = alphaFacts(asset);
 
-  const liquidityUsd = toNum(dex?.liquidityUsd) ?? toNum(info?.liquidityUsd) ?? null;
+  /*
+   * Liquidity, with its source. For a Binance Alpha token, Binance's own figure comes first: it is
+   * available on every run — light or deep — so the token's liquidity norm is one continuous
+   * series, and it covers the pools Binance routes Alpha trades through. Otherwise DexScreener,
+   * then GeckoTerminal. Every reading carries its source, and the baseline only compares readings
+   * from the same one.
+   */
+  const liquidityPick = [
+    { id: 'binance_alpha', v: alpha?.liquidityUsd },
+    { id: 'dexscreener', v: toNum(dex?.liquidityUsd) },
+    { id: 'geckoterminal', v: toNum(info?.liquidityUsd) },
+  ].find((x) => isNum(x.v) && x.v > 0) ?? null;
+  const liquidityUsd = liquidityPick?.v ?? null;
   // `dex.pairs` is a *count* in the DexScreener adapter; the addresses live on topPair / pairList.
   const pairAddresses = [
     dex?.topPair?.pairAddress,
@@ -186,18 +218,37 @@ export function onchainFacts({ asset, deep, labelIndex, flowHistory, nowMs }) {
     });
   }
 
+  /*
+   * Without a full holder list (no NodeReal key), GoPlus's top-10 list is classified against the
+   * same label index, for concentration only: ten addresses are enough to tell an exchange hot wallet
+   * or an LP pool from a real large holder, but not to follow flows between runs, so they never feed
+   * the flow snapshots below.
+   */
+  const topClassified = !classified && Array.isArray(goplus?.topHolders) && goplus.topHolders.length
+    ? classifyHolders(goplus.topHolders, {
+      labelIndex,
+      arkham: null,
+      creator: goplus?.creatorAddress ?? null,
+      owner: goplus?.ownerAddress ?? null,
+      pairs,
+      chain: asset.primary?.chain ?? null,
+    })
+    : null;
+
   const snapshot = classified ? flowSnapshot(classified, nowMs) : null;
   const flows = classified
     ? holderFlows({ current: classified, history: flowHistory ?? [], nowMs })
     : null;
 
   /*
-   * Holder count and concentration, best source first: a full holder list (NodeReal / Solana RPC),
-   * then GeckoTerminal's token info, then GoPlus — which already answered in the security pass and
-   * reports the holder count plus the top-10 holders on EVM chains with no key at all. Without this
-   * last fallback, a run with no NodeReal key had holder data for a handful of tokens only.
+   * Holder count and concentration, best source first: Binance Alpha for Alpha tokens (every run,
+   * so the norm is continuous), then a full holder list (NodeReal / Solana RPC), GeckoTerminal's
+   * token info, and GoPlus — which already answered in the security pass and reports the holder
+   * count plus the top-10 holders on EVM chains with no key at all. The source travels with the
+   * reading (see SOURCED in the baseline module).
    */
   const sources = [
+    { id: 'binance_alpha', count: alpha?.holders ?? null, top10: null },
     { id: deep?.holdersSource ?? null, count: toNum(deep?.holders?.holderCount), top10: null },
     { id: 'geckoterminal', count: toNum(info?.holders), top10: toNum(info?.top10Pct) },
     { id: 'goplus', count: toNum(goplus?.holders), top10: toNum(goplus?.top10Pct) },
@@ -207,6 +258,7 @@ export function onchainFacts({ asset, deep, labelIndex, flowHistory, nowMs }) {
 
   return {
     liquidityUsd,
+    liquiditySource: liquidityPick?.id ?? null,
     liquidityChange: null,
     pools: dex?.pairs ?? null,
     volume24hDex: toNum(dex?.volume24h) ?? null,
@@ -216,7 +268,10 @@ export function onchainFacts({ asset, deep, labelIndex, flowHistory, nowMs }) {
     holderListSize: Array.isArray(holderList) ? holderList.length : null,
     classified,
     top10Pct: classified?.top10Pct ?? top10Source?.top10 ?? null,
-    top10EffectivePct: classified?.top10EffectivePct ?? (isNum(toNum(goplus?.top10EffectivePct)) ? toNum(goplus.top10EffectivePct) : null),
+    top10Source: classified ? (deep?.holdersSource ?? 'holder_list') : (top10Source?.id ?? null),
+    top10EffectivePct: classified?.top10EffectivePct ?? topClassified?.top10EffectivePct ?? (isNum(toNum(goplus?.top10EffectivePct)) ? toNum(goplus.top10EffectivePct) : null),
+    top10ActorsPct: classified?.top10ActorsPct ?? topClassified?.top10ActorsPct ?? null,
+    concentrationBasis: classified ? 'holder_list' : topClassified ? 'top10_labelled' : isNum(toNum(goplus?.top10EffectivePct)) ? 'provider_tags' : isNum(top10Source?.top10) ? 'raw' : null,
     top20EffectivePct: classified?.top20EffectivePct ?? null,
     effectiveSharePct: classified?.effectiveSharePct ?? null,
     cexBalancePct: classified?.cexSharePct ?? null,

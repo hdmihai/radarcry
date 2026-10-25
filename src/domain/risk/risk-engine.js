@@ -125,16 +125,30 @@ export function riskEngine({ asset, market, changed }) {
   }
 
   /* ── concentration ─────────────────────────────────────────────────────────────────────────── */
-  const conc = isNum(cls?.top10EffectivePct) ? cls.top10EffectivePct : oc.top10Pct;
+  /*
+   * Concentration, on the most honest measure available:
+   *  · independent actors — the tradable float held by the top 10 holders that are not exchange
+   *    wallets (an exchange pools thousands of users; it is not one sell decision);
+   *  · effective — pools, bridges, staking, locks and burn addresses excluded;
+   *  · raw — what the provider reports, LP pools and exchange wallets included. A raw figure
+   *    overstates the risk this invalidator names, so it is labelled as raw and never raised above
+   *    HIGH on its own.
+   */
+  const actors = isNum(cls?.top10ActorsPct) ? cls.top10ActorsPct : isNum(oc.top10ActorsPct) ? oc.top10ActorsPct : null;
+  const effective = isNum(cls?.top10EffectivePct) ? cls.top10EffectivePct : isNum(oc.top10EffectivePct) ? oc.top10EffectivePct : null;
+  const conc = actors ?? effective ?? (isNum(oc.top10Pct) ? oc.top10Pct : null);
+  const concWhat = actors !== null ? 'Top 10 actori independenți (fără burse, pool-uri, lock, burn)'
+    : effective !== null ? 'Top 10 deținători efectivi' : 'Top 10 deținători (cifră brută, include pool-uri și burse)';
+  const rawOnly = actors === null && effective === null;
   if (isNum(conc)) {
     if (conc >= 70) {
-      add({ key: 'CONCENTRATION_CRITICAL', category: RISK_CATEGORY.CONCENTRATION, severity: SEVERITY.CRITICAL,
-        label: `Top 10 deținători efectivi: ${round(conc, 1)}% din supply tranzacționabil`,
+      add({ key: 'CONCENTRATION_CRITICAL', category: RISK_CATEGORY.CONCENTRATION, severity: rawOnly ? SEVERITY.HIGH : SEVERITY.CRITICAL,
+        label: `${concWhat}: ${round(conc, 1)}% din supply tranzacționabil`,
         invalidates: 'o singură decizie de vânzare poate anula întreaga mișcare',
-        watch: 'lista de deținători la fiecare rulare completă' });
+        watch: rawOnly ? 'lista de deținători clasificată (cheia NodeReal gratuită o face completă)' : 'lista de deținători la fiecare rulare completă' });
     } else if (conc >= 50) {
       add({ key: 'CONCENTRATION_HIGH', category: RISK_CATEGORY.CONCENTRATION, severity: SEVERITY.HIGH,
-        label: `Top 10 deținători efectivi: ${round(conc, 1)}%`,
+        label: `${concWhat}: ${round(conc, 1)}%`,
         invalidates: 'câteva portofele pot schimba direcția',
         watch: 'variația cotelor din top 10' });
     } else if (conc >= 35) {
@@ -232,6 +246,23 @@ export function riskEngine({ asset, market, changed }) {
       label: 'CoinGecko și CoinMarketCap raportează capitalizări foarte diferite',
       invalidates: 'filtrul de small-cap și toate raportările la capitalizare devin incerte',
       watch: 'cele două surse, separat' });
+  }
+  /*
+   * Binance Alpha volume. Alpha awards points for buy volume (BSC volume counted double), and
+   * independent research found the programme drives farming and wash trading rather than organic
+   * demand. On an Alpha token turning over more than its whole market cap in a day, volume-based
+   * readings — volume expansion, turnover jump — can be the points programme, not interest in the
+   * project. That does not void the thesis; it moves the burden of proof to the readings volume
+   * cannot fake: holder growth, liquidity, accumulation.
+   */
+  const alphaVenue = asset.venues?.alpha;
+  const turnoverDay = asset.derived?.turnover;
+  if (alphaVenue?.status === 'LISTED' && isNum(turnoverDay) && turnoverDay >= 1) {
+    const mul = isNum(alphaVenue.mulPoint) && alphaVenue.mulPoint > 1 ? `; multiplicator de puncte raportat de Binance ×${alphaVenue.mulPoint}` : '';
+    add({ key: 'ALPHA_VOLUME', category: RISK_CATEGORY.DATA, severity: SEVERITY.MEDIUM,
+      label: `Volum de ${Math.round(turnoverDay * 100)}% din capitalizare pe zi pe un token Binance Alpha${mul}`,
+      invalidates: 'o parte din volum poate veni din farmingul punctelor Alpha, nu din cerere — semnalele de volum nu confirmă singure teza',
+      watch: 'creșterea deținătorilor și a lichidității, nu doar a volumului' });
   }
   if ((asset.quality?.flags ?? []).includes('STALE_QUOTE')) {
     add({ key: 'STALE_QUOTE', category: RISK_CATEGORY.DATA, severity: SEVERITY.LOW,

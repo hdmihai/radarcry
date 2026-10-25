@@ -97,9 +97,19 @@ export const D_METRICS = [
   'price', 'marketCap', 'volume24h', 'turnover', 'circulating', 'oiUsd', 'fundingPct8h',
   'liquidityUsd', 'holders', 'holdersEffective', 'top10Pct', 'tvl', 'devCommits30d', 'mentions7d',
   'cexBalancePct', 'whaleBalancePct',
+  // Who measured the sourced metrics (see SOURCED in domain/discovery/baseline.js). Appended, so a
+  // state written before they existed still decodes: its readings come back as unsourced.
+  'liquiditySource', 'holdersSource', 'top10Source',
 ];
 
+/** One letter per provider for the source columns; anything unknown is stored verbatim. */
+const SOURCE_CODE = { binance_alpha: 'A', dexscreener: 'D', geckoterminal: 'T', goplus: 'G', nodereal: 'N', solana_rpc: 'S', holder_list: 'L' };
+const SOURCE_NAME = Object.fromEntries(Object.entries(SOURCE_CODE).map(([k, v]) => [v, k]));
+const isSourceField = (name) => name.endsWith('Source');
+
 const compactValue = (v) => (typeof v === 'number' && Number.isFinite(v) ? sig(v, 6) : v ?? null);
+const encodeField = (name, v) => (isSourceField(name) && typeof v === 'string' ? SOURCE_CODE[v] ?? v : compactValue(v));
+const decodeField = (name, v) => (isSourceField(name) && typeof v === 'string' ? SOURCE_NAME[v] ?? v : v ?? null);
 
 /** Drop trailing nulls: the decoder reads a missing tail as null, so nothing is lost. */
 function trimTail(values) {
@@ -115,7 +125,7 @@ export function encodeDiscovery(discovery) {
     out.assets[key] = {
       l: h.lastSeen ? Math.round(Date.parse(h.lastSeen) / 1000) : null,
       p: (h.points ?? []).map((pt) => {
-        const m = trimTail(D_METRICS.map((name) => compactValue(pt.metrics?.[name])));
+        const m = trimTail(D_METRICS.map((name) => encodeField(name, pt.metrics?.[name])));
         const v = trimTail(D_VERDICT.map((name) => compactValue(pt.verdict?.[name])));
         return v.length ? [Math.round(pt.at / 1000), m, v] : [Math.round(pt.at / 1000), m];
       }),
@@ -135,7 +145,7 @@ export function decodeDiscovery(raw) {
       lastSeen: h.l ? new Date(h.l * 1000).toISOString() : null,
       points: (h.p ?? []).map(([t, m, v]) => ({
         at: t * 1000,
-        metrics: Object.fromEntries(metrics.map((name, i) => [name, m?.[i] ?? null])),
+        metrics: Object.fromEntries(metrics.map((name, i) => [name, decodeField(name, m?.[i])])),
         verdict: Object.fromEntries(verdict.map((name, i) => [name, v?.[i] ?? null])),
       })),
     };

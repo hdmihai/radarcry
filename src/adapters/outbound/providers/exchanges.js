@@ -199,32 +199,96 @@ export function createBithumb({ http, cfg }) {
 }
 
 /* ----------------------------------------------------------------------------- Binance Alpha */
-export function createBinanceAlpha({ http, cfg }) {
-  const markets = async () => {
-    if (!cfg.enabled) return disabled('binance_alpha', 'alpha/all/token/list');
-    return mapResult(
-      await http.getJson('https://www.binance.com/bapi/defi/v1/public/wallet-direct/buw/wallet/cex/alpha/all/token/list', opt('binance_alpha', cfg, '/bapi/.../alpha/all/token/list', { validate: (d) => Array.isArray(d?.data), hash: true })),
-      (d) => d.data
-        .filter((t) => t && t.offline !== true)
-        .map((t) => ({
-          chainId: t.chainId,
-          chainName: t.chainName,
-          contractAddress: t.contractAddress,
-          symbol: t.symbol,
-          name: t.name,
-          price: toNum(t.price),
-          marketCap: toNum(t.marketCap),
-          liquidity: toNum(t.liquidity),
-          volume24h: toNum(t.volume24h),
-          holders: toNum(t.holders),
-          listingCex: t.listingCex === true,
-          listingTime: toNum(t.listingTime),
-          hotTag: t.hotTag === true,
-          alphaId: t.alphaId ?? null,
-        })),
-    );
+/**
+ * One Binance Alpha token, in the port's vocabulary. Field names follow the public token list
+ * documented at developers.binance.com/docs/alpha/market-data/rest-api/token-list; numbers arrive
+ * as strings there and leave as numbers (or null) here.
+ */
+export function normalizeAlphaToken(t) {
+  return {
+    tokenId: t.tokenId ?? null,
+    alphaId: t.alphaId ?? null,
+    chainId: t.chainId,
+    chainName: t.chainName,
+    contractAddress: t.contractAddress,
+    symbol: t.symbol,
+    name: t.name,
+    image: t.iconUrl ?? null,
+    price: toNum(t.price),
+    percentChange24h: toNum(t.percentChange24h),
+    marketCap: toNum(t.marketCap),
+    fdv: toNum(t.fdv),
+    circulating: toNum(t.circulatingSupply),
+    total: toNum(t.totalSupply),
+    liquidity: toNum(t.liquidity),
+    volume24h: toNum(t.volume24h),
+    trades24h: toNum(t.count24h),
+    holders: toNum(t.holders),
+    listingCex: t.listingCex === true,
+    listingTime: toNum(t.listingTime),
+    hotTag: t.hotTag === true,
+    // Binance's own per-token points multiplier for trading volume (undocumented semantics): kept
+    // as a published fact next to the volume it may have inflated, never used as a score input.
+    mulPoint: toNum(t.mulPoint),
+    onlineTge: t.onlineTge === true,
+    onlineAirdrop: t.onlineAirdrop === true,
   };
-  return { id: 'binance_alpha', markets };
+}
+
+/**
+ * An Alpha token as a universe row (MarketRow). This is what lets the radar see the projects it
+ * exists for: LAB, BTW and AGT were all Binance Alpha tokens, and LAB set up at a $12M market cap —
+ * below the ~$15M floor of the aggregators' top 1000 in late 2026. Alpha reports supply, holders
+ * and liquidity for every token, so these rows are complete enough to be researched like any other.
+ */
+export function alphaMarketRow(t) {
+  return {
+    source: 'binance_alpha',
+    sourceId: t.alphaId ?? t.tokenId ?? `${t.chainId}:${t.contractAddress}`,
+    symbol: t.symbol,
+    name: t.name,
+    rank: null,
+    price: t.price,
+    marketCap: t.marketCap,
+    fdv: t.fdv,
+    volume24h: t.volume24h,
+    circulating: t.circulating,
+    total: t.total,
+    max: null,
+    change: { h24: t.percentChange24h },
+    ath: null,
+    athChangePct: null,
+    athDate: null,
+    dateAdded: Number.isFinite(t.listingTime) ? new Date(t.listingTime).toISOString() : null,
+    firstDataAt: null,
+    tags: ['binance-alpha', ...(t.chainName ? [`${String(t.chainName).toLowerCase()}-ecosystem`] : [])],
+    platform: t.contractAddress ? { chain: t.chainId ?? t.chainName, address: t.contractAddress } : null,
+    numMarketPairs: null,
+    image: t.image,
+    lastUpdated: null,
+  };
+}
+
+export function createBinanceAlpha({ http, cfg }) {
+  /*
+   * One HTTP call per run, shared by both ports: `markets()` tags the aggregator assets that are
+   * Alpha-listed, `listTop()` brings the Alpha tokens themselves into the universe. Memoised per
+   * adapter instance, and the composition root builds one instance per run.
+   */
+  let pending = null;
+  const fetchList = () => {
+    if (!cfg.enabled) return Promise.resolve(disabled('binance_alpha', 'alpha/all/token/list'));
+    pending ??= http.getJson('https://www.binance.com/bapi/defi/v1/public/wallet-direct/buw/wallet/cex/alpha/all/token/list', opt('binance_alpha', cfg, '/bapi/.../alpha/all/token/list', { validate: (d) => Array.isArray(d?.data), hash: true }))
+      .then((r) => mapResult(r, (d) => d.data
+        // Delisted or trading-halted tokens are not research candidates.
+        .filter((t) => t && t.offline !== true && t.offsell !== true)
+        .map(normalizeAlphaToken)));
+    return pending;
+  };
+
+  const markets = () => fetchList();
+  const listTop = async () => mapResult(await fetchList(), (rows) => rows.filter((t) => t.contractAddress).map(alphaMarketRow));
+  return { id: 'binance_alpha', markets, listTop };
 }
 
 /* --------------------------------------------------------------- Binance public data mirror */

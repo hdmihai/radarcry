@@ -82,6 +82,24 @@ test('DexScreener: pairs aggregate per token (liquidity, txns, oldest pair, top 
   assert.equal(Object.keys(r.data).length, 1, 'unrelated base tokens are ignored');
 });
 
+test('DexScreener: a pool where the token is the quote side counts too, with trade direction flipped', async () => {
+  const addr = '0x00000000000000000000000000000000000000b5';
+  const http = stubHttp([[/tokens\/v1\/bsc\//, [
+    // The deepest pool lists the project as the *quote* token (token0/token1 ordering on a CL DEX).
+    { baseToken: { address: '0x55d398326f99059ff775485246999027b3197955' }, quoteToken: { address: addr }, liquidity: { usd: 1_300_000 }, volume: { h24: 4_000_000 }, txns: { h24: { buys: 500, sells: 900 }, h6: { buys: 100, sells: 200 } }, pairCreatedAt: 1_760_000_000_000, url: 'https://dexscreener.com/bsc/main', dexId: 'pancakeswap', pairAddress: '0xmain', priceUsd: '1.0', priceNative: '10.0' },
+    { baseToken: { address: addr }, quoteToken: { address: '0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c' }, liquidity: { usd: 20_000 }, volume: { h24: 5_000 }, txns: { h24: { buys: 10, sells: 5 } }, pairCreatedAt: 1_765_000_000_000, url: 'https://dexscreener.com/bsc/minor', dexId: 'pancakeswap', pairAddress: '0xminor', priceUsd: '0.1' },
+  ]]]);
+  const r = await createDexScreener({ http, cfg }).tokens('bsc', [addr]);
+  const agg = r.data[addr];
+  assert.equal(agg.pairs, 2, 'both pools belong to the project');
+  assert.equal(agg.liquidityUsd, 1_320_000, 'the quote-side pool is no longer dropped');
+  assert.equal(agg.buys24h, 900 + 10, 'a sell of the base token is a buy of the quote token');
+  assert.equal(agg.sells24h, 500 + 5);
+  assert.equal(agg.topPair.pairAddress, '0xmain');
+  assert.equal(agg.topPair.side, 'quote');
+  assert.equal(agg.topPair.priceUsd, 0.1, 'quote price = base USD price / price in quote units');
+});
+
 test('GoPlus EVM: fractional taxes, renounced owner, concentration net of burn/LP/CEX', async () => {
   const sec = normalizeEvm({
     is_honeypot: '0', cannot_sell_all: '0', buy_tax: '0.05', sell_tax: '0.1', is_mintable: '0', owner_address: '0x000000000000000000000000000000000000dead',

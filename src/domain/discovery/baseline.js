@@ -33,6 +33,17 @@ export const TRACKED = [
 
 const MAD_TO_SIGMA = 1.4826;
 
+/**
+ * Metrics whose value depends on *who* measured it. Holder counts from Binance Alpha, GoPlus,
+ * GeckoTerminal and a NodeReal holder list differ systematically; so do DexScreener's and Alpha's
+ * liquidity. Which provider answers can change from one run to the next (a rate limit is enough),
+ * and comparing a GoPlus count against a GeckoTerminal median would report a change in holders that
+ * is only a change in sources. These metrics are compared against history from the same source
+ * only; a reading with no recorded source is compared only with other unsourced readings.
+ */
+export const SOURCED = { holders: 'holdersSource', liquidityUsd: 'liquiditySource', top10Pct: 'top10Source' };
+const UNSOURCED = '∅';
+
 /** Against a perfectly flat history, a move smaller than this share of the level is not a change. */
 export const FLAT_HISTORY_MIN_MOVE = 0.1;
 
@@ -82,8 +93,19 @@ export function buildBaseline(points, { nowMs, windowDays = 30, minPoints = 4 })
   const metrics = {};
   for (const key of TRACKED) {
     const values = hist.map((p) => p.metrics?.[key]).filter(isNum);
+    // For sourced metrics keep each provider's series apart (see SOURCED).
+    let bySource = null;
+    if (SOURCED[key]) {
+      bySource = {};
+      for (const p of hist) {
+        const v = p.metrics?.[key];
+        if (!isNum(v)) continue;
+        const src = p.metrics?.[SOURCED[key]] ?? UNSOURCED;
+        (bySource[src] ??= []).push(v);
+      }
+    }
     if (!values.length) {
-      metrics[key] = { n: 0, median: null, p10: null, p90: null, min: null, max: null };
+      metrics[key] = { n: 0, median: null, p10: null, p90: null, min: null, max: null, bySource };
       continue;
     }
     metrics[key] = {
@@ -94,6 +116,7 @@ export function buildBaseline(points, { nowMs, windowDays = 30, minPoints = 4 })
       min: round(Math.min(...values), 8),
       max: round(Math.max(...values), 8),
       values,
+      bySource,
     };
   }
   const spanDays = hist.length >= 2 ? round((hist[hist.length - 1].at - hist[0].at) / DAY_MS, 2) : null;
@@ -110,14 +133,22 @@ export function compareToBaseline(current, baseline) {
   for (const key of TRACKED) {
     const b = baseline?.metrics?.[key] ?? { n: 0, median: null, values: [] };
     const x = isNum(current?.[key]) ? current[key] : null;
-    const values = b.values ?? [];
+    let values = b.values ?? [];
+    let med = b.median ?? null;
+    let source = null;
+    if (SOURCED[key]) {
+      source = current?.[SOURCED[key]] ?? null;
+      values = b.bySource?.[source ?? UNSOURCED] ?? [];
+      med = values.length ? round(median(values), 8) : null;
+    }
     out[key] = {
       value: x,
-      median: b.median ?? null,
-      changePct: isNum(x) && isNum(b.median) && b.median !== 0 ? round((x / b.median - 1) * 100, 2) : null,
+      median: med,
+      changePct: isNum(x) && isNum(med) && med !== 0 ? round((x / med - 1) * 100, 2) : null,
       z: round(robustZ(values, x), 2),
       percentile: round(percentileOf(values, x), 3),
-      n: b.n ?? 0,
+      n: values.length,
+      ...(SOURCED[key] ? { source } : {}),
     };
   }
   return out;
@@ -149,9 +180,12 @@ export function metricRow(a) {
     volume24h: m.volume24h ?? null,
     turnover: a.derived?.turnover ?? null,
     liquidityUsd: oc.liquidityUsd ?? null,
+    liquiditySource: oc.liquiditySource ?? null,
     holders: oc.holders ?? null,
+    holdersSource: oc.holdersSource ?? null,
     holdersEffective: oc.holdersEffective ?? null,
     top10Pct: oc.top10Pct ?? null,
+    top10Source: oc.top10Source ?? null,
     oiUsd: d.oiUsd ?? null,
     fundingPct8h: d.fundingPct8h ?? null,
     tvl: a.fundamentals?.tvl ?? null,

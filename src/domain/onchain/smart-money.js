@@ -159,7 +159,7 @@ export function smartMoneyScore({ asset, cmp }) {
 
   /* ── penalties ─────────────────────────────────────────────────────────────────────────────── */
 
-  const insider = isNum(classified?.top10EffectivePct) ? classified.top10EffectivePct : oc.top10Pct;
+  const insider = isNum(classified?.top10EffectivePct) ? classified.top10EffectivePct : isNum(oc.top10EffectivePct) ? oc.top10EffectivePct : oc.top10Pct;
   if (isNum(insider)) {
     pen('INSIDER_CONCENTRATION', insider >= 60, `top 10 efectiv deține ${round(insider, 1)}% din supply tranzacționabil`);
   }

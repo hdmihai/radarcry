@@ -137,7 +137,12 @@ export function attachVenues(assets, v) {
         listingCex: t.listingCex === true,
         listingTime: toNum(t.listingTime),
         liquidity: toNum(t.liquidity),
+        volume24h: toNum(t.volume24h),
+        trades24h: toNum(t.trades24h),
         hotTag: t.hotTag === true,
+        mulPoint: toNum(t.mulPoint),
+        onlineTge: t.onlineTge === true,
+        onlineAirdrop: t.onlineAirdrop === true,
         alphaId: t.alphaId ?? null,
       };
       stats.alpha += 1;

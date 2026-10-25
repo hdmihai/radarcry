@@ -197,3 +197,16 @@ test('discovery-driven projects are researched first: the capped checks reach th
   const scanned = driven.filter((r) => r.onchain?.security).length;
   assert.ok(scanned >= driven.length * 0.9, `${scanned}/${driven.length} discovery-driven projects have a contract scan`);
 });
+
+test('Binance Alpha tokens below the top 1000 are part of the universe and build their own norm', async () => {
+  const u = last.health.universe;
+  assert.ok(u.binanceAlpha > 0, 'the Alpha list is read');
+  assert.ok(u.alphaOnly > 0, 'some Alpha tokens are outside the aggregators\' top 1000');
+  assert.ok(u.alphaOnlyEligible > 0, 'and some of those pass the small-cap screen');
+  assert.ok(u.merged > u.coingecko, 'they are added, not only used as tags');
+
+  const raw = JSON.parse(await readFile(join(run.stateDir, 'discovery.json'), 'utf8'));
+  const alphaSrc = raw.metrics.indexOf('holdersSource');
+  const tracked = Object.values(raw.assets).filter((a) => a.p.some((pt) => pt[1]?.[alphaSrc] === 'A'));
+  assert.ok(tracked.length >= u.alphaOnlyEligible, `${tracked.length} projects carry Binance Alpha holder readings in their norm`);
+});

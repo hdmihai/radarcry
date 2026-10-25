@@ -196,6 +196,7 @@ function card(row, s) {
           <div class="kv"><span>Lichiditate DEX</span><b>${usd(row.onchain.liquidityUsd)}</b></div>
           <div class="kv"><span>Deținători</span><b>${num(row.onchain.holders)}</b></div>
           <div class="kv" data-tip="${tip('Concentrarea pe supply-ul efectiv: pool-urile, bridge-urile, staking-ul, lock-urile și adresele de ardere sunt excluse, pentru că nu pot fi vândute de un decident.')}"><span>Top 10 efectiv</span><b>${pct(row.onchain.top10EffectivePct, { sign: false })}</b></div>
+          ${Number.isFinite(row.onchain.top10ActorsPct) ? html`<div class="kv" data-tip="${tip('Partea din float deținută de cei mai mari 10 actori independenți: și portofelele burselor sunt scoase din numărător, pentru că adună soldurile a mii de utilizatori — nu sunt o singură decizie de vânzare.')}"><span>Top 10 actori</span><b>${pct(row.onchain.top10ActorsPct, { sign: false })}</b></div>` : ''}
           <div class="kv"><span>Pe burse (CEX)</span><b>${pct(row.onchain.cexBalancePct, { sign: false })}</b></div>
           <div class="kv"><span>Funding</span><b>${row.derivatives.fundingPct8h === null ? '—' : `${row.derivatives.fundingPct8h > 0 ? '+' : ''}${row.derivatives.fundingPct8h.toFixed(4)}%/8h`}</b></div>
           <div class="kv"><span>Open interest</span><b>${usd(row.derivatives.oiUsd)}</b></div>

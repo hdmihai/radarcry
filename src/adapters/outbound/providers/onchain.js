@@ -33,21 +33,40 @@ export function createDexScreener({ http, cfg }) {
       const r = await http.getJson(`https://api.dexscreener.com/tokens/v1/${dsChain}/${batch.join(',')}`, opt('dexscreener', cfg, '/tokens/v1/{chain}/{addresses}', { validate: Array.isArray }));
       last = r;
       if (!r.ok) continue;
+      const wanted = new Set(batch.map((a) => normAddress(chain, a)));
       for (const pair of r.data) {
-        const addr = normAddress(chain, pair.baseToken?.address);
-        if (!addr || !batch.map((a) => normAddress(chain, a)).includes(addr)) continue;
+        /*
+         * A token can sit on either side of a pool. DexScreener orders base/quote by its own rules
+         * (on concentrated-liquidity DEXes it follows token0/token1), so a project's deepest pool can
+         * list it as the *quote* token. Counting base-side pairs only dropped those pools entirely —
+         * their liquidity, volume and trades. Pool liquidity and volume are pool-wide numbers either
+         * way; trade direction flips on the quote side (a buy of the base is a sell of the quote).
+         */
+        const base = normAddress(chain, pair.baseToken?.address);
+        const quote = normAddress(chain, pair.quoteToken?.address);
+        const addr = wanted.has(base) ? base : wanted.has(quote) ? quote : null;
+        if (!addr) continue;
+        const asQuote = addr !== base;
         const agg = out[addr] ?? { pairs: 0, liquidityUsd: 0, volume24h: 0, buys24h: 0, sells24h: 0, buys6h: 0, sells6h: 0, oldestPairAt: null, topPair: null, websites: [], socials: [] };
         agg.pairs += 1;
         const liq = toNum(pair.liquidity?.usd) ?? 0;
         agg.liquidityUsd += liq;
         agg.volume24h += toNum(pair.volume?.h24) ?? 0;
-        agg.buys24h += toNum(pair.txns?.h24?.buys) ?? 0;
-        agg.sells24h += toNum(pair.txns?.h24?.sells) ?? 0;
-        agg.buys6h += toNum(pair.txns?.h6?.buys) ?? 0;
-        agg.sells6h += toNum(pair.txns?.h6?.sells) ?? 0;
+        const buys24 = toNum(pair.txns?.h24?.buys) ?? 0;
+        const sells24 = toNum(pair.txns?.h24?.sells) ?? 0;
+        const buys6 = toNum(pair.txns?.h6?.buys) ?? 0;
+        const sells6 = toNum(pair.txns?.h6?.sells) ?? 0;
+        agg.buys24h += asQuote ? sells24 : buys24;
+        agg.sells24h += asQuote ? buys24 : sells24;
+        agg.buys6h += asQuote ? sells6 : buys6;
+        agg.sells6h += asQuote ? buys6 : sells6;
         const created = toNum(pair.pairCreatedAt);
         if (created && (!agg.oldestPairAt || created < agg.oldestPairAt)) agg.oldestPairAt = created;
-        if (!agg.topPair || liq > agg.topPair.liquidityUsd) agg.topPair = { url: pair.url, dexId: pair.dexId, pairAddress: pair.pairAddress, liquidityUsd: liq, priceUsd: toNum(pair.priceUsd) };
+        // priceUsd is the *base* token's price; on the quote side our token's price is base/native.
+        const basePrice = toNum(pair.priceUsd);
+        const native = toNum(pair.priceNative);
+        const priceUsd = asQuote ? (isNum(basePrice) && isNum(native) && native > 0 ? basePrice / native : null) : basePrice;
+        if (!agg.topPair || liq > agg.topPair.liquidityUsd) agg.topPair = { url: pair.url, dexId: pair.dexId, pairAddress: pair.pairAddress, liquidityUsd: liq, priceUsd, side: asQuote ? 'quote' : 'base' };
         for (const w of pair.info?.websites ?? []) if (w?.url && !agg.websites.includes(w.url)) agg.websites.push(w.url);
         for (const s of pair.info?.socials ?? []) if (s?.url && !agg.socials.some((x) => x.url === s.url)) agg.socials.push({ type: s.type, url: s.url });
         out[addr] = agg;
@@ -104,6 +123,23 @@ export function createGeckoTerminal({ http, cfg }) {
 /* ----------------------------------------------------------------------------- GoPlus */
 const BURN = /^(0x0{40}|0x0{36}dead|0x000000000000000000000000000000000000dead)$/i;
 
+/**
+ * GoPlus answers HTTP 200 with its own envelope: {code, message, result}. Code 1 (complete) and 2
+ * (partial) carry a result; anything else is a refusal whose code is the useful fact. In the first
+ * live runs 18 of 44 calls came back that way and were reported only as "unexpected structure".
+ * A rate-limit refusal is retried with backoff by the HTTP client; every other refusal keeps the
+ * provider's code and message, so the health panel says what GoPlus actually said.
+ */
+export function classifyGoPlus(d) {
+  if (!d || typeof d !== 'object') return { status: 'INVALID_PAYLOAD', message: 'GoPlus: răspuns gol' };
+  const message = String(d.message ?? '').slice(0, 120);
+  if (Number(d.code) === 4029 || /too many|rate limit|frequen/i.test(message)) {
+    return { status: 'RATE_LIMITED', message: `GoPlus ${d.code ?? ''}: ${message || 'limită de rată'}`.trim() };
+  }
+  if (d.result && typeof d.result === 'object') return null;
+  return { status: 'INVALID_PAYLOAD', message: `GoPlus cod ${d.code ?? '?'}: ${message || 'fără result'}` };
+}
+
 export function createGoPlus({ http, cfg }) {
   const security = async (chain, addresses) => {
     if (!cfg.enabled) return disabled('goplus', '/token_security');
@@ -117,7 +153,7 @@ export function createGoPlus({ http, cfg }) {
       const url = id === 'solana'
         ? `https://api.gopluslabs.io/api/v1/solana/token_security?contract_addresses=${batch.join(',')}`
         : `https://api.gopluslabs.io/api/v1/token_security/${id}?contract_addresses=${batch.join(',')}`;
-      const r = await http.getJson(url, opt('goplus', cfg, id === 'solana' ? '/solana/token_security' : '/token_security/{chain}', { validate: (d) => d && typeof d.result === 'object' }));
+      const r = await http.getJson(url, opt('goplus', cfg, id === 'solana' ? '/solana/token_security' : '/token_security/{chain}', { classify: classifyGoPlus }));
       last = r;
       if (!r.ok || !r.data.result) continue;
       for (const [addr, info] of Object.entries(r.data.result)) {
@@ -165,6 +201,24 @@ export function lpLockedPct(lpHolders) {
   return Math.round(Math.min(1, Math.max(0, locked)) * 1000) / 10;
 }
 
+/**
+ * GoPlus's top-holder list in the holder-list vocabulary the classifier reads (address, share in
+ * percent of supply, provider tag, locked, contract). With no NodeReal key this is the only address
+ * list a run has, and classifying it against the bundled label index is what separates an exchange
+ * hot wallet or an LP pool from a real large holder.
+ */
+export function goplusTopHolders(holders, { lowercase = true } = {}) {
+  if (!Array.isArray(holders)) return [];
+  return holders.map((h) => ({
+    address: lowercase ? String(h.address ?? '').toLowerCase() : String(h.address ?? ''),
+    share: isNum(toNum(h.percent)) ? toNum(h.percent) * 100 : null,
+    balance: toNum(h.balance),
+    tag: h.tag ? String(h.tag) : null,
+    locked: flag01(h.is_locked) === true,
+    isContract: flag01(h.is_contract) === true,
+  })).filter((h) => h.address);
+}
+
 export function normalizeEvm(x) {
   const owner = String(x.owner_address ?? '');
   const stats = holderStats(x.holders, x.total_supply);
@@ -172,6 +226,7 @@ export function normalizeEvm(x) {
     holders: toNum(x.holder_count),
     top10Pct: stats.top10Pct,
     top10EffectivePct: stats.top10EffectivePct,
+    topHolders: goplusTopHolders(x.holders),
     // Who deployed and who controls the contract: the holder classifier tags both as PROJECT, so a
     // creator wallet holding 20 % of supply is reported as a team position rather than a "whale".
     creatorAddress: x.creator_address ? String(x.creator_address).toLowerCase() : null,
@@ -203,6 +258,7 @@ export function normalizeSolana(x) {
     holders: toNum(x.holder_count),
     top10Pct: stats.top10Pct,
     top10EffectivePct: stats.top10EffectivePct,
+    topHolders: goplusTopHolders(x.holders, { lowercase: false }),
     creatorAddress: x.creators?.[0]?.address ? String(x.creators[0].address) : null,
     ownerAddress: null,
     lpLockedPct: null, // Solana pools report LP burn per DEX program, not as a GoPlus LP holder list

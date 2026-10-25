@@ -1,7 +1,8 @@
 # CRI Radar
 
 **Crypto Research Intelligence** — un motor de cercetare care scanează top 1000 CoinMarketCap și
-CoinGecko și răspunde la o singură întrebare, formulată cuvânt cu cuvânt:
+CoinGecko plus toate tokenurile Binance Alpha și răspunde la o singură întrebare, formulată cuvânt
+cu cuvânt:
 
 > „Arată-mi proiectele mici unde se schimbă simultan mai multe lucruri importante, înainte ca
 > mișcarea să devină evidentă, și spune-mi ce riscuri pot invalida această ipoteză.”
@@ -24,6 +25,19 @@ minimum **500 000 $/zi**. Universul este construit din două surse independente 
 CoinMarketCap, cu CoinPaprika ca plasă de siguranță), fuzionate pe contract și pe nume, nu pe simbol
 — ca să nu ajungă doi omonimi în același rând. Stablecoin-urile, activele wrapped/staked și cele
 tokenizate sunt excluse explicit, iar fiecare excludere este numărată și publicată.
+
+**Binance Alpha intră în univers în întregime**, nu doar ca etichetă. LAB, BTW și AGT erau toate
+tokenuri Alpha, iar LAB avea 12 M$ capitalizare înainte de mișcare — sub pragul de ~15 M$ al top
+1000 CoinGecko. Un token Alpha deja prezent în top 1000 este doar îmbogățit; unul din afara lui
+devine proiect propriu, cu identitatea CoinGecko când aceasta îi cunoaște contractul. Lista Alpha
+(publică, fără cheie) aduce gratuit, pentru fiecare token, deținătorii și lichiditatea: două familii
+de factori măsurabile față de propria normă la fiecare rulare, fără niciun apel în plus. Pe un token
+Alpha cu rotație de peste 100 % pe zi, invalidatorul `ALPHA_VOLUME` amintește că o parte din volum
+poate veni din farmingul punctelor Alpha.
+
+Citirile care depind de cine le-a măsurat — deținători, lichiditate, concentrare — își păstrează
+sursa, iar norma compară doar citiri din aceeași sursă: o rulare în care a răspuns GoPlus și una în
+care a răspuns GeckoTerminal nu produc o „creștere a deținătorilor” falsă.
 
 ### „se schimbă simultan mai multe lucruri importante”
 Fiecare rulare completă salvează un punct per proiect pe o ramură de stare. Din acel istoric se
@@ -84,7 +98,7 @@ npm run build && npm run serve
 | `npm run probe` | o cerere mică per furnizor; raportează stare, latență, chei lipsă și pașii de înscriere |
 | `npm run labels` | reconstruiește setul de etichete on-chain din eth-labels (MIT) |
 | `npm run demo` | scanare simulată + build + server local |
-| `npm run ci` | verificare de sintaxă + 164 de teste (arhitectură, motoare, contract, end-to-end) |
+| `npm run ci` | verificare de sintaxă + 177 de teste (arhitectură, motoare, contract, end-to-end) |
 | `npm run summary` | raportul de rulare, așa cum apare în GitHub Actions |
 
 ---
@@ -212,7 +226,7 @@ Dashboard-ul este mobile-first: fiecare ecran a fost verificat la 390 px fără 
 |---|---|---|
 | `Scan & deploy` | la 4 ore, la :17 | scanare completă, validare contract, salvare stare, deploy Pages |
 | `Pulse` | la 15 minute | preț, funding, open interest; nu atinge nicio cuotă lunară |
-| `CI` | la fiecare push | sintaxă, reguli de arhitectură, 164 de teste, build DEMO offline |
+| `CI` | la fiecare push | sintaxă, reguli de arhitectură, 177 de teste, build DEMO offline |
 | `Probe surse` | săptămânal | o cerere per furnizor; eșuează doar dacă o sursă fără cheie a căzut |
 | `Actualizare etichete` | lunar | reconstruiește setul eth-labels și deschide un pull request |
 
@@ -262,7 +276,7 @@ src/
 web/               dashboard static, ES module native, fără build step
 schema/            contractul backend ↔ dashboard, validat la fiecare publicare
 config/labels/     setul de etichete on-chain inclus în repo (MIT)
-test/              164 de teste, inclusiv cele de arhitectură
+test/              177 de teste, inclusiv cele de arhitectură
 ```
 
 Detalii de proiectare, inclusiv de ce fiecare prag este unde este: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).

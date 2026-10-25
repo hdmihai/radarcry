@@ -77,6 +77,7 @@ export function createHttpClient({
    * @param {string} url
    * @param {{provider:string, endpoint?:string, headers?:Record<string,string>, timeoutMs?:number, retries?:number,
    *          minIntervalMs?:number, maxCalls?:number, breakerThreshold?:number, validate?:(data:any)=>boolean,
+   *          classify?:(data:any)=>({status:string, message?:string}|null),
    *          parse?: 'json'|'text', hash?: boolean, units?: number,
    *          method?: 'GET'|'POST', body?: string, contentType?: string}} o
    */
@@ -163,6 +164,19 @@ export function createHttpClient({
         data = o.parse === 'text' ? text : JSON.parse(text);
       } catch (err) {
         last = { ok: false, status: STATUS.INVALID_PAYLOAD, data: null, message: `JSON invalid: ${String(err.message).slice(0, 120)}` };
+        break;
+      }
+      /*
+       * Some APIs answer HTTP 200 with an error envelope in the body ({code: 4029, message: "too many
+       * requests"}). A boolean `validate` can only call that "unexpected structure", which hides the
+       * one fact that matters — the provider's own reason. `classify` lets an adapter name it: a
+       * RATE_LIMITED verdict is retried with backoff exactly like an HTTP 429, anything else stops
+       * with the provider's code and message, and both reach the telemetry as they are.
+       */
+      const verdict = o.classify ? o.classify(data) : null;
+      if (verdict) {
+        last = { ok: false, status: verdict.status ?? STATUS.INVALID_PAYLOAD, data: null, message: verdict.message ?? 'răspuns respins de furnizor' };
+        if (last.status === STATUS.RATE_LIMITED && attempt < retries) { await sleepFn(Math.min(backoff(attempt + 1) * 2, 30_000)); continue; }
         break;
       }
       if (o.validate && !o.validate(data)) {

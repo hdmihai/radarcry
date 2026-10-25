@@ -218,14 +218,14 @@
       "enabled": true,
       "timeoutMs": 15000,
       "retries": 1,
-      "minIntervalMs": 2200,
+      "minIntervalMs": 4000,
       "maxCalls": 30
     },
     "goplus": {
       "enabled": true,
       "timeoutMs": 20000,
       "retries": 1,
-      "minIntervalMs": 2200,
+      "minIntervalMs": 3000,
       "maxCalls": 50,
       "batchSize": 1
     },

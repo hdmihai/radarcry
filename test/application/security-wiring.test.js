@@ -135,3 +135,38 @@ test('an empty GoPlus record is reported as "not scanned", never as "scanned and
   const none = onchainFacts({ asset, deep: {}, labelIndex: emptyLabelIndex(), flowHistory: [], nowMs: NOW });
   assert.ok(invalidatorKeys(none).keys.includes('NO_SECURITY_SCAN'));
 });
+
+test('without a full holder list, GoPlus\'s top 10 is classified with the label index for concentration', async () => {
+  const { createLabelIndex } = await import('../../src/domain/onchain/labels.js');
+  const BINANCE = '0x8894e0a0c962cb723c1976a4421c95949be2d4e3';
+  const labels = createLabelIndex([{ address: BINANCE, class: 'cex', entity: 'Binance' }]);
+  const record = goplusRecord({
+    holders: [
+      { address: BINANCE, tag: '', percent: '0.40', is_locked: 0, is_contract: 0 },                       // exchange custody
+      { address: '0x1111111111111111111111111111111111111111', tag: 'PancakeSwap V2 Pool', percent: '0.20', is_locked: 0, is_contract: 1 },
+      { address: '0x000000000000000000000000000000000000dead', tag: '', percent: '0.10', is_locked: 0, is_contract: 0 },
+      { address: '0x2222222222222222222222222222222222222222', tag: '', percent: '0.08', is_locked: 0, is_contract: 0 },
+      { address: '0x3333333333333333333333333333333333333333', tag: '', percent: '0.05', is_locked: 0, is_contract: 0 },
+      { address: '0x4444444444444444444444444444444444444444', tag: '', percent: '0.03', is_locked: 0, is_contract: 0 },
+    ],
+  });
+  const oc = onchainFacts({ asset, deep: { security: normalizeEvm(record) }, labelIndex: labels, flowHistory: [], nowMs: NOW });
+  assert.equal(oc.concentrationBasis, 'top10_labelled');
+  assert.ok(oc.top10Pct >= 85, `raw top 10 is ${oc.top10Pct}% — pool, burn and exchange included`);
+  // Float = 100 − pool 20 − burn 10 = 70; independent actors = 8 + 5 + 3 = 16 → ~22.9 % of the float.
+  assert.ok(Math.abs(oc.top10ActorsPct - (16 / 70) * 100) < 0.01, String(oc.top10ActorsPct));
+  assert.equal(oc.snapshot, null, 'ten addresses are never used to follow flows');
+
+  const keys = riskEngine({ asset: { ...asset, onchain: oc, risk: {}, derivatives: null }, market: { regime: { state: 'NEUTRAL' } }, changed: { count: 0 } }).invalidators.map((i) => i.key);
+  assert.ok(!keys.includes('CONCENTRATION_CRITICAL'), 'an exchange wallet and an LP pool are not one sell decision');
+  assert.ok(!keys.includes('CONCENTRATION_HIGH'));
+});
+
+test('a raw top-10 figure alone is labelled as raw and never raised to critical', () => {
+  const oc = { top10Pct: 92, security: null };
+  const r = riskEngine({ asset: { ...asset, onchain: oc, risk: {}, derivatives: null }, market: { regime: { state: 'NEUTRAL' } }, changed: { count: 0 } });
+  const c = r.invalidators.find((i) => i.key === 'CONCENTRATION_CRITICAL');
+  assert.ok(c, 'the reading is still reported');
+  assert.equal(c.severity, 'HIGH');
+  assert.match(c.label, /brută/);
+});
