@@ -99,6 +99,7 @@ export const SOURCE = {
   upbit: 'Upbit',
   bithumb: 'Bithumb',
   binance_alpha: 'Binance Alpha',
+  gate_alpha: 'Gate Alpha',
   coingecko: 'CoinGecko',
   'coingecko+coinmarketcap': 'CoinGecko + CoinMarketCap',
   manual: 'config/catalysts.json',

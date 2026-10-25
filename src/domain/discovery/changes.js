@@ -22,6 +22,7 @@
  *     momentum 98 and early discovery 35.
  */
 import { clamp, isNum, round } from '../shared/math.js';
+import { ACCESS_CATALYSTS } from '../catalysts/catalysts.js';
 
 /** Families of change. Breadth across families is what the confluence score measures. */
 export const FAMILIES = {
@@ -222,7 +223,7 @@ const DETECTORS = [
     weight: 1.2,
     label: 'Acces nou: listare sau piață nouă',
     test: ({ a }) => {
-      const c = (a.catalysts ?? []).filter((x) => x.fresh && ['NEW_PERP', 'NEW_KRW_LISTING', 'NEW_BINANCE_SPOT', 'ALPHA_LISTED', 'NEW_SPOT_LISTING'].includes(x.type));
+      const c = (a.catalysts ?? []).filter((x) => x.fresh && ACCESS_CATALYSTS.includes(x.type));
       if (!c.length) return null;
       return { magnitude: c.length, detail: c.map((x) => x.label).join('; ') };
     },

@@ -9,41 +9,50 @@
   "deep": {
     "limit": 60,
     "keepWatchlist": 24,
+    "horizon": 1000,
     "shares": { "prescreen": 0.4, "legacy": 0.35 },
     "klines": {
       "d1Limit": 260,
       "h4Limit": 260
     },
+    "klinesConcurrency": 3,
     "cgChartFallback": 12,
     "coinDetailLimit": 25,
-    "securityLimit": 45,
+    "securityLimit": 60,
     "holdersLimit": 45,
+    "holdersInfoLimit": 60,
     "arkhamLimit": 30,
     "arkhamAddressLimit": 20,
-    "githubLimit": 24,
-    "youtubeLimit": 16
+    "githubLimit": 40,
+    "youtubeLimit": 20,
+    "cacheHours": { "security": 168, "detail": 336 }
   },
   "futures": {
     "watchlist": ["BTC", "ETH", "SOL", "AVAX", "NEAR", "FET", "DOGE", "JASMY", "LINK", "SUI"],
     "extraFromRadar": 10,
+    "maxInstruments": 1000,
     "klines": {
       "d1Limit": 260,
       "h4Limit": 260
     },
     "coinalyze": {
-      "maxSymbols": 20,
+      "maxSymbols": 60,
       "historyIntervalHours": 4,
       "historyDays": 14
     }
   },
   "runtime": {
-    "maxMinutes": 14,
+    "maxMinutes": 22,
     "pulseMaxMinutes": 4
   },
   "snapshot": {
+    "maxDeep": 60,
     "maxLight": 90,
     "fullDetail": 24,
-    "charts": 30
+    "cardRows": 48,
+    "charts": 30,
+    "discoveryRows": 120,
+    "futuresRows": 40
   },
   "discovery": {
     "earlyMinConfidence": 0,
@@ -92,7 +101,7 @@
     "dropUnseenDays": 21,
     "catalystRetentionDays": 30,
     "maxCatalysts": 2500,
-    "trackTopLight": 450,
+    "trackTopLight": 1000,
     "flowSnapshots": 24
   },
   "quotas": {
@@ -112,8 +121,8 @@
       "retries": 3,
       "minIntervalMs": 6500,
       "minIntervalMsWithKey": 2200,
-      "maxCalls": 60,
-      "maxCallsWithKey": 140
+      "maxCalls": 70,
+      "maxCallsWithKey": 160
     },
     "coinmarketcap": {
       "enabled": true,
@@ -135,7 +144,7 @@
       "timeoutMs": 15000,
       "retries": 2,
       "minIntervalMs": 110,
-      "maxCalls": 400
+      "maxCalls": 1600
     },
     "mexc_futures": {
       "enabled": true,
@@ -149,7 +158,7 @@
       "timeoutMs": 20000,
       "retries": 2,
       "minIntervalMs": 220,
-      "maxCalls": 120
+      "maxCalls": 1000
     },
     "gate": {
       "enabled": true,
@@ -184,7 +193,7 @@
       "timeoutMs": 20000,
       "retries": 2,
       "minIntervalMs": 1600,
-      "maxCalls": 40
+      "maxCalls": 50
     },
     "upbit": {
       "enabled": true,
@@ -204,29 +213,37 @@
       "enabled": true,
       "timeoutMs": 20000,
       "retries": 2,
-      "minIntervalMs": 500,
-      "maxCalls": 5
+      "minIntervalMs": 300,
+      "maxCalls": 900
+    },
+    "gate_alpha": {
+      "enabled": true,
+      "timeoutMs": 15000,
+      "retries": 2,
+      "minIntervalMs": 250,
+      "maxCalls": 130,
+      "maxPages": 60
     },
     "dexscreener": {
       "enabled": true,
       "timeoutMs": 15000,
       "retries": 2,
       "minIntervalMs": 250,
-      "maxCalls": 60
+      "maxCalls": 90
     },
     "geckoterminal": {
       "enabled": true,
       "timeoutMs": 15000,
       "retries": 1,
       "minIntervalMs": 4000,
-      "maxCalls": 30
+      "maxCalls": 70
     },
     "goplus": {
       "enabled": true,
       "timeoutMs": 20000,
       "retries": 1,
       "minIntervalMs": 3000,
-      "maxCalls": 50,
+      "maxCalls": 75,
       "batchSize": 1
     },
     "nodereal": {
@@ -269,14 +286,14 @@
       "timeoutMs": 20000,
       "retries": 1,
       "minIntervalMs": 800,
-      "maxCalls": 60
+      "maxCalls": 100
     },
     "youtube": {
       "enabled": true,
       "timeoutMs": 20000,
       "retries": 1,
       "minIntervalMs": 600,
-      "maxCalls": 20
+      "maxCalls": 24
     },
     "arkham": {
       "enabled": true,

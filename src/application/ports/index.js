@@ -85,11 +85,18 @@
 
 /**
  * ListingRegistryPort — venues whose listings are catalysts in themselves (Upbit, Bithumb,
- * Binance Alpha). The registry is diffed against the stored state, so a listing is observed
- * at the run that first sees it and never back-dated.
+ * Binance Alpha, Gate Alpha). The registry is diffed against the stored state, so a listing is
+ * observed at the run that first sees it and never back-dated.
  * @typedef {Object} ListingRegistryPort
  * @property {string} id
  * @property {() => Promise<ProviderResult<any[]>>} markets
+ */
+
+/**
+ * AlphaCandlesPort — candles for an exchange Alpha token that has no centralised spot market yet
+ * (Binance Alpha's public klines), in the same shape as SpotVenuePort.klines.
+ * @typedef {Object} AlphaCandlesPort
+ * @property {(alphaId:string, interval:'1d'|'4h', limit?:number) => Promise<ProviderResult<any[]>>} klines
  */
 
 /* ───────────────────────────── on-chain ──────────────────────────────────────────────────────── */
@@ -244,10 +251,12 @@
 
 /**
  * SnapshotPublisherPort — writes the public contract (data/latest.json) consumed by the dashboard,
- * validating it against schema/latest.schema.json on the way out. A snapshot that does not satisfy
- * the schema is not published, so the dashboard can never be handed a shape it cannot render.
+ * validating it against schema/latest.schema.json on the way out, and — when given — the table of
+ * the whole research horizon (data/universe.json, schema/universe.schema.json), written first. A
+ * document that does not satisfy its schema is not published, so the dashboard can never be handed
+ * a shape it cannot render.
  * @typedef {Object} SnapshotPublisherPort
- * @property {(snapshot:any) => Promise<{path:string, bytes:number}>} publish
+ * @property {(snapshot:any, extra?:{universe?:any}) => Promise<{path:string, bytes:number, universe?:{path:string, bytes:number}|null}>} publish
  */
 
 /**
@@ -283,7 +292,8 @@
  * @property {DerivativesAggregatorPort} coinalyze
  * @property {ListingRegistryPort} upbit
  * @property {ListingRegistryPort} bithumb
- * @property {ListingRegistryPort & UniversePort} binanceAlpha  one memoised call serves both: venue tags and universe rows
+ * @property {ListingRegistryPort & UniversePort & AlphaCandlesPort} binanceAlpha  one memoised call serves both venue tags and universe rows; klines for Alpha-only tokens
+ * @property {ListingRegistryPort & UniversePort} gateAlpha  Gate's public Alpha list (API v4), read once per run, same two roles
  * @property {OnchainPort} dexscreener
  * @property {OnchainPort} geckoterminal
  * @property {OnchainPort} goplus

@@ -44,6 +44,8 @@ import { futuresView, pickWatchlist, runFuturesRadar } from './futures-radar.js'
 import { appendCatalysts, appendDiscoveryHistory, appendFlows, appendHistory, appendTelemetry, discoveryPoint, historyPoint, providerSuccessRates } from './state-update.js';
 import { buildProviderHealth, chartPayload, methodology, overallHealth, quotaView, SCHEMA_VERSION } from './snapshot.js';
 import { discoveryView } from './discovery-view.js';
+import { universeTable } from './universe-view.js';
+import { cacheCoverage, pruneCache } from './deep-cache.js';
 
 export class UniverseUnavailableError extends Error {}
 
@@ -77,19 +79,20 @@ export async function runScan(deps, config) {
   // 1) Universe + venues + context + references, concurrently (each provider paced by its adapter).
   const [universe, venues, context, refs] = await Promise.all([
     (async () => {
-      const [cg, cmc, cp, alpha, platforms] = await Promise.all([
+      const [cg, cmc, cp, alpha, gateAlpha, platforms] = await Promise.all([
         safe(() => P.coingecko.listTop(topN)),
         safe(() => P.coinmarketcap.listTop(topN)),
         safe(() => P.coinpaprika.listTop(topN)),
-        // Binance Alpha joins the universe in full — see mergeUniverse for why. Same single call
-        // that also tags venues below (the adapter memoises it).
+        // The exchange Alpha lists join the universe in full — see mergeUniverse for why. Same reads
+        // that also tag venues below (the adapters memoise them).
         safe(() => P.binanceAlpha.listTop()),
+        safe(() => P.gateAlpha.listTop()),
         safe(() => P.coingecko.platforms()),
       ]);
-      return { cg, cmc, cp, alpha, platforms };
+      return { cg, cmc, cp, alpha, gateAlpha, platforms };
     })(),
     (async () => {
-      const [mexcSpot, binanceSpot, mexcPerps, gate, bitget, okx, hyperliquid, upbit, bithumb, alpha] = await Promise.all([
+      const [mexcSpot, binanceSpot, mexcPerps, gate, bitget, okx, hyperliquid, upbit, bithumb, alpha, gateAlpha] = await Promise.all([
         safe(() => P.mexc.spotTickers()),
         safe(() => P.binanceSpot.spotTickers()),
         safe(() => P.mexc.perps()),
@@ -100,8 +103,9 @@ export async function runScan(deps, config) {
         safe(() => P.upbit.markets()),
         safe(() => P.bithumb.markets()),
         safe(() => P.binanceAlpha.markets()),
+        safe(() => P.gateAlpha.markets()),
       ]);
-      return { mexcSpot, binanceSpot, mexcPerps, gate, bitget, okx, hyperliquid, upbit, bithumb, alpha };
+      return { mexcSpot, binanceSpot, mexcPerps, gate, bitget, okx, hyperliquid, upbit, bithumb, alpha, gateAlpha };
     })(),
     (async () => {
       const [global, trending, categories, fearGreed, boosts, gtTrending, llamaProtocols, llamaFees] = await Promise.all([
@@ -128,13 +132,18 @@ export async function runScan(deps, config) {
     coinmarketcap: universe.cmc.ok ? universe.cmc.data : null,
     coinpaprika: universe.cp.ok ? universe.cp.data : null,
     binanceAlpha: universe.alpha.ok ? universe.alpha.data : null,
+    gateAlpha: universe.gateAlpha.ok ? universe.gateAlpha.data : null,
     cgPlatforms: universe.platforms.ok ? universe.platforms.data : null,
     nowMs,
   });
   if (!merged.length) throw new UniverseUnavailableError('Nicio sursă de univers (CoinGecko / CoinMarketCap / CoinPaprika) nu a răspuns — snapshot-ul anterior rămâne publicat.');
   const { eligible, excluded } = screenUniverse(merged, config.universe);
-  const alphaOnly = merged.filter((a) => a.sources.length === 1 && a.sources[0] === 'binance_alpha');
-  logger.info(`univers: CG ${universe.cg.data?.length ?? 0} · CMC ${universe.cmc.data?.length ?? 0} · Binance Alpha ${universe.alpha.data?.length ?? 0} (${alphaOnly.length} în afara top 1000) · fuzionat ${merged.length} · eligibil ${eligible.length}`);
+  // Assets the universe holds only because an exchange Alpha list carries them (no aggregator row).
+  const ALPHA_SOURCES = new Set(['binance_alpha', 'gate_alpha']);
+  const isAlphaOnly = (a) => a.sources.length > 0 && a.sources.every((src) => ALPHA_SOURCES.has(src));
+  const alphaOnly = merged.filter(isAlphaOnly);
+  const onlyFrom = (src) => (a) => a.sources.length === 1 && a.sources[0] === src;
+  logger.info(`univers: CG ${universe.cg.data?.length ?? 0} · CMC ${universe.cmc.data?.length ?? 0} · Binance Alpha ${universe.alpha.data?.length ?? 0} · Gate Alpha ${universe.gateAlpha.data?.length ?? 0} (${alphaOnly.length} tokenuri Alpha în afara top 1000) · fuzionat ${merged.length} · eligibil ${eligible.length}`);
 
   // 3) Venues, attention, fundamentals.
   const perpResults = [
@@ -148,6 +157,7 @@ export async function runScan(deps, config) {
     upbit: venues.upbit,
     bithumb: venues.bithumb,
     alpha: venues.alpha,
+    gateAlpha: venues.gateAlpha,
     cgTrending: context.trending,
     dexBoosts: context.boosts,
     gtTrending: context.gtTrending,
@@ -163,6 +173,8 @@ export async function runScan(deps, config) {
     upbit: venues.upbit.ok,
     bithumb: venues.bithumb.ok,
     alpha: venues.alpha.ok,
+    // Only a complete read of Gate's paginated token list may produce "new on Gate Alpha" events.
+    gateAlpha: venues.gateAlpha.ok && venues.gateAlpha.meta?.listComplete !== false,
     universe: universe.cg.ok && universe.cmc.ok,
   };
   const byKey = new Map(merged.map((a) => [a.key, a]));
@@ -255,19 +267,44 @@ export async function runScan(deps, config) {
   const shortlist = light.filter((r) => shortKeys.has(r.asset.key)).map((r) => r.asset)
     .sort((a, b) => (priority.get(a.key) ?? 1e9) - (priority.get(b.key) ?? 1e9) || lightRank.get(a.key) - lightRank.get(b.key));
   /** Why a project was researched in depth this run — published with its row. */
-  const selectedBy = (key) => (prevBuilding.has(key) ? 'CONTINUITY' : prescreenRank.has(key) ? 'CHANGE_ENGINE' : 'SCORE');
+  // HORIZON: outside the priority, researched because the horizon covers every eligible project.
+  const selectedBy = (key) => (prevBuilding.has(key) ? 'CONTINUITY' : prescreenRank.has(key) ? 'CHANGE_ENGINE' : shortKeys.has(key) ? 'SCORE' : 'HORIZON');
 
-  // 8) Deep research.
-  logger.info(`deep research pe ${shortlist.length} candidați (timp rămas ${Math.round(timeLeft() / 1000)}s)`);
-  const { byKey: deepData, usage: deepUsage } = await collectDeepData(shortlist, P, config.deep, { timeLeft, logger });
+  /*
+   * 8) Deep research on the whole horizon. The shortlist above is the research *priority*: it goes
+   *    first everywhere, and it alone gets the full holder lists that need the same wallets on
+   *    consecutive runs. Every other eligible project — up to `deep.horizon` (1000) — is researched
+   *    too: candles and DEX liquidity on every run, and a rotating slice of the free-plan sources
+   *    (security, coin detail, holder counts, development, attention), carried or measured as
+   *    deep-cache.js explains. After the priority, the change engine's order decides who is next.
+   */
+  const horizon = Math.max(shortlist.length, Math.min(config.deep.horizon ?? shortlist.length, eligible.length));
+  const priorityKeys = new Set(shortlist.map((a) => a.key));
+  const prescreenScoreOf = (key) => prescreen.get(key)?.score ?? 0;
+  const rest = light.map((r) => r.asset).filter((a) => !priorityKeys.has(a.key))
+    .sort((a, b) => prescreenScoreOf(b.key) - prescreenScoreOf(a.key) || lightRank.get(a.key) - lightRank.get(b.key));
+  const targets = [...shortlist, ...rest].slice(0, horizon);
+  logger.info(`deep research pe ${targets.length} proiecte (prioritate ${shortlist.length}, orizont ${horizon}; timp rămas ${Math.round(timeLeft() / 1000)}s)`);
+  const { byKey: deepData, usage: deepUsage, cache: deepCache, tiers: deepTiers } = await collectDeepData(targets, P, config.deep, { timeLeft, logger }, {
+    priorityKeys,
+    cache: structuredClone(state.deepCache ?? {}),
+    nowMs,
+  });
+  const hasDeep = (key) => {
+    const d = deepData.get(key);
+    return Boolean(d && Object.keys(d).length);
+  };
+  const researchedKeys = targets.filter((a) => hasDeep(a.key) || priorityKeys.has(a.key)).map((a) => a.key);
   const full = new Map(light.map((r) => [r.asset.key, r]));
-  for (const a of shortlist) {
+  for (const key of researchedKeys) {
+    const a = byKey.get(key);
     const points = state.history?.[a.key]?.points ?? [];
     full.set(a.key, researchAsset(a, { events: eventsByKey.get(a.key) ?? [], references, history: points, regime: regime.label, nowMs, config, deep: deepData.get(a.key) ?? {} }));
   }
   const researched = [...full.values()].sort((x, y) => rankKey(y) - rankKey(x));
+  logger.info(`deep research: lumânări ${deepTiers.candles} · DEX ${deepTiers.dex} · securitate ${deepTiers.security.fresh} citite + ${deepTiers.security.carried} purtate · detalii ${deepTiers.detail.fresh} + ${deepTiers.detail.carried} · deținători ${deepTiers.holdersInfo} · dezvoltare ${deepTiers.dev}`);
 
-  // 9) DISCOVERY — the v4 engine, on every deep-researched asset.
+  // 9) DISCOVERY — the v4 engine, on every researched project of the horizon.
   logger.info('discovery: norme proprii, ce s-a schimbat, scor de pre-expansiune, invalidatori');
   const unlocksBySymbol = new Map();
   for (const e of deps.manualCatalysts ?? []) {
@@ -277,7 +314,8 @@ export async function runScan(deps, config) {
     unlocksBySymbol.set(e.symbol, list);
   }
   const discovery = [];
-  for (const a of shortlist) {
+  for (const key of researchedKeys) {
+    const a = byKey.get(key);
     try {
       discovery.push(discoverAsset({
         asset: a,
@@ -313,14 +351,19 @@ export async function runScan(deps, config) {
     windowDays: config.discovery?.baselineWindowDays ?? 30,
     moving: pre.filter((p) => p.score > 0).length,
     prescreened: prescreenKeys.length,
+    // The research horizon: how many projects the full engine read this run, and how many of
+    // them were the priority (full holder lists, first call on every budget).
+    analysed: ranked.length,
+    priority: shortlist.length,
+    horizon,
     runsToNorms: missingPoints.length ? missingPoints[Math.floor(missingPoints.length / 2)] : minPoints,
   };
   logger.info(`norme proprii: ${discoveryCoverage.withBaseline}/${discoveryCoverage.eligible} proiecte cu istoric suficient · ${discoveryCoverage.moving} cu schimbări față de propria normă · ${discoveryCoverage.prescreened} aduse în profunzime de motorul de schimbări`);
 
-  // 10) FUTURES RADAR.
+  // 10) FUTURES RADAR — every perpetual market of the universe, reusing the candles read above.
   const watchlist = pickWatchlist({ assets: merged, radarRows: ranked, cfg: config.futures });
   logger.info(`futures radar: ${watchlist.length} instrumente (timp rămas ${Math.round(timeLeft() / 1000)}s)`);
-  const futures = await runFuturesRadar({ watchlist, providers: P, cfg: config.futures, timeLeft, logger, nowMs });
+  const futures = await runFuturesRadar({ watchlist, providers: P, cfg: config.futures, timeLeft, logger, nowMs, candles: deepData });
 
   // 11) Track record: score what is due, open what qualifies now.
   const priceByKey = new Map(merged.filter((a) => isNum(a.market.price)).map((a) => [a.key, a.market.price]));
@@ -352,7 +395,7 @@ export async function runScan(deps, config) {
     coingecko: universe.cg, coinmarketcap: universe.cmc, coinpaprika: universe.cp,
     mexc: venues.mexcSpot, mexc_futures: venues.mexcPerps, binance_spot: venues.binanceSpot,
     gate: venues.gate, bitget: venues.bitget, okx: venues.okx, hyperliquid: venues.hyperliquid,
-    upbit: venues.upbit, bithumb: venues.bithumb, binance_alpha: venues.alpha,
+    upbit: venues.upbit, bithumb: venues.bithumb, binance_alpha: venues.alpha, gate_alpha: venues.gateAlpha,
     dexscreener: context.boosts, geckoterminal: context.gtTrending, defillama: context.llamaProtocols,
     alternative_me: context.fearGreed,
   };
@@ -377,11 +420,15 @@ export async function runScan(deps, config) {
   liveStatus['eth-labels'] = labelIndex.size > 0;
   const parityReport = parity({ keys: keyed, liveStatus });
 
-  // 15) Snapshot.
+  // 15) Snapshot. The dashboard contract carries the top of each ranking with its evidence; the
+  //     whole horizon — every researched project — ships as one compact table (data/universe.json).
   const deepViews = [];
   const lightViews = [];
   const chartBudget = config.snapshot?.charts ?? 30;
+  const maxDeepViews = config.snapshot?.maxDeep ?? 60;
   for (const r of researched) {
+    const goesDeep = r.depth === 'deep' && deepViews.length < maxDeepViews;
+    if (!goesDeep && lightViews.length >= config.snapshot.maxLight) continue;
     const deep = deepData.get(r.asset.key);
     const points = state.history?.[r.asset.key]?.points ?? [];
     const ctx = {
@@ -389,13 +436,13 @@ export async function runScan(deps, config) {
       events: (eventsByKey.get(r.asset.key) ?? []).sort((a, b) => toMs(b.observedAt) - toMs(a.observedAt)),
       // Candle payloads are the heaviest part of the contract, so they ship for the rows at the top
       // of the ranking; everything else keeps its sparkline, which is what a list renders anyway.
-      chart: r.depth === 'deep' && deepViews.length < chartBudget ? chartPayload(deep) : null,
-      historyView: r.depth === 'deep' ? points.slice(-40).map((p) => [p.t, p.cri, p.stage, p.price]) : [],
+      chart: goesDeep && deepViews.length < chartBudget ? chartPayload(deep) : null,
+      historyView: goesDeep ? points.slice(-40).map((p) => [p.t, p.cri, p.stage, p.price]) : [],
       sparkline: sparkFrom(deep, points, r.lf.price),
     };
     const view = toCandidateView(r, ctx);
-    if (r.depth === 'deep') deepViews.push(view);
-    else if (lightViews.length < config.snapshot.maxLight) lightViews.push(trimLight(view));
+    if (goesDeep) deepViews.push(view);
+    else lightViews.push(trimLight(view));
   }
   const candidates = [...deepViews, ...lightViews].sort((x, y) => (y.score.cri ?? -1) - (x.score.cri ?? -1));
   const signalCounts = {};
@@ -405,6 +452,20 @@ export async function runScan(deps, config) {
     stageCounts[c.stage] = (stageCounts[c.stage] ?? 0) + 1;
   }
   const assetsByCg = new Map(merged.filter((a) => a.ids.coingecko).map((a) => [a.ids.coingecko, a]));
+  // The dashboard contract carries the top of the ranking with graded evidence (full / card /
+  // list — see discoveryView). Every early candidate ships with its full file wherever it ranks;
+  // simultaneous changes inside the cap ship at least as cards; the rest of the horizon is a row of
+  // data/universe.json.
+  const discoveryCap = config.snapshot?.discoveryRows ?? 120;
+  const fullRows = config.snapshot?.fullDetail ?? 24;
+  const cardRows = config.snapshot?.cardRows ?? 48;
+  const levelOf = (r, i) => (r.verdict.earlyResearchCandidate || r.verdict.answersQuestion || i < fullRows ? 'full'
+    : i < cardRows || r.changed.simultaneous ? 'card' : 'list');
+  const publishedDiscovery = ranked
+    .map((r, i) => ({ r, i, level: levelOf(r, i) }))
+    .filter(({ r, i }) => i < discoveryCap || r.verdict.earlyResearchCandidate || r.verdict.answersQuestion)
+    .map((x) => ({ ...x, full: x.level === 'full' }));
+  const publishedFutures = futures.rows.slice(0, config.snapshot?.futuresRows ?? 60);
   const recentEvents = appendCatalysts([], [...eventsByKey.values()].flat(), nowMs, 7).slice(0, 120);
   const finishedMs = clock.now();
 
@@ -438,7 +499,9 @@ export async function runScan(deps, config) {
       policy: { unknownIsBearish: false, subscriptionsUsed: false, freeOnly: true },
       question: 'Arată-mi proiectele mici unde se schimbă simultan mai multe lucruri importante, înainte ca mișcarea să devină evidentă, și spune-mi ce riscuri pot invalida această ipoteză.',
       disclaimer: 'Cercetare, nu sfat financiar. Scorurile sunt priorități de analiză cu invalidatori expliciți; nicio componentă nu execută și nu transmite ordine.',
-      config: { topN, minMarketCapUsd: config.universe.minMarketCapUsd, maxMarketCapUsd: config.universe.maxMarketCapUsd, minVolume24hUsd: config.universe.minVolume24hUsd, deepLimit: config.deep.limit },
+      config: { topN, minMarketCapUsd: config.universe.minMarketCapUsd, maxMarketCapUsd: config.universe.maxMarketCapUsd, minVolume24hUsd: config.universe.minVolume24hUsd, deepLimit: config.deep.limit, deepHorizon: config.deep.horizon ?? config.deep.limit, futuresMax: config.futures.maxInstruments ?? null },
+      // The whole horizon, one compact row per project: loaded by the dashboard on demand.
+      universe: { file: 'data/universe.json', projects: eligible.length, researched: ranked.length, futures: futures.rows.length },
     },
     health: {
       overall: overallHealth(providerHealth),
@@ -449,16 +512,24 @@ export async function runScan(deps, config) {
         coinmarketcap: universe.cmc.data?.length ?? 0,
         coinpaprika: universe.cp.data?.length ?? 0,
         binanceAlpha: universe.alpha.data?.length ?? 0,
+        gateAlpha: universe.gateAlpha.data?.length ?? 0,
         // Alpha tokens the aggregators' top 1000 does not reach, and how many of them pass the
-        // small-cap screen: the part of the universe that exists only because Alpha is a source.
+        // small-cap screen: the part of the universe that exists only because an Alpha list is a source.
         alphaOnly: alphaOnly.length,
-        alphaOnlyEligible: eligible.filter((a) => a.sources.length === 1 && a.sources[0] === 'binance_alpha').length,
+        alphaOnlyEligible: eligible.filter(isAlphaOnly).length,
+        binanceAlphaOnly: merged.filter(onlyFrom('binance_alpha')).length,
+        gateAlphaOnly: merged.filter(onlyFrom('gate_alpha')).length,
+        alphaPrograms: venueStats.alphaPrograms,
         merged: merged.length,
         excluded: excluded.length,
         eligible: eligible.length,
-        deep: deepViews.length,
+        deep: researchedKeys.length,
+        priority: shortlist.length,
+        horizon,
         discovered: ranked.length,
         published: candidates.length,
+        futures: futures.rows.length,
+        rolling: { tiers: deepTiers, cache: cacheCoverage(deepCache, targets.map((a) => a.key), { nowMs, ttlHours: config.deep.cacheHours ?? undefined }) },
         crossListed: merged.filter((a) => a.sources.includes('coingecko') && a.sources.includes('coinmarketcap')).length,
       },
       venues: venueStats,
@@ -483,12 +554,18 @@ export async function runScan(deps, config) {
       earlyCandidates: earlyCandidates.length,
       analysed: ranked.length,
       // Full evidence for the rows that matter (every early candidate, plus the top of the ranking);
-      // the tail ships its verdict, thesis and changes, which is what a list needs.
-      rows: ranked.map((r, i) => ({
+      // the next rows ship as cards, then as list rows; each row says which in `detail`.
+      published: publishedDiscovery.length,
+      // Totals over the whole horizon: the published rows are its top, the rest is in universe.json.
+      totals: {
+        simultaneous: ranked.filter((r) => r.changed.simultaneous).length,
+        moving: ranked.filter((r) => r.changed.count > 0).length,
+      },
+      rows: publishedDiscovery.map(({ r, level }) => ({
         ...discoveryView(r, {
           keys: keyed,
           links: platformLinks(r.asset, { keys: keyed }),
-          full: r.verdict.earlyResearchCandidate || r.changed.simultaneous || i < (config.snapshot?.fullDetail ?? 24),
+          level,
         }),
         selectedBy: selectedBy(r.asset.key),
       })),
@@ -497,8 +574,8 @@ export async function runScan(deps, config) {
     },
     // ① Futures Radar.
     futures: {
-      summary: futures.summary,
-      rows: futures.rows.map(futuresView),
+      summary: { ...futures.summary, published: publishedFutures.length },
+      rows: publishedFutures.map(futuresView),
     },
     references: referencesView(references, config.similarity).map((ref) => ({ ...ref, live: liveRef(ref, merged, researched) })),
     candidates,
@@ -516,8 +593,20 @@ export async function runScan(deps, config) {
     methodology: methodology(config, { keys: keyed }),
   };
 
-  const published = await publisher.publish(snapshot);
-  logger.info(`snapshot publicat: ${published.path} (${Math.round(published.bytes / 1024)} KB)`);
+  const universeDoc = universeTable({
+    eligible,
+    researched,
+    ranked,
+    futuresRows: futures.rows,
+    published: {
+      discovery: new Map(publishedDiscovery.map(({ r, level }) => [r.asset.key, level])),
+      futures: new Set(publishedFutures.map((f) => f.key)),
+    },
+    selectedBy,
+    meta: { generatedAt: nowIso, runId, mode: deps.mode },
+  });
+  const published = await publisher.publish(snapshot, { universe: universeDoc });
+  logger.info(`snapshot publicat: ${published.path} (${Math.round(published.bytes / 1024)} KB)${published.universe ? ` + univers ${universeDoc.assets.rows.length} proiecte, ${universeDoc.futures.rows.length} perpetue (${Math.round(published.universe.bytes / 1024)} KB)` : ''}`);
 
   // 16) Persist research memory.
   const keepKeys = new Set([...openKeys, ...researched.filter((r) => r.depth === 'deep').map((r) => r.asset.key), ...researched.slice(0, config.history.trackTopLight).map((r) => r.asset.key)]);
@@ -552,6 +641,7 @@ export async function runScan(deps, config) {
     ledger,
     lastSeen: Object.fromEntries(researched.map((r) => [r.asset.key, { stage: r.stageInfo.stage, cri: r.cri, signal: r.signal.type, at: nowIso }])),
     lastSeenV4: Object.fromEntries(ranked.map((r) => [r.asset.key, lastSeenRecord(r)])),
+    deepCache: pruneCache(deepCache, { keepKeys: new Set(eligible.map((a) => a.key)), nowMs }),
     meta: { runs: (state.meta?.runs ?? 0) + 1, firstRunAt: state.meta?.firstRunAt ?? nowIso, lastRunAt: nowIso, lastRunId: runId },
   };
   await stateRepo.save(nextState);
@@ -561,7 +651,8 @@ export async function runScan(deps, config) {
     summary: {
       runId,
       eligible: eligible.length,
-      deep: deepViews.length,
+      deep: researchedKeys.length,
+      priority: shortlist.length,
       discovered: ranked.length,
       earlyCandidates: earlyCandidates.length,
       answering: answering.length,

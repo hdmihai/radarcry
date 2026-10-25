@@ -110,8 +110,17 @@ export function classify({ asset, pre, risk, changed }) {
   if (isNum(earliness)) why.push(`Precocitate ${earliness}/100 (cât de puțin evidentă este încă mișcarea)`);
   if (riskScore !== null) why.push(`Risc ${round(riskScore, 0)}/100${risk?.top?.length ? ` — dominant: ${risk.top[0].label}` : ''}`);
 
+  /*
+   * The verdict sentence must say what was actually found. A Stage 1 candidate passes the three
+   * conditions on one or two quiet changes — it is not "several things at once" — and a candidate
+   * read with half its factors unmeasured is still a candidate (UNKNOWN is not bearish), but the
+   * reader is told which kind it is. The test itself is untouched.
+   */
+  const partial = isNum(pre?.confidence) && pre.confidence < 60;
+  const partialNote = partial ? ` · date parțiale (încredere ${Math.round(pre.confidence)}/100): factorii nemăsurați se verifică manual` : '';
   let verdict;
-  if (earlyResearchCandidate) verdict = 'CANDIDAT DE RESEARCH TIMPURIU — mai multe lucruri importante s-au schimbat simultan, iar mișcarea nu este încă evidentă';
+  if (earlyResearchCandidate && changed?.simultaneous) verdict = `CANDIDAT DE RESEARCH TIMPURIU — mai multe lucruri importante s-au schimbat simultan, iar mișcarea nu este încă evidentă${partialNote}`;
+  else if (earlyResearchCandidate) verdict = `CANDIDAT DE RESEARCH TIMPURIU — activitate peste propria normă, încă neevidentă; schimbările nu sunt încă simultane în mai multe familii${partialNote}`;
   else if (stage >= STAGE.EXPANSION && isNum(opportunity) && opportunity > 70) verdict = 'MIȘCARE DEJA ÎN DESFĂȘURARE — teză validă, dar descoperită târziu';
   else if (!isNum(opportunity)) verdict = 'DATE INSUFICIENTE — prea puțini factori măsurabili pentru o concluzie';
   else if (stage === STAGE.DORMANT) verdict = 'LATENT — de monitorizat, nimic nu s-a schimbat peste propria normă';
@@ -138,14 +147,17 @@ export function classify({ asset, pre, risk, changed }) {
 }
 
 /**
- * Rank candidates for the Small-Cap Radar. Early candidates first, then by the product of
- * opportunity and earliness, so a slightly lower score that is still invisible outranks a higher
- * score everybody already sees.
+ * Rank candidates for the Small-Cap Radar. The exact answers to the question first (candidate AND
+ * simultaneous), then the other early candidates, then everything by the product of opportunity,
+ * earliness and confidence, so a slightly lower score that is still invisible outranks a higher
+ * score everybody already sees. Over a horizon of a thousand projects, the answers must not be
+ * pushed down by single-family candidates that merely pass the three conditions.
  */
 export function rankCandidates(rows) {
+  const tier = (r) => (r.verdict?.answersQuestion ? 2 : r.verdict?.earlyResearchCandidate ? 1 : 0);
   return [...rows].sort((a, b) => {
-    const ac = a.verdict?.earlyResearchCandidate ? 1 : 0;
-    const bc = b.verdict?.earlyResearchCandidate ? 1 : 0;
+    const ac = tier(a);
+    const bc = tier(b);
     if (ac !== bc) return bc - ac;
     const av = (a.verdict?.opportunity ?? 0) * (0.55 + 0.45 * ((a.verdict?.earliness ?? 50) / 100)) * (0.6 + 0.4 * ((a.verdict?.confidence ?? 0) / 100));
     const bv = (b.verdict?.opportunity ?? 0) * (0.55 + 0.45 * ((b.verdict?.earliness ?? 50) / 100)) * (0.6 + 0.4 * ((b.verdict?.confidence ?? 0) / 100));

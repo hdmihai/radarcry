@@ -2,12 +2,12 @@
  * Exchange adapters (all public, keyless, read-only):
  *  - MEXC spot: all 24h tickers + 1D/4H klines (the CRI market-structure source)
  *  - MEXC, Gate, Bitget, OKX perpetuals: funding + open interest (squeeze fuel / crowding)
- *  - Upbit & Bithumb KRW markets, Binance Alpha token list (listing catalysts)
+ *  - Upbit & Bithumb KRW markets, Binance Alpha and Gate Alpha token lists (universe + listing catalysts)
  * No trading endpoint is implemented anywhere in this project.
  */
 import { toNum } from '../../../domain/shared/math.js';
-import { splitMultiplier } from '../../../domain/shared/symbols.js';
-import { disabled, mapResult } from './common.js';
+import { normChain, splitMultiplier } from '../../../domain/shared/symbols.js';
+import { disabled, mapResult, unsupported } from './common.js';
 
 const opt = (provider, cfg, endpoint, extra = {}) => ({ provider, endpoint, timeoutMs: cfg.timeoutMs, retries: cfg.retries, minIntervalMs: cfg.minIntervalMs, maxCalls: cfg.maxCalls, breakerThreshold: 4, ...extra });
 
@@ -262,7 +262,9 @@ export function alphaMarketRow(t) {
     dateAdded: Number.isFinite(t.listingTime) ? new Date(t.listingTime).toISOString() : null,
     firstDataAt: null,
     tags: ['binance-alpha', ...(t.chainName ? [`${String(t.chainName).toLowerCase()}-ecosystem`] : [])],
-    platform: t.contractAddress ? { chain: t.chainId ?? t.chainName, address: t.contractAddress } : null,
+    // Binance ids chains by number ('56') and Solana as 'CT_501'; when an id is one the research
+    // pipeline does not know, the chain name ('Sui') may still be.
+    platform: t.contractAddress ? { chain: normChain(t.chainId) ? t.chainId : (t.chainName ?? t.chainId), address: t.contractAddress } : null,
     numMarketPairs: null,
     image: t.image,
     lastUpdated: null,
@@ -288,7 +290,223 @@ export function createBinanceAlpha({ http, cfg }) {
 
   const markets = () => fetchList();
   const listTop = async () => mapResult(await fetchList(), (rows) => rows.filter((t) => t.contractAddress).map(alphaMarketRow));
-  return { id: 'binance_alpha', markets, listTop };
+
+  /*
+   * Candles for Alpha tokens, from the same official public market-data surface
+   * (developers.binance.com/docs/alpha/market-data): GET /bapi/defi/v1/public/alpha-trade/klines.
+   * Most Alpha tokens have no centralised spot market yet — that is what Alpha is — so without
+   * these they would have no price structure at all. The trading symbol is the token id plus a
+   * quote asset (ALPHA_175USDT; a few quote in USDC): the exchange info, read once per run, says
+   * which. `limit` accepts a fixed set of sizes, so the next size up is requested and trimmed.
+   */
+  let infoPending = null;
+  const exchangeInfo = () => {
+    infoPending ??= http.getJson('https://www.binance.com/bapi/defi/v1/public/alpha-trade/get-exchange-info', opt('binance_alpha', cfg, '/bapi/.../alpha-trade/get-exchange-info', { validate: (d) => Array.isArray(d?.data?.symbols), classify: classifyBapi }))
+      .then((r) => mapResult(r, (d) => alphaSymbols(d.data.symbols)));
+    return infoPending;
+  };
+  const klines = async (alphaId, interval, limit = 260) => {
+    if (!cfg.enabled) return disabled('binance_alpha', 'alpha-trade/klines');
+    const info = await exchangeInfo();
+    // Without a usable exchange info, USDT — the quote of nearly every Alpha pair — is the best guess.
+    const symbol = info.ok && info.data.size ? info.data.get(alphaId) ?? null : `${alphaId}USDT`;
+    if (!symbol) return unsupported('binance_alpha', 'alpha-trade/klines', `${alphaId}: nicio pereche Alpha activă`);
+    const size = ALPHA_KLINE_SIZES.find((x) => x >= limit) ?? ALPHA_KLINE_SIZES[ALPHA_KLINE_SIZES.length - 1];
+    const now = Date.now();
+    return mapResult(
+      await http.getJson(`https://www.binance.com/bapi/defi/v1/public/alpha-trade/klines?symbol=${encodeURIComponent(symbol)}&interval=${interval}&limit=${size}`, opt('binance_alpha', cfg, `/bapi/.../alpha-trade/klines ${interval}`, { validate: (d) => Array.isArray(d?.data), classify: classifyBapi, retries: 1 })),
+      (d) => normalizeKlineRows(d.data, now).slice(-limit),
+    );
+  };
+  return { id: 'binance_alpha', markets, listTop, klines };
+}
+
+const ALPHA_KLINE_SIZES = [5, 10, 20, 50, 100, 500, 1000];
+
+/** Binance's `bapi` envelope: HTTP 200 with `success: false` and a code when the request failed. */
+export function classifyBapi(d) {
+  if (!d || typeof d !== 'object') return { status: 'INVALID_PAYLOAD', message: 'Binance Alpha: răspuns gol' };
+  if (d.success === false || (d.code !== undefined && d.code !== '000000' && d.code !== 0 && d.code !== '0')) {
+    const message = String(d.message ?? d.messageDetail ?? '').trim();
+    return { status: /frequen|too many|limit/i.test(message) ? 'RATE_LIMITED' : 'INVALID_PAYLOAD', message: `Binance Alpha ${d.code ?? ''}: ${message || 'cerere respinsă'}`.trim() };
+  }
+  return null;
+}
+
+/**
+ * Map each Alpha token id to its trading symbol, preferring the USDT pair. The id is read from the
+ * pair itself (symbol minus quote asset: ALPHA_175USDT → ALPHA_175) as well as from `baseAsset`, so
+ * the map holds whichever of the two the exchange info uses for the token list's `alphaId`.
+ */
+export function alphaSymbols(symbols) {
+  const out = new Map();
+  const put = (id, s) => {
+    if (!id) return;
+    const prev = out.get(id);
+    if (!prev || s.quoteAsset === 'USDT') out.set(id, s.symbol);
+  };
+  for (const s of symbols ?? []) {
+    if (typeof s?.symbol !== 'string' || !s.symbol) continue;
+    if (s.status && s.status !== 'TRADING') continue;
+    const quote = typeof s.quoteAsset === 'string' ? s.quoteAsset : '';
+    if (quote && s.symbol.endsWith(quote)) put(s.symbol.slice(0, -quote.length), s);
+    if (typeof s.baseAsset === 'string') put(s.baseAsset, s);
+  }
+  return out;
+}
+
+/** Binance-style kline rows (strings) → the venue-agnostic candle shape used by the domain. */
+export function normalizeKlineRows(rows, nowMs) {
+  return (rows ?? [])
+    .map((k) => {
+      const [t, o, h, l, c, v, closeTime, qv] = k;
+      const close = toNum(c);
+      const quote = toNum(qv) ?? (toNum(v) !== null && close !== null ? toNum(v) * close : null);
+      return { t: toNum(t), o: toNum(o), h: toNum(h), l: toNum(l), c: close, v: quote, closed: toNum(closeTime) ? toNum(closeTime) < nowMs : true };
+    })
+    .filter((k) => k.t && k.c > 0 && k.h >= k.l);
+}
+
+/* ----------------------------------------------------------------------------- Gate Alpha */
+/**
+ * Gate Alpha — Gate's on-chain trading programme (Solana, BNB Chain, Ethereum, Base, Sui, Arbitrum,
+ * Avalanche, Polygon, Optimism and more). Unlike Bybit Alpha, Bitget Onchain, KuCoin Alpha or MEXC's
+ * Alpha zone, Gate publishes its Alpha list in the official API v4, keyless:
+ *
+ *   GET /alpha/currencies   id, name, chain, contract address, trading status (1 normal, 2 suspended, 3 delisted)
+ *   GET /alpha/tickers      id, last price, 24h change %, 24h volume (USDT), market cap
+ *
+ * Both are paginated (limit ≤ 100, page ≥ 1). Those two read endpoints are the only ones used: Gate's
+ * Alpha quote, order and account endpoints need a key and are trading surfaces, and this project is
+ * research-only (the architecture test forbids them in the source).
+ *
+ * Gate identifies Alpha tokens by an internal id (`memeboxtrump` — the programme began as Gate
+ * MemeBox), not by ticker, and an empty answer can arrive as `[{}, {}]` rather than `[]`. Rows without
+ * an id are therefore dropped, and the derived ticker is used for display only: the universe matches
+ * Gate Alpha tokens to the rest of the research universe by chain and contract.
+ */
+const GATE_ALPHA_STATUS = { 1: 'TRADING', 2: 'SUSPENDED', 3: 'DELISTED' };
+const GATE_ALPHA_PAGE = 100;
+
+export function gateAlphaSymbol(currency) {
+  const id = String(currency ?? '').trim();
+  const bare = id.toLowerCase().startsWith('memebox') && id.length > 'memebox'.length ? id.slice('memebox'.length) : id;
+  return bare.toUpperCase();
+}
+
+/** One Gate Alpha token: the currency row joined with its ticker (which may be missing). */
+export function normalizeGateAlpha(c, t = null) {
+  return {
+    currency: c.currency,
+    symbol: gateAlphaSymbol(c.currency),
+    name: typeof c.name === 'string' && c.name.trim() ? c.name.trim() : null,
+    chain: c.chain ?? null,
+    contractAddress: typeof c.address === 'string' && c.address.trim() ? c.address.trim() : null,
+    status: GATE_ALPHA_STATUS[Number(c.status)] ?? 'UNKNOWN',
+    price: toNum(t?.last),
+    change24h: toNum(t?.change),
+    volume24h: toNum(t?.volume),
+    marketCap: toNum(t?.market_cap),
+  };
+}
+
+/**
+ * A Gate Alpha token as a universe row. Gate reports price, market cap and its own 24h volume, but
+ * no supply: circulating and total stay null (unknown), never back-computed from the market cap.
+ */
+export function gateAlphaMarketRow(t) {
+  return {
+    source: 'gate_alpha',
+    sourceId: t.currency,
+    symbol: t.symbol,
+    name: t.name ?? t.symbol,
+    rank: null,
+    price: t.price,
+    marketCap: t.marketCap,
+    fdv: null,
+    volume24h: t.volume24h,
+    circulating: null,
+    total: null,
+    max: null,
+    change: { h24: t.change24h },
+    ath: null,
+    athChangePct: null,
+    athDate: null,
+    dateAdded: null,
+    firstDataAt: null,
+    tags: ['gate-alpha'],
+    platform: t.contractAddress ? { chain: t.chain, address: t.contractAddress } : null,
+    numMarketPairs: null,
+    image: null,
+    lastUpdated: null,
+  };
+}
+
+export function createGateAlpha({ http, cfg }) {
+  const maxPages = Math.max(1, cfg.maxPages ?? 30);
+  const BASE = 'https://api.gateio.ws/api/v4';
+
+  /** Read one paginated list until a short page, a failure, or the page budget. */
+  const readPages = async (path) => {
+    const rows = [];
+    let first = null;
+    let failure = null;
+    let pages = 0;
+    let complete = false;
+    for (let page = 1; page <= maxPages; page += 1) {
+      const r = await http.getJson(`${BASE}${path}?limit=${GATE_ALPHA_PAGE}&page=${page}`, opt('gate_alpha', cfg, path, { validate: Array.isArray }));
+      if (!r.ok) { failure = r; break; }
+      first ??= r;
+      pages += 1;
+      rows.push(...r.data.filter((x) => x && typeof x === 'object' && typeof x.currency === 'string' && x.currency.trim()));
+      if (r.data.length < GATE_ALPHA_PAGE) { complete = true; break; }
+    }
+    return { rows, first, failure, pages, complete };
+  };
+
+  /* One read per run, shared by the venue tagger and the universe — memoised like Binance Alpha. */
+  let pending = null;
+  const fetchAll = () => {
+    if (!cfg.enabled) return Promise.resolve(disabled('gate_alpha', '/alpha/currencies'));
+    pending ??= (async () => {
+      const [cur, tick] = await Promise.all([readPages('/alpha/currencies'), readPages('/alpha/tickers')]);
+      if (!cur.pages) return cur.failure;
+      const tickers = new Map(tick.rows.map((t) => [t.currency, t]));
+      const seen = new Set();
+      const tokens = [];
+      for (const c of cur.rows) {
+        if (seen.has(c.currency)) continue;
+        seen.add(c.currency);
+        tokens.push(normalizeGateAlpha(c, tickers.get(c.currency) ?? null));
+      }
+      const gaps = [];
+      if (!cur.complete) gaps.push(cur.failure ? `lista de tokenuri s-a oprit la pagina ${cur.pages + 1} (${cur.failure.status})` : `lista de tokenuri are peste ${maxPages} pagini; s-au citit ${maxPages}`);
+      if (!tick.pages) gaps.push(`tickerele nu au răspuns (${tick.failure?.status ?? 'necunoscut'}) — fără preț, volum și capitalizare`);
+      else if (!tick.complete) gaps.push(`tickere citite pe ${tick.pages} pagini`);
+      return {
+        ok: true,
+        status: 'OK',
+        data: tokens,
+        message: gaps.join('; '),
+        meta: {
+          ...cur.first.meta,
+          endpoint: '/alpha/currencies + /alpha/tickers',
+          records: tokens.length,
+          partial: gaps.length > 0,
+          // Whether the token list itself was read to its last page: only then is a token's
+          // absence a fact ("not listed") and a token's first appearance an entry.
+          listComplete: cur.complete,
+          pages: { currencies: cur.pages, tickers: tick.pages },
+        },
+      };
+    })();
+    return pending;
+  };
+
+  // Only tokens Gate lists as tradable are research candidates or venue tags.
+  const markets = async () => mapResult(await fetchAll(), (rows) => rows.filter((t) => t.status === 'TRADING'));
+  const listTop = async () => mapResult(await markets(), (rows) => rows.filter((t) => t.contractAddress && t.marketCap > 0 && t.price > 0).map(gateAlphaMarketRow));
+  return { id: 'gate_alpha', markets, listTop };
 }
 
 /* --------------------------------------------------------------- Binance public data mirror */

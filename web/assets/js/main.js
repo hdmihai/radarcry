@@ -22,6 +22,7 @@ import { bindResearch, researchMarkup, researchState } from './views/research.js
 import { parityMarkup } from './views/parity.js';
 import { marketStrip, noticeMarkup, notices, topMeta } from './views/shell.js';
 import { trackMarkup } from './views/track.js';
+import { bindUniverse, ensureUniverse, universeMarkup } from './views/universe.js';
 import { criTipBody, gradeTipBody, lifeTipBody, shortSignal, signalTipBody } from './views/widgets.js';
 
 /**
@@ -32,7 +33,9 @@ import { criTipBody, gradeTipBody, lifeTipBody, shortSignal, signalTipBody } fro
 const ROUTES = [
   { id: 'futures', label: 'Futures Radar', primary: true, render: futuresMarkup, count: (s) => (s.futures?.summary?.graded ?? 0) },
   { id: 'radar-small-cap', label: 'Small-Cap Radar', primary: true, render: discoveryMarkup, count: (s) => (s.discovery?.answering ?? 0) },
-  { id: 'deep-research', label: 'Deep Research', primary: true, render: researchMarkup, count: (s) => (s.discovery?.rows ?? []).length },
+  { id: 'deep-research', label: 'Deep Research', primary: true, render: researchMarkup, count: (s) => (s.discovery?.rows ?? []).filter((r) => r.detail === 'full' || r.platforms?.length).length },
+  // The whole horizon, from data/universe.json — loaded only when this screen is opened.
+  { id: 'univers', label: 'Univers', render: universeMarkup, count: (s) => s.meta?.universe?.projects ?? 0, enter: (s) => (s.meta?.universe ? ensureUniverse(s.meta.universe.file ?? 'data/universe.json') : Promise.resolve()) },
   { id: 'alerte', label: 'Alerte', render: catalystsMarkup, count: (s) => (s.alerts?.items ?? []).length },
   { id: 'analogi', label: 'Analogi LAB/BTW/AGT', render: analogsMarkup, count: (s) => (s.references ?? []).length },
   { id: 'radar', label: 'Radar CRI', render: radarMarkup, count: (s) => s.candidates.length },
@@ -124,6 +127,8 @@ function onRoute() {
   if (changed) {
     renderTabs();
     renderView();
+    // A screen with its own data file renders a loading state first, then itself once it arrives.
+    if (route.enter) route.enter(state.snap).then(() => { if (state.route === route) renderView(); });
     // Switching sections while scrolled down: bring the new section's start under the sticky tabs.
     const stickTop = Number.parseFloat(getComputedStyle($('#tabs')).top) || 56;
     const target = tabsNaturalTop() - stickTop;
@@ -323,6 +328,7 @@ async function boot() {
   bindDiscovery(view, (opts) => renderView(opts));
   bindFutures(view, () => renderView());
   bindResearch(view, () => renderView());
+  bindUniverse(view, (opts) => renderView(opts));
 
   // Opening a project from any list jumps to its full dossier when the drawer is not the better fit.
   on(document, 'click', '[data-dossier]', (e, el) => {

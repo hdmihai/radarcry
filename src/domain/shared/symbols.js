@@ -90,14 +90,14 @@ export const CHAINS = {
 };
 
 const CHAIN_ALIASES = {
-  'binance-smart-chain': 'bsc', bnb: 'bsc', 'bnb-smart-chain': 'bsc', 'bnb smart chain (bep20)': 'bsc', bep20: 'bsc', bsc: 'bsc', '56': 'bsc',
+  'binance-smart-chain': 'bsc', bnb: 'bsc', 'bnb-smart-chain': 'bsc', 'bnb smart chain (bep20)': 'bsc', 'bnb smart chain': 'bsc', 'bnb chain': 'bsc', bnbchain: 'bsc', bep20: 'bsc', bsc: 'bsc', '56': 'bsc',
   ethereum: 'ethereum', eth: 'ethereum', erc20: 'ethereum', '1': 'ethereum',
   solana: 'solana', sol: 'solana', ct_501: 'solana',
   base: 'base', '8453': 'base',
-  'arbitrum-one': 'arbitrum', arbitrum: 'arbitrum', '42161': 'arbitrum',
+  'arbitrum-one': 'arbitrum', arbitrum: 'arbitrum', arb: 'arbitrum', '42161': 'arbitrum',
   'polygon-pos': 'polygon', polygon: 'polygon', matic: 'polygon', '137': 'polygon',
   avalanche: 'avalanche', 'avalanche-c-chain': 'avalanche', avax: 'avalanche', '43114': 'avalanche',
-  'optimistic-ethereum': 'optimism', optimism: 'optimism', '10': 'optimism',
+  'optimistic-ethereum': 'optimism', optimism: 'optimism', op: 'optimism', '10': 'optimism',
   sui: 'sui', 'the-open-network': 'ton', ton: 'ton', toncoin: 'ton', tron: 'tron', trx: 'tron', trc20: 'tron',
   sonic: 'sonic', '146': 'sonic', hyperevm: 'hyperevm', 'hyperliquid-evm': 'hyperevm',
 };

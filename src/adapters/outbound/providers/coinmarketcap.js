@@ -8,9 +8,10 @@
  * `/v1/cryptocurrency/listings/latest` with `X-CMC_PRO_API_KEY`, and reports NOT_CONFIGURED with the
  * exact signup instruction when no key is present.
  *
- * Cost model (Basic plan: 10 000 credits per month, 30 calls per minute): a listings call costs
- * 1 credit per 100 coins returned, so a top-1000 scan costs 10 credits. The adapter declares those
- * credits as `units`, which is what the quota ledger charges and what the 95 % pause gate watches.
+ * Cost model (Basic plan: 10 000 credits per month, 30 calls per minute): CoinMarketCap bills
+ * 1 credit per 200 data points returned, rounded up, so the top-1000 listing costs 5 credits — about
+ * 900 credits a month at six scans a day. The adapter declares those credits as `units`, which is
+ * what the quota ledger charges and what the 95 % pause gate watches.
  *
  * Not called here: Fear & Greed and the Altcoin Season Index. Both are outside the Basic plan, so
  * sentiment comes from alternative.me and the altseason index is computed locally from our own
@@ -21,8 +22,8 @@ import { disabled, mapResult, mergePages, notConfigured } from './common.js';
 
 const PRO = 'https://pro-api.coinmarketcap.com';
 
-/** Credits consumed by a listings call of `limit` coins: 1 per 100, minimum 1. */
-export const listingCredits = (limit) => Math.max(1, Math.ceil((Number(limit) || 0) / 100));
+/** Credits consumed by a listings call of `limit` coins: 1 per 200 (rounded up), minimum 1. */
+export const listingCredits = (limit) => Math.max(1, Math.ceil((Number(limit) || 0) / 200));
 
 /** The Basic plan caps a single listings call at 5 000; we page well below that. */
 export const MAX_PAGE = 1000;

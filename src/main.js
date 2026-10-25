@@ -19,7 +19,7 @@ import { createCoinMarketCap } from './adapters/outbound/providers/coinmarketcap
 import { createCoinPaprika } from './adapters/outbound/providers/coinpaprika.js';
 import {
   createBinanceAlpha, createBinanceSpot, createBitget, createBithumb,
-  createGate, createHyperliquid, createMexc, createOkx, createUpbit,
+  createGate, createGateAlpha, createHyperliquid, createMexc, createOkx, createUpbit,
 } from './adapters/outbound/providers/exchanges.js';
 import { createArkham, createDefiLlama, createDexScreener, createGeckoTerminal, createGoPlus } from './adapters/outbound/providers/onchain.js';
 import { createCoinalyze } from './adapters/outbound/providers/coinalyze.js';
@@ -74,6 +74,7 @@ export function createLiveProviders({ config, keys, telemetry, logger, deadlineM
     upbit: createUpbit({ http, cfg: p.upbit }),
     bithumb: createBithumb({ http, cfg: p.bithumb }),
     binanceAlpha: createBinanceAlpha({ http, cfg: p.binance_alpha }),
+    gateAlpha: createGateAlpha({ http, cfg: p.gate_alpha }),
     dexscreener: createDexScreener({ http, cfg: p.dexscreener }),
     geckoterminal: createGeckoTerminal({ http, cfg: p.geckoterminal }),
     goplus: createGoPlus({ http, cfg: p.goplus }),
@@ -197,7 +198,7 @@ function quiet(logger) {
 
 function report(logger, result) {
   const s = result.summary;
-  logger.info(`gata: ${s.eligible} eligibile · ${s.deep} cercetate în profunzime · ${s.discovered ?? 0} analizate de motorul de descoperire`);
+  logger.info(`gata: ${s.eligible} eligibile · ${s.deep} cercetate în profunzime (prioritate ${s.priority ?? '—'}) · ${s.discovered ?? 0} analizate de motorul de descoperire`);
   logger.info(`candidați timpurii: ${s.earlyCandidates ?? 0} · răspund exact la întrebarea proiectului: ${s.answering ?? 0}`);
   if (s.futures) logger.info(`futures radar: ${s.futures.scanned} scanate, ${s.futures.graded} cu notă${s.futures.best ? ` · cel mai bun ${s.futures.best.symbol} ${s.futures.best.grade}` : ''}`);
   if (s.parity) logger.info(`paritate cu soluțiile comerciale: ${s.parity.achieved}% în această rulare (${s.parity.permanent}% permanent, ${s.parity.withKeys}% cu cheile gratuite opționale)`);
@@ -212,7 +213,8 @@ const HELP = `CRI Radar 4.0 — Crypto Research Intelligence
 
 Utilizare:
   node src/main.js scan [--fixtures] [--simulate-days N] [--at ISO] [--fresh] [--limit 1000]
-                        [--deep 60] [--out data] [--state .cri-state] [--verbose]
+                        [--deep 60] [--horizon 1000] [--futures-max 1000]
+                        [--out data] [--state .cri-state] [--verbose]
   node src/main.js pulse [--out data]   reîmprospătează preț, funding și open interest peste ultimul snapshot
   node src/main.js probe [--json]       verifică fiecare sursă gratuită și raportează ce funcționează
   node src/main.js serve [--dir dist] [--port 8080]
@@ -222,7 +224,8 @@ Chei opționale — toate gratuite, niciun abonament. Fără ele, capabilitatea 
 ${SECRETS.map((s) => `  ${s.env.padEnd(22)} ${s.label} — ${s.plan}\n  ${''.padEnd(22)} deblochează: ${s.unlocks}\n  ${''.padEnd(22)} înscriere: ${s.signup}`).join('\n')}
 
 Alte variabile: CRI_STATE_DIR, CRI_OUT_DIR, CRI_MAX_MINUTES, CRI_TOP_N, CRI_MIN_MCAP, CRI_MAX_MCAP,
-CRI_MIN_VOLUME, CRI_DEEP_LIMIT
+CRI_MIN_VOLUME, CRI_DEEP_LIMIT (prioritatea), CRI_DEEP_HORIZON (orizontul cercetat, implicit 1000),
+CRI_FUTURES_MAX (instrumente în Futures Radar, implicit 1000)
 
 Proiectul este exclusiv de research: nicio componentă nu plasează și nu transmite ordine.`;
 

@@ -41,7 +41,7 @@ export const PLATFORMS = [
   {
     key: 'coinmarketcap', label: 'CoinMarketCap', layer: LAYER.AUTO, group: 'Agregatori',
     role: 'al doilea univers independent, supply, date de listare',
-    plan: 'cheie Basic gratuită — 10 000 credite/lună, ~1 credit per 100 monede',
+    plan: 'cheie Basic gratuită — 10 000 credite/lună, 1 credit per 200 monede (top 1000 = 5 credite)',
     build: ({ cmcSlug, symbol }) => (cmcSlug ? `https://coinmarketcap.com/currencies/${enc(cmcSlug)}/` : `https://coinmarketcap.com/search/?q=${enc(symbol)}`),
   },
   {
@@ -82,7 +82,8 @@ export const PLATFORMS = [
     key: 'solana_rpc', label: 'Solana JSON-RPC', layer: LAYER.AUTO, group: 'On-chain intelligence',
     role: 'cele mai mari conturi de token și supply-ul pe Solana',
     plan: 'endpoint public, fără cheie',
-    build: ({ address }) => (address ? `https://solscan.io/token/${enc(address)}#holders` : 'https://solscan.io/'),
+    // Only a Solana token has a Solscan page: an EVM contract here would open an empty search.
+    build: ({ address, chain }) => (address && chain === 'solana' ? `https://solscan.io/token/${enc(address)}#holders` : null),
   },
   {
     key: 'goplus', label: 'GoPlus Security', layer: LAYER.AUTO, group: 'On-chain intelligence',
@@ -182,8 +183,14 @@ export const PLATFORMS = [
   {
     key: 'binance_alpha', label: 'Binance Alpha', layer: LAYER.AUTO, group: 'Listări',
     role: 'locul unde proiectele de tip LAB/BTW/AGT apar înainte de listarea principală',
-    plan: 'endpoint public fără cheie',
+    plan: 'endpoint-uri publice documentate, fără cheie (listă de tokenuri, lumânări)',
     build: () => 'https://www.binance.com/en/alpha',
+  },
+  {
+    key: 'gate_alpha', label: 'Gate Alpha', layer: LAYER.AUTO, group: 'Listări',
+    role: 'al doilea program Alpha cu listă publică: tokenuri on-chain tranzacționabile din contul Gate',
+    plan: 'API v4 public, fără cheie (/alpha/currencies, /alpha/tickers)',
+    build: () => 'https://www.gate.com/alpha',
   },
 
   /* ── fundamentals and context ────────────────────────────────────────────────────────────── */

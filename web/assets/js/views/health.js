@@ -13,11 +13,16 @@ export function healthMarkup(s) {
     ['CoinGecko top', u.coingecko],
     ['CoinMarketCap top', u.coinmarketcap],
     ['CoinPaprika (fallback)', u.coinpaprika],
+    ...(Number.isFinite(u.binanceAlpha) ? [['Binance Alpha (listă publică)', u.binanceAlpha]] : []),
+    ...(Number.isFinite(u.gateAlpha) ? [['Gate Alpha (API v4 public)', u.gateAlpha]] : []),
     ['Univers unificat', u.merged],
     ['Eligibili după filtre', u.eligible],
-    ['Publicați în dashboard', u.published],
     ['Cercetați în profunzime', u.deep],
+    ...(Number.isFinite(u.priority) ? [['…dintre care prioritate', u.priority]] : []),
+    ...(Number.isFinite(u.futures) ? [['Piețe perpetue în Futures Radar', u.futures]] : []),
+    ['Publicați cu dovezi complete', u.published],
   ];
+  const roll = u.rolling ?? null;
   const fmax = Math.max(1, ...funnel.map((f) => f[1] ?? 0));
   const venueRows = [
     ['MEXC spot', v.mexcSpot],
@@ -26,6 +31,7 @@ export function healthMarkup(s) {
     ['Upbit (KRW)', v.upbit],
     ['Bithumb (KRW)', v.bithumb],
     ['Binance Alpha', v.alpha],
+    ...(Number.isFinite(v.gateAlpha) ? [['Gate Alpha', v.gateAlpha]] : []),
   ];
   const vmax = Math.max(1, ...venueRows.map((r) => r[1] ?? 0));
   return html`
@@ -59,6 +65,16 @@ export function healthMarkup(s) {
     <section><h3 class="section-title">Pâlnia universului</h3>
       <div class="bars">${funnel.map(([k, n]) => html`<div class="bar-row"><span class="lbl">${k}</span><span class="track"><b style="width:${(((n ?? 0) / fmax) * 100).toFixed(1)}%"></b></span><span class="val">${int(n)}</span></div>`)}</div>
       <p class="small ink2" style="margin-top:12px">Excluși: ${Object.entries(h.exclusions ?? {}).map(([k, n]) => `${({ STABLECOIN: 'stablecoin', WRAPPED_OR_STAKED: 'wrapped/staked', TOKENIZED_ASSET: 'active tokenizate', ABOVE_MAX_MCAP: 'peste market cap maxim', BELOW_MIN_MCAP: 'sub market cap minim', LOW_VOLUME: 'volum prea mic', NO_MARKET_CAP: 'fără market cap' })[k] ?? k} ${n}`).join(', ') || 'niciunul'}. Listați pe ambele agregatoare: ${int(u.crossListed)}.</p>
+      ${roll ? html`<h3 class="section-title" style="margin-top:18px">Stratul rotativ (planurile gratuite cu limite mici)</h3>
+      <p class="small ink2">Lumânările și lichiditatea DEX se citesc pentru fiecare proiect la fiecare rulare (acum = în rularea aceasta). Sursele care răspund doar câteva zeci de apeluri pe rulare se rotesc prin univers: faptele statice (securitatea contractului, categoriile și repository-ul) se păstrează între rulări cu data citirii, iar măsurătorile (deținători, commit-uri, mențiuni) se citesc proaspăt, prioritatea întâi, apoi proiectele măsurate cel mai demult — o măsurătoare nu este niciodată copiată în istoric a doua oară.</p>
+      <div class="bars">${[
+        ['Lumânări (acum)', roll.tiers?.candles],
+        ['Lichiditate DEX (acum)', roll.tiers?.dex],
+        [`Securitate (≤ ${Math.round((roll.cache?.ttlHours?.security ?? 168) / 24)} zile)`, roll.cache?.security],
+        [`Detalii CG (≤ ${Math.round((roll.cache?.ttlHours?.detail ?? 336) / 24)} zile)`, roll.cache?.detail],
+        [`Deținători (≤ ${roll.cache?.windowHours ?? 72} h)`, roll.cache?.holdersInfo],
+        [`Dezvoltare (≤ ${roll.cache?.windowHours ?? 72} h)`, roll.cache?.dev],
+      ].map(([k, n]) => html`<div class="bar-row"><span class="lbl">${k}</span><span class="track"><b style="width:${(((n ?? 0) / Math.max(1, roll.cache?.projects ?? 1)) * 100).toFixed(1)}%"></b></span><span class="val">${int(n)}/${int(roll.cache?.projects)}</span></div>`)}</div>` : ''}
     </section>
     <section><h3 class="section-title">Acoperire venue-uri (tokeni potriviți)</h3>
       <div class="bars">${venueRows.map(([k, n]) => html`<div class="bar-row"><span class="lbl">${k}</span><span class="track"><b style="width:${(((n ?? 0) / vmax) * 100).toFixed(1)}%"></b></span><span class="val">${int(n)}</span></div>`)}</div>

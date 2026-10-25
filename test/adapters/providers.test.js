@@ -132,7 +132,7 @@ test('CoinGecko markets row normalises to the shared MarketRow shape', () => {
   assert.equal(row.athChangePct, -76);
 });
 
-test('CoinMarketCap: official Pro API only, credits charged per 100 coins, no key = clear instruction', async () => {
+test('CoinMarketCap: official Pro API only, credits charged per 200 coins, no key = clear instruction', async () => {
   // The adapter deliberately speaks only to the documented Pro endpoint with a free Basic key.
   // Earlier versions also called the website's undocumented data-api; a research tool must not
   // depend on a surface that can be withdrawn without notice, so that path is gone.
@@ -152,9 +152,11 @@ test('CoinMarketCap: official Pro API only, credits charged per 100 coins, no ke
   assert.equal(row.platform.address, '0xABC');
   assert.equal(row.dateAdded, '2025-10-15T00:00:00Z');
 
-  // Credits: 1 per 100 coins, minimum 1 — the unit the free plan actually bills.
+  // Credits: 1 per 200 coins (rounded up), minimum 1 — the unit the free plan actually bills.
   assert.equal(listingCredits(100), 1);
-  assert.equal(listingCredits(1000), 10);
+  assert.equal(listingCredits(200), 1);
+  assert.equal(listingCredits(201), 2);
+  assert.equal(listingCredits(1000), 5);
   assert.equal(listingCredits(1), 1);
   assert.equal(listingCredits(0), 1);
 
@@ -166,7 +168,7 @@ test('CoinMarketCap: official Pro API only, credits charged per 100 coins, no ke
   assert.equal(http.seen.length, 1, 'top 1000 is one page, not ten');
   assert.ok(http.seen[0].startsWith('https://pro-api.coinmarketcap.com/v1/cryptocurrency/listings/latest'), http.seen[0]);
   assert.equal(http.lastHeaders['X-CMC_PRO_API_KEY'], 'free-basic-key');
-  assert.equal(res.meta.units, 10, 'a top-1000 listing costs 10 of the 10 000 free monthly credits');
+  assert.equal(res.meta.units, 5, 'a top-1000 listing costs 5 of the 10 000 free monthly credits');
 
   // Without a key: NOT_CONFIGURED plus the exact free signup step, never a silent failure.
   const noKey = createCoinMarketCap({ http: stubHttp([]), cfg, apiKey: null });

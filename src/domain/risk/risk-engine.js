@@ -248,19 +248,24 @@ export function riskEngine({ asset, market, changed }) {
       watch: 'cele două surse, separat' });
   }
   /*
-   * Binance Alpha volume. Alpha awards points for buy volume (BSC volume counted double), and
-   * independent research found the programme drives farming and wash trading rather than organic
-   * demand. On an Alpha token turning over more than its whole market cap in a day, volume-based
-   * readings — volume expansion, turnover jump — can be the points programme, not interest in the
-   * project. That does not void the thesis; it moves the burden of proof to the readings volume
-   * cannot fake: holder growth, liquidity, accumulation.
+   * Exchange Alpha volume. Binance Alpha awards points for buy volume (BSC volume counted double),
+   * and independent research found the programme drives farming and wash trading rather than
+   * organic demand; Gate Alpha runs a points programme of its own. On an Alpha token turning over
+   * more than its whole market cap in a day, volume-based readings — volume expansion, turnover
+   * jump — can be the points programme, not interest in the project. That does not void the thesis;
+   * it moves the burden of proof to the readings volume cannot fake: holder growth, liquidity,
+   * accumulation.
    */
   const alphaVenue = asset.venues?.alpha;
+  const programmes = [
+    alphaVenue?.status === 'LISTED' ? 'Binance Alpha' : null,
+    asset.venues?.gateAlpha?.status === 'LISTED' ? 'Gate Alpha' : null,
+  ].filter(Boolean);
   const turnoverDay = asset.derived?.turnover;
-  if (alphaVenue?.status === 'LISTED' && isNum(turnoverDay) && turnoverDay >= 1) {
-    const mul = isNum(alphaVenue.mulPoint) && alphaVenue.mulPoint > 1 ? `; multiplicator de puncte raportat de Binance ×${alphaVenue.mulPoint}` : '';
+  if (programmes.length && isNum(turnoverDay) && turnoverDay >= 1) {
+    const mul = alphaVenue?.status === 'LISTED' && isNum(alphaVenue.mulPoint) && alphaVenue.mulPoint > 1 ? `; multiplicator de puncte raportat de Binance ×${alphaVenue.mulPoint}` : '';
     add({ key: 'ALPHA_VOLUME', category: RISK_CATEGORY.DATA, severity: SEVERITY.MEDIUM,
-      label: `Volum de ${Math.round(turnoverDay * 100)}% din capitalizare pe zi pe un token Binance Alpha${mul}`,
+      label: `Volum de ${Math.round(turnoverDay * 100)}% din capitalizare pe zi pe un token ${programmes.join(' + ')}${mul}`,
       invalidates: 'o parte din volum poate veni din farmingul punctelor Alpha, nu din cerere — semnalele de volum nu confirmă singure teza',
       watch: 'creșterea deținătorilor și a lichidității, nu doar a volumului' });
   }

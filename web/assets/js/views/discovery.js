@@ -53,7 +53,8 @@ const FILTERS = [
   { id: 'all', label: 'Toți cei analizați' },
 ];
 
-export const discoveryState = { filter: null, sort: 'rank', q: '' };
+const PAGE = 30;
+export const discoveryState = { filter: null, sort: 'rank', q: '', shown: PAGE };
 
 /**
  * The default filter is resolved against the data, not fixed: the screen opens on the strongest
@@ -103,14 +104,14 @@ function invalidatorList(risk, { max = 6 } = {}) {
 }
 
 function factorBars(scoreBlock) {
-  return html`<div class="fbars">${scoreBlock.factors.map((f) => html`
+  return html`<div class="fbars">${(scoreBlock.factors ?? []).map((f) => html`
     <div class="fbar" data-tip="${tip(html`<b>${f.label}</b><br>${f.evidence ?? 'fără dovadă textuală'}<br><span class="muted">pondere nominală ${f.weight} → efectivă ${f.effectiveWeight}% · contribuție ${f.points} puncte · calitate ${f.quality}</span>`)}">
       <span class="bar-k">${qualityDot(f.quality)} ${f.label}</span>
       <span class="domain-bar"><i style="width:${Math.max(2, Math.round(f.score))}%"></i></span>
       <span class="bar-v num">${score(f.score)}</span>
       <span class="bar-w muted xs">${f.effectiveWeight}%</span>
     </div>`)}
-    ${scoreBlock.missing.length ? html`<p class="panel-note">Factori nemăsurați, scoși din ponderare (ponderea lor s-a redistribuit; încrederea a scăzut, scorul nu a fost penalizat): ${scoreBlock.missing.map((m) => `${m.label} (${m.reason})`).join('; ')}.</p>` : ''}
+    ${(scoreBlock.missing ?? []).length ? html`<p class="panel-note">Factori nemăsurați, scoși din ponderare (ponderea lor s-a redistribuit; încrederea a scăzut, scorul nu a fost penalizat): ${scoreBlock.missing.map((m) => `${m.label} (${m.reason})`).join('; ')}.</p>` : ''}
   </div>`;
 }
 
@@ -133,7 +134,55 @@ const SELECTED_BY = {
   CHANGE_ENGINE: { label: 'adus de motorul de schimbări', tip: 'Motorul de schimbări a rulat pe toate proiectele eligibile, față de norma fiecăruia, și a cerut o analiză în profunzime pentru acesta: ceva se mișcă acum peste propria normă.' },
   CONTINUITY: { label: 'urmărit în continuare', tip: 'La rularea anterioară proiectul era în construcție (confirmare multi-factor, candidat timpuriu sau schimbări simultane), așa că rămâne în profunzime pentru ca normele lui de deținători și lichiditate să se acumuleze.' },
   SCORE: { label: 'selectat după scor', tip: 'Adus în profunzime de scorul CRI sau de similaritatea structurală cu LAB/BTW/AGT.' },
+  HORIZON: { label: 'din orizontul top 1000', tip: 'Cercetat pentru că orizontul acoperă fiecare proiect eligibil, nu doar prioritatea rulării: lumânări și lichiditate la fiecare rulare, securitate, detalii, deținători și dezvoltare prin rotație între rulări.' },
 };
+
+const ALPHA_NAME = { binance: 'Binance Alpha', gate: 'Gate Alpha' };
+function alphaPills(row) {
+  const list = row.alphaPrograms ?? [];
+  if (!list.length) return '';
+  return html`<span class="pill" data-tone="muted" data-tip="${tip(html`<b>Programe Alpha</b><br>${list.map((p) => ALPHA_NAME[p] ?? p).join(' + ')}${list.length > 1 ? html`<br><span class="muted">mai multe burse l-au ales independent pentru accesul timpuriu</span>` : ''}`)}">${list.map((p) => ALPHA_NAME[p] ?? p).join(' + ')}</span>`;
+}
+
+/** A list row: the verdict, the headline of the thesis, the top changes and invalidators. */
+function listCard(row, s) {
+  const v = row.verdict;
+  return html`<article class="dcard" data-answer="${v.answersQuestion ? '1' : '0'}" data-detail="list" id="d-${row.key}">
+    <header class="dcard-head">
+      <div class="dcard-id">
+        <button class="tok-btn" type="button" data-open="${row.key}" data-tipfn="cand" data-key="${row.key}">
+          <span class="tok">${row.symbol}</span><span class="tok-sub">${row.name}</span>
+        </button>
+        <span class="pill" data-tone="${STAGE_TONE[v.stage] ?? 'muted'}">Stage ${v.stage} · ${v.stageLabel}</span>
+        <span class="pill" data-tone="${BAND_TONE[v.band] ?? 'muted'}">${v.bandLabel}</span>
+        ${alphaPills(row)}
+        ${SELECTED_BY[row.selectedBy] ? html`<span class="pill" data-tone="muted" data-tip="${tip(SELECTED_BY[row.selectedBy].tip)}">${SELECTED_BY[row.selectedBy].label}</span>` : ''}
+      </div>
+      <div class="dcard-nums">
+        ${meter('Oportunitate', v.opportunity, { tone: BAND_TONE[v.band] ?? 'muted' })}
+        ${meter('Precocitate', v.earliness, { tone: v.earliness >= 65 ? 'good' : v.earliness >= 40 ? 'warning' : 'serious' })}
+        ${meter('Risc', v.risk, { tone: v.risk >= 60 ? 'serious' : v.risk >= 40 ? 'warning' : 'good', invert: true })}
+        ${meter('Încredere', v.confidence, { tone: v.confidence >= 70 ? 'good' : v.confidence >= 50 ? 'warning' : 'serious' })}
+      </div>
+    </header>
+    ${testStrip(v.tests)}
+    <p class="thesis small">${row.thesis.paragraph ?? row.thesis.oneLiner ?? ''}</p>
+    <div class="dcard-grid">
+      <section class="panel">
+        <div class="panel-head"><h4 class="panel-title">Ce s-a schimbat <span class="muted xs">· ${row.changed.count} în ${row.changed.familyCount} ${row.changed.familyCount === 1 ? 'familie' : 'familii'}</span></h4></div>
+        ${changeChips(row.changed, { max: 3 })}
+      </section>
+      <section class="panel">
+        <div class="panel-head"><h4 class="panel-title">Ce ar invalida teza</h4><span class="muted xs">${row.risk.level}</span></div>
+        ${invalidatorList(row.risk, { max: 2 })}
+      </section>
+    </div>
+    <footer class="dcard-foot">
+      <div class="muted xs">${usd(row.market.marketCap)} capitalizare · ${pct(row.market.change.d7)} 7z · lichiditate ${usd(row.onchain.liquidityUsd)} · deținători ${num(row.onchain.holders)} · normă ${row.baseline.points} puncte</div>
+      ${platformRow(row, s.methodology?.platforms)}
+    </footer>
+  </article>`;
+}
 
 function card(row, s) {
   const v = row.verdict;
@@ -149,6 +198,7 @@ function card(row, s) {
         <span class="pill" data-tone="${STAGE_TONE[v.stage] ?? 'muted'}" data-tip="${tip(html`<b>Stage ${v.stage} — ${v.stageLabel}</b><br>${v.stageMeaning}`)}">Stage ${v.stage} · ${v.stageLabel}</span>
         <span class="pill" data-tone="${BAND_TONE[v.band] ?? 'muted'}">${v.bandLabel}</span>
         ${v.answersQuestion ? html`<span class="pill" data-tone="good" data-tip="${tip('Îndeplinește toate cele trei condiții pentru candidat timpuriu ȘI are schimbări simultane în cel puțin două familii — exact forma întrebării proiectului.')}">${icon('target', 12)} răspunde la întrebare</span>` : ''}
+        ${alphaPills(row)}
         ${SELECTED_BY[row.selectedBy] ? html`<span class="pill" data-tone="muted" data-tip="${tip(SELECTED_BY[row.selectedBy].tip)}">${SELECTED_BY[row.selectedBy].label}</span>` : ''}
       </div>
       <div class="dcard-nums">
@@ -246,6 +296,9 @@ export function discoveryMarkup(s) {
     simultaneous: all.filter((r) => matches(r, 'simultaneous')).length,
     all: all.length,
   };
+  // Over the whole horizon (the published rows are its top; the rest is on the Univers screen).
+  const totalSimultaneous = Number.isFinite(d.totals?.simultaneous) ? d.totals.simultaneous : counts.simultaneous;
+  const unpublished = Math.max(0, (d.analysed ?? all.length) - all.length);
   const filter = resolveFilter(counts);
   const q = discoveryState.q.trim().toLowerCase();
   let rows = all.filter((r) => matches(r, filter));
@@ -274,12 +327,12 @@ export function discoveryMarkup(s) {
         <small class="muted">Stage 1–2 · oportunitate &gt; 75 · risc &lt; 60</small>
       </div>
       <div class="qstat">
-        <b class="num">${counts.simultaneous}</b><span>cu schimbări simultane</span>
-        <small class="muted">≥3 schimbări în ≥2 familii, fereastră de 7 zile</small>
+        <b class="num">${totalSimultaneous}</b><span>cu schimbări simultane</span>
+        <small class="muted">≥3 schimbări în ≥2 familii, fereastră de 7 zile${totalSimultaneous !== counts.simultaneous ? html`; ${counts.simultaneous} publicate aici` : ''}</small>
       </div>
       <div class="qstat">
         <b class="num">${d.analysed}</b><span>proiecte analizate în adâncime</span>
-        <small class="muted">din ${num(s.health?.universe?.eligible)} eligibile după filtrul de small-cap${cov ? html`; ${num(cov.prescreened)} aduse de motorul de schimbări` : ''}</small>
+        <small class="muted">din ${num(s.health?.universe?.eligible)} eligibile după filtrul de small-cap${cov?.priority ? html`; prioritate ${num(cov.priority)}` : ''}${cov ? html`; ${num(cov.prescreened)} aduse de motorul de schimbări` : ''}${unpublished ? html`; vârful clasamentului aici, restul de ${num(unpublished)} în <a href="#/univers">Univers</a>` : ''}</small>
       </div>
       ${cov ? html`<div class="qstat" data-tone="${normsBuilding ? 'muted' : 'good'}">
         <b class="num">${num(cov.withBaseline)}<small class="muted">/${num(cov.eligible)}</small></b><span>cu normă proprie</span>
@@ -309,7 +362,8 @@ export function discoveryMarkup(s) {
       <span class="result-count">${rows.length} ${rows.length === 1 ? 'proiect' : 'proiecte'}</span>
     </div>
 
-    ${rows.length ? html`<div class="dlist">${rows.map((r) => card(r, s))}</div>` : html`<div class="empty">
+    ${rows.length ? html`<div class="dlist">${rows.slice(0, discoveryState.shown).map((r) => (r.detail === 'list' ? listCard(r, s) : card(r, s)))}</div>
+      ${rows.length > discoveryState.shown ? html`<p style="margin-top:12px"><button class="btn" type="button" data-dmore>Arată încă ${Math.min(PAGE, rows.length - discoveryState.shown)} din ${rows.length - discoveryState.shown}</button></p>` : ''}` : html`<div class="empty">
       <strong>Niciun proiect nu îndeplinește acest filtru în rularea curentă.</strong>
       <p>Asta este un rezultat, nu o eroare: condiția cere ca mai multe lucruri importante să se schimbe simultan <em>înainte</em> ca mișcarea să devină evidentă, iar astfel de ferestre sunt rare. Încearcă filtrul „Toți cei analizați” pentru a vedea ce lipsește fiecărui proiect din cele trei condiții.</p>
       ${d.note ? html`<p class="muted small">${d.note}</p>` : ''}
@@ -321,15 +375,23 @@ export function discoveryMarkup(s) {
 /** Wire the filter / search / sort controls of this view. */
 export function bindDiscovery(root, rerender) {
   root.addEventListener('click', (e) => {
-    const el = e.target instanceof Element ? e.target.closest('[data-dfilter]') : null;
+    const t = e.target instanceof Element ? e.target : null;
+    if (t?.closest('[data-dmore]')) {
+      discoveryState.shown += PAGE;
+      rerender();
+      return;
+    }
+    const el = t?.closest('[data-dfilter]');
     if (!el) return;
     discoveryState.filter = el.dataset.dfilter;
+    discoveryState.shown = PAGE;
     rerender();
   });
   root.addEventListener('input', (e) => {
     const el = e.target;
     if (el?.id === 'dsearch') {
       discoveryState.q = el.value;
+      discoveryState.shown = PAGE;
       rerender({ keepFocus: '#dsearch' });
     }
   });
@@ -337,6 +399,7 @@ export function bindDiscovery(root, rerender) {
     const el = e.target;
     if (el?.id === 'dsort') {
       discoveryState.sort = el.value;
+      discoveryState.shown = PAGE;
       rerender();
     }
   });

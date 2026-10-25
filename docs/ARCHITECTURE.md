@@ -18,7 +18,8 @@ aici stau deciziile care nu se văd din cod și pragurile care ar părea arbitra
                        │  application                             │
                        │  ports/  ← contractul                    │
                        │  use-cases/ run-scan · discovery ·       │
-                       │     deep-research · futures-radar ·      │
+                       │     deep-research · deep-cache ·         │
+                       │     futures-radar · universe-view ·      │
                        │     pulse · snapshot · state-update      │
                        └────────────────┬─────────────────────────┘
                                         │ folosește doar domeniul
@@ -29,7 +30,7 @@ aici stau deciziile care nu se văd din cod și pragurile care ar părea arbitra
                        │  benchmark · narrative · backtest · …    │
                        └──────────────────────────────────────────┘
                                         │
-                                data/latest.json  ◄── singurul contract
+            data/latest.json + data/universe.json  ◄── contractul
                                         │
                        ┌────────────────▼─────────────────────────┐
                        │  web/  dashboard static (GitHub Pages)   │
@@ -47,7 +48,8 @@ Regula de dependență nu este o convenție, ci un **test care rulează la fieca
   `domain/platforms/registry.js`: *care* planuri gratuite există este cunoaștere de domeniu, iar
   citirea lui `process.env` este treaba adaptorului de configurație.
 - `adapters` nu importă niciodată `main.js`.
-- `web` importă doar din `web`. Frontend-ul vorbește cu motorul exclusiv prin `data/latest.json`.
+- `web` importă doar din `web`. Frontend-ul vorbește cu motorul exclusiv prin `data/latest.json` și
+  tabelul orizontului `data/universe.json`.
 
 Și, specific acestui proiect, șase teste în plus:
 
@@ -315,7 +317,7 @@ contorizat **în unitățile lui proprii**:
 | Plan | Unitate | Limită |
 |---|---|---|
 | CoinGecko Demo | apel | 10 000/lună |
-| CoinMarketCap Basic | credit (1 per 100 monede) | 10 000/lună |
+| CoinMarketCap Basic | credit (1 per 200 monede) | 10 000/lună |
 | CryptoQuant Basic | credit | 10 000/lună |
 | NodeReal Free | unitate de calcul (300 per listă de deținători) | 10 000 000/lună |
 | GoPlus Free | unitate de calcul | 150 000/lună, 30 000/zi |
@@ -327,6 +329,27 @@ apelul următor este refuzat cu un motiv citibil, nu cu o eroare HTTP.
 
 Registrul se rostogolește exact când o fac furnizorii (lunar pe UTC, zilnic pe UTC) și proiectează
 ritmul de consum până la finalul lunii, ca să avertizeze înainte, nu după.
+
+---
+
+### Orizontul de 1000 cu bugete de zeci de apeluri: stratul rotativ
+
+Cercetarea profundă nu mai este o listă scurtă: acoperă fiecare proiect eligibil (`deep.horizon`,
+implicit 1000). Sursele se împart după cât de mult pot da la fiecare rulare:
+
+| Strat | Surse | Pentru cine, la fiecare rulare |
+|---|---|---|
+| masiv | lumânări Binance / MEXC / Binance Alpha, DexScreener (30 contracte/apel), derivate, listele Alpha | toate proiectele |
+| rotativ, static | GoPlus (TTL 7 zile), detalii CoinGecko (TTL 14 zile) | prioritatea, apoi ce lipsește sau a expirat |
+| rotativ, măsurătoare | GeckoTerminal, GitHub, YouTube, grafic CoinGecko | prioritatea, apoi cine a fost măsurat cel mai demult |
+| prioritate | liste de deținători (NodeReal / Solana RPC), Arkham | doar prioritatea, pentru că fluxurile cer aceleași portofele la rulări consecutive |
+
+Diferența dintre *static* și *măsurătoare* este regula point-in-time aplicată unui cache
+(`application/use-cases/deep-cache.js`): flagurile unui contract, owner-ul, LP-ul blocat, categoriile
+și repository-ul se păstrează între rulări cu data citirii și alimentează riscul; numărul de
+deținători, cota brută top 10, commit-urile și mențiunile nu sunt păstrate niciodată — un proiect
+neîmprospătat în rularea curentă le raportează „necunoscut”. Altfel aceeași citire ar intra de două
+ori în istoric, ar aplatiza norma proiectului și ar fabrica schimbări față de ea.
 
 ---
 
@@ -384,10 +407,19 @@ falsifică și unde se urmărește, și ca politica publicată să conțină `un
 `subscriptionsUsed: false`, `freeOnly: true`, `tradeExecution: false`.
 
 Dimensiunea este ținută sub control prin bugete explicite, nu prin tăieri arbitrare: lumânările se
-publică pentru primele 30 de rânduri (restul păstrează sparkline-ul), dosarul complet pentru 24 de
-rânduri plus toți candidații timpurii, iar catalogul de platforme o singură dată în `methodology`, cu
-doar URL-urile per rând. Rezultat: ~2,9 MB brut, ~450 KB gzip, pe care GitHub Pages îl servește
+publică pentru primele 30 de rânduri (restul păstrează sparkline-ul); rândurile Small-Cap Radar au
+trei niveluri de dovezi — `full` (dosarul complet: primele 24 plus toți candidații timpurii), `card`
+(factori și invalidatorii principali, până la rândul 48) și `list` (verdict, teza pe scurt, primele
+schimbări, până la rândul 120); catalogul de platforme apare o singură dată în `methodology`, cu
+doar URL-urile per rând. Rezultat: ~3 MB brut, ~450 KB gzip, pe care GitHub Pages îl servește
 comprimat.
+
+**Restul orizontului** — fiecare proiect cercetat, câte un rând, și fiecare piață perpetuă — se
+publică separat în `data/universe.json` (tablouri sub o listă de câmpuri, ~300 KB pentru 900 de
+proiecte), validat față de `schema/universe.schema.json`. Dashboard-ul îl citește doar când se
+deschide ecranul **Univers**, iar coloana `detail` spune pentru fiecare rând unde îi sunt dovezile
+complete. Tabelul se scrie înaintea contractului, ca un cititor să nu găsească niciodată un
+`latest.json` al cărui tabel aparține altei rulări.
 
 ---
 

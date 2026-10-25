@@ -1,8 +1,8 @@
 # CRI Radar
 
 **Crypto Research Intelligence** — un motor de cercetare care scanează top 1000 CoinMarketCap și
-CoinGecko plus toate tokenurile Binance Alpha și răspunde la o singură întrebare, formulată cuvânt
-cu cuvânt:
+CoinGecko plus toate tokenurile Binance Alpha și Gate Alpha, cercetează în profunzime **fiecare**
+proiect eligibil (până la 1000) și răspunde la o singură întrebare, formulată cuvânt cu cuvânt:
 
 > „Arată-mi proiectele mici unde se schimbă simultan mai multe lucruri importante, înainte ca
 > mișcarea să devină evidentă, și spune-mi ce riscuri pot invalida această ipoteză.”
@@ -34,6 +34,32 @@ devine proiect propriu, cu identitatea CoinGecko când aceasta îi cunoaște con
 de factori măsurabile față de propria normă la fiecare rulare, fără niciun apel în plus. Pe un token
 Alpha cu rotație de peste 100 % pe zi, invalidatorul `ALPHA_VOLUME` amintește că o parte din volum
 poate veni din farmingul punctelor Alpha.
+
+**Programele Alpha ale tuturor burselor**, verificate unul câte unul (octombrie 2026):
+
+| Bursă | Program | Listă publică prin API | Cum intră în radar |
+|---|---|---|---|
+| Binance | Binance Alpha | da — token list, exchange info, klines (developers.binance.com) | univers + holderi + lichiditate + lumânări 1D/4H + intrări noi |
+| Gate | Gate Alpha | da — API v4 `/alpha/currencies` și `/alpha/tickers`, fără cheie | univers + preț, volum, capitalizare + intrări noi (`NEW_GATE_ALPHA`) |
+| KuCoin | KuCoin Alpha | nu (doar anunțuri) | prin agregatori, DEX și listele Binance/Gate |
+| Bybit | Bybit Alpha | nu | la fel |
+| Bitget | Bitget Onchain | nu (API-ul Bitget Wallet cere parteneriat) | la fel |
+| MEXC | zona Alpha / DEX+ | nu | la fel |
+
+Un token ales de **mai multe** programe Alpha poartă eticheta fiecăruia, iar intrarea într-un program
+(Binance Alpha, Gate Alpha), o listare coreeană sau trecerea Alpha → Binance spot contează ca
+schimbare în familia „listări și acces”.
+
+### Orizontul: întregul univers, nu o listă scurtă
+Fiecare proiect eligibil — până la **1000** — este cercetat în profunzime la fiecare rulare:
+lumânări 1D/4H (Binance, MEXC, Binance Alpha) și lichiditate DEX pentru toate. Sursele gratuite care
+răspund doar câteva zeci de apeluri pe rulare (GoPlus, detaliile CoinGecko, GeckoTerminal, GitHub,
+YouTube) **se rotesc** prin univers: prioritatea rulării întâi, apoi proiectele măsurate cel mai demult.
+Faptele statice (securitatea contractului, categoriile, repository-ul) se păstrează între rulări cu
+data citirii; măsurătorile (deținători, commit-uri, mențiuni) nu sunt niciodată copiate în istoric a
+doua oară — un proiect nemăsurat în rularea curentă raportează „necunoscut”, nu cifra de ieri.
+Futures Radar evaluează **fiecare piață perpetuă** din univers. Dashboard-ul arată vârful fiecărui
+clasament cu toate dovezile, iar ecranul **Univers** (`data/universe.json`) arată toate rândurile.
 
 Citirile care depind de cine le-a măsurat — deținători, lichiditate, concentrare — își păstrează
 sursa, iar norma compară doar citiri din aceeași sursă: o rulare în care a răspuns GoPlus și una în
@@ -98,7 +124,7 @@ npm run build && npm run serve
 | `npm run probe` | o cerere mică per furnizor; raportează stare, latență, chei lipsă și pașii de înscriere |
 | `npm run labels` | reconstruiește setul de etichete on-chain din eth-labels (MIT) |
 | `npm run demo` | scanare simulată + build + server local |
-| `npm run ci` | verificare de sintaxă + 177 de teste (arhitectură, motoare, contract, end-to-end) |
+| `npm run ci` | verificare de sintaxă + 201 de teste (arhitectură, motoare, contract, end-to-end) |
 | `npm run summary` | raportul de rulare, așa cum apare în GitHub Actions |
 
 ---
@@ -112,7 +138,7 @@ gratuit declarat — exact pasul de review care împiedică un endpoint plătit 
 
 ### Fără nicio cheie
 CoinPaprika · MEXC spot și futures · oglinda publică de date Binance (`data-api.binance.vision`) ·
-Gate · Bitget · OKX · Hyperliquid · Upbit · Bithumb · Binance Alpha · DexScreener · GeckoTerminal ·
+Gate (perpetue + Gate Alpha) · Bitget · OKX · Hyperliquid · Upbit · Bithumb · Binance Alpha · DexScreener · GeckoTerminal ·
 RPC public Solana · DefiLlama Open API · alternative.me Fear & Greed · setul de etichete
 [eth-labels](https://github.com/dawsbot/eth-labels) (MIT, 61 108 adrese, inclus în repository)
 
@@ -120,7 +146,7 @@ RPC public Solana · DefiLlama Open API · alternative.me Fear & Greed · setul 
 | Variabilă | Plan | Ce deblochează |
 |---|---|---|
 | `COINGECKO_API_KEY` | Demo, 10 000 apeluri/lună | limite mai mari pe universul principal |
-| `CMC_API_KEY` | Basic, 10 000 credite/lună | al doilea univers independent + verificare încrucișată |
+| `CMC_API_KEY` | Basic, 10 000 credite/lună (top 1000 = 5 credite) | **top 1000 CoinMarketCap** — al doilea univers independent + verificare încrucișată |
 | `COINALYZE_API_KEY` | cont gratuit, 40 apeluri/minut | funding și open interest pe Binance, Bybit, OKX |
 | `NODEREAL_API_KEY` | Free, 10 mil. unități/lună | lista de deținători pe lanțurile EVM |
 | `CRYPTOQUANT_API_KEY` | Basic, 10 000 credite/lună | context de ciclu pe BTC/ETH |
@@ -226,7 +252,7 @@ Dashboard-ul este mobile-first: fiecare ecran a fost verificat la 390 px fără 
 |---|---|---|
 | `Scan & deploy` | la 4 ore, la :17 | scanare completă, validare contract, salvare stare, deploy Pages |
 | `Pulse` | la 15 minute | preț, funding, open interest; nu atinge nicio cuotă lunară |
-| `CI` | la fiecare push | sintaxă, reguli de arhitectură, 177 de teste, build DEMO offline |
+| `CI` | la fiecare push | sintaxă, reguli de arhitectură, 201 de teste, build DEMO offline |
 | `Probe surse` | săptămânal | o cerere per furnizor; eșuează doar dacă o sursă fără cheie a căzut |
 | `Actualizare etichete` | lunar | reconstruiește setul eth-labels și deschide un pull request |
 
@@ -276,7 +302,7 @@ src/
 web/               dashboard static, ES module native, fără build step
 schema/            contractul backend ↔ dashboard, validat la fiecare publicare
 config/labels/     setul de etichete on-chain inclus în repo (MIT)
-test/              177 de teste, inclusiv cele de arhitectură
+test/              201 de teste, inclusiv cele de arhitectură
 ```
 
 Detalii de proiectare, inclusiv de ce fiecare prag este unde este: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
- * Assemble the static site: dist/ = web/ (frontend) + data/latest.json + data/summary.json.
+ * Assemble the static site: dist/ = web/ (frontend) + data/latest.json + data/summary.json +
+ * data/universe.json (the whole research horizon, loaded by the dashboard on demand).
  * The frontend has no build step (native ES modules); this only copies and validates inputs.
  *
  *   node scripts/build-site.js [--data data] [--out dist]
@@ -39,7 +40,15 @@ async function main() {
     JSON.parse(body); // refuse to publish a truncated file
     await writeFile(join(outDir, 'data', 'latest.json'), body);
     if (await exists(join(dataDir, 'summary.json'))) await cp(join(dataDir, 'summary.json'), join(outDir, 'data', 'summary.json'));
-    console.log(`site: ${outDir} (snapshot ${(body.length / 1024).toFixed(0)} KB)`);
+    let extra = '';
+    const universe = join(dataDir, 'universe.json');
+    if (await exists(universe)) {
+      const ubody = await readFile(universe, 'utf8');
+      JSON.parse(ubody); // same rule: never publish a truncated file
+      await writeFile(join(outDir, 'data', 'universe.json'), ubody);
+      extra = `, univers ${(ubody.length / 1024).toFixed(0)} KB`;
+    }
+    console.log(`site: ${outDir} (snapshot ${(body.length / 1024).toFixed(0)} KB${extra})`);
   } else {
     console.warn(`site: ${outDir} construit FĂRĂ snapshot (${latest} lipsește) — dashboard-ul va afișa instrucțiunile de pornire.`);
   }

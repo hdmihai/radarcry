@@ -82,8 +82,8 @@ const APPROVED_HOSTS = {
   'api.mexc.com': 'MEXC spot (public)',
   'contract.mexc.com': 'MEXC futures (public)',
   'data-api.binance.vision': 'Binance public data mirror (public, fără cont)',
-  'www.binance.com': 'Binance Alpha token list (endpoint public)',
-  'api.gateio.ws': 'Gate perpetuals (public)',
+  'www.binance.com': 'Binance Alpha: listă de tokenuri, exchange info și klines (endpoint-uri publice documentate)',
+  'api.gateio.ws': 'Gate perpetuals + Gate Alpha /alpha/currencies și /alpha/tickers (public, fără cheie)',
   'api.bitget.com': 'Bitget perpetuals (public)',
   'www.okx.com': 'OKX perpetuals (public)',
   'api.hyperliquid.xyz': 'Hyperliquid info endpoint (public)',
@@ -154,7 +154,13 @@ test('no adapter reaches a host known to require a subscription', async () => {
 
 test('no adapter implements an order or withdrawal endpoint', async () => {
   // The project is research-only. A trading endpoint must not exist anywhere, not even unused.
-  const FORBIDDEN = [/\/api\/v3\/order/i, /\/api\/v\d\/private\//i, /createOrder/i, /placeOrder/i, /\bwithdraw\b/i, /\/capital\/withdraw/i];
+  // Gate Alpha and Binance Alpha both have trading surfaces next to the public lists this project
+  // reads (quote, order, account); only the lists may appear in the source.
+  const FORBIDDEN = [
+    /\/api\/v3\/order/i, /\/api\/v\d\/private\//i, /createOrder/i, /placeOrder/i, /\bwithdraw\b/i, /\/capital\/withdraw/i,
+    /\/alpha\/(orders?|quote|accounts|account_book)\b/i,
+    /alpha-trade\/(order|place|cancel)/i,
+  ];
   for (const f of await jsFiles(join(ROOT, 'src'))) {
     const src = await readFile(f, 'utf8');
     for (const re of FORBIDDEN) {

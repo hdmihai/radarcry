@@ -10,7 +10,7 @@
  *
  * Units are provider-specific and come from the published pricing of the free tier:
  *   · CoinGecko Demo  — 1 unit = 1 call   (10 000 calls / month)
- *   · CoinMarketCap   — 1 unit = 1 credit (10 000 credits / month, ~1 credit per 100 coins)
+ *   · CoinMarketCap   — 1 unit = 1 credit (10 000 credits / month, 1 credit per 200 coins)
  *   · CryptoQuant     — 1 unit = 1 credit (10 000 credits / month)
  *   · NodeReal        — 1 unit = 1 CU     (10 000 000 CU / month, nr_getTokenHolders = 300 CU)
  *   · GoPlus          — 1 unit = 1 CU     (150 000 CU / month and 30 000 CU / day)

@@ -6,11 +6,12 @@ import { candlesAt, hashSeed, mulberry32, stateAt } from './demo-market.js';
 import { normChain } from '../../../domain/shared/symbols.js';
 import { isNum } from '../../../domain/shared/math.js';
 import { normalizeTopFlows } from '../providers/onchain.js';
-import { alphaMarketRow } from '../providers/exchanges.js';
+import { alphaMarketRow, gateAlphaMarketRow, normalizeGateAlpha } from '../providers/exchanges.js';
 
 const DAY = 86_400_000;
 const CG_CHAIN = { bsc: 'binance-smart-chain', ethereum: 'ethereum', solana: 'solana', base: 'base', arbitrum: 'arbitrum-one' };
 const CMC_CHAIN = { bsc: 'bnb', ethereum: 'ethereum', solana: 'solana', base: 'base', arbitrum: 'arbitrum' };
+const GATE_CHAIN = { bsc: 'bsc', ethereum: 'eth', solana: 'SOLANA', base: 'base', arbitrum: 'arbitrum' };
 
 export function createFixtureProviders({ market, clock }) {
   const now = () => clock.now();
@@ -186,6 +187,33 @@ export function createFixtureProviders({ market, clock }) {
     id: 'binance_alpha',
     markets: async () => ok('binance_alpha', '/alpha/all/token/list', alphaTokens()),
     listTop: async () => ok('binance_alpha', '/alpha/all/token/list', alphaTokens().map(alphaMarketRow)),
+    klines: async (alphaId, interval, limit) => {
+      const a = market.assets.find((x) => x.venues.alpha && `ALPHA_${hashSeed(x.id) % 900}` === alphaId);
+      if (!a) return fail('binance_alpha', '/bapi/.../alpha-trade/klines', 'SKIPPED', `${alphaId}: nicio pereche Alpha activă`);
+      return ok('binance_alpha', `/bapi/.../alpha-trade/klines ${interval}`, candlesAt(market, a, now(), interval, limit));
+    },
+  };
+
+  /*
+   * Gate Alpha: two thirds of the on-chain projects, each joining the list on its own day after
+   * listing — so a long simulation sees projects *enter* Gate Alpha and produce NEW_GATE_ALPHA
+   * catalysts. Rows are built by the live adapter's own normaliser and market-row mapper, with
+   * Gate's id convention (some `memebox<ticker>`, some the bare ticker) and its chain spellings.
+   */
+  const gateAlphaTokens = () => live()
+    .filter(({ a }) => a.chain && a.address && GATE_CHAIN[a.chain] && hashSeed(`gate:${a.id}`) % 3 !== 0
+      && now() >= a.listedAt + (hashSeed(`${a.id}:ga`) % 40) * DAY)
+    .map(({ a, s }) => {
+      const currency = hashSeed(a.id) % 2 ? `memebox${a.symbol.toLowerCase()}` : a.symbol.toLowerCase();
+      return normalizeGateAlpha(
+        { currency, name: a.name, chain: GATE_CHAIN[a.chain], address: a.address, status: 1 },
+        { currency, last: String(s.price), change: String(s.change.h24 ?? 0), volume: String(s.volume24h * 0.05), market_cap: String(s.marketCap) },
+      );
+    });
+  const gateAlpha = {
+    id: 'gate_alpha',
+    markets: async () => ok('gate_alpha', '/alpha/currencies + /alpha/tickers', gateAlphaTokens()),
+    listTop: async () => ok('gate_alpha', '/alpha/currencies + /alpha/tickers', gateAlphaTokens().filter((t) => t.contractAddress && t.marketCap > 0 && t.price > 0).map(gateAlphaMarketRow)),
   };
 
   /** A GoPlus-shaped top-10 list: one LP pool, one exchange wallet, the rest ordinary holders. */
@@ -556,7 +584,7 @@ export function createFixtureProviders({ market, clock }) {
     coingecko, coinmarketcap, coinpaprika, mexc, binanceSpot,
     gate: venue('gate'), bitget: venue('bitget'), okx: venue('okx'), hyperliquid,
     coinalyze, upbit: krw('upbit', 'upbit'), bithumb: krw('bithumb', 'bithumb'),
-    binanceAlpha, dexscreener, geckoterminal, goplus, nodereal, solanaRpc,
+    binanceAlpha, gateAlpha, dexscreener, geckoterminal, goplus, nodereal, solanaRpc,
     defillama, sentiment, cryptoquant, github, youtube, arkham,
   };
 }

@@ -24,6 +24,8 @@ const FILES = {
   ledger: 'quota-ledger.json',
   lastSeen: 'last-seen.json',
   lastSeenV4: 'last-seen-v4.json',
+  // The rolling research cache (static facts + when each measurement was last refreshed).
+  deepCache: 'deep-cache.json',
   meta: 'meta.json',
 };
 
@@ -204,6 +206,7 @@ export function emptyState() {
     ledger: {},
     lastSeen: {},
     lastSeenV4: {},
+    deepCache: {},
     meta: { runs: 0, firstRunAt: null, lastRunAt: null },
   };
 }
@@ -239,6 +242,7 @@ export function createFsStateRepository({ dir, logger = null }) {
       if (!Array.isArray(s.cohort)) s.cohort = [];
       if (!s.references?.items) s.references = { items: [], fetchedAt: null, configHash: null };
       if (!s.ledger || typeof s.ledger !== 'object') s.ledger = {};
+      if (!s.deepCache || typeof s.deepCache !== 'object' || Array.isArray(s.deepCache)) s.deepCache = {};
       return s;
     },
     async save(state) {

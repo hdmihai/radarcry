@@ -182,3 +182,60 @@ test('the dashboard states the free-only, research-only policy wherever it matte
   // Every provider in the health table declares the free plan it runs on.
   for (const p of snap.health.providers) assert.ok(p.plan && p.plan.length > 3, `${p.id} declares its plan`);
 });
+
+/* ─────────────────────── the whole horizon: list rows and the Univers screen ─────────────────── */
+
+test('the Small-Cap Radar renders every level of evidence and pages the long list', () => {
+  const rows = snap.discovery?.rows ?? [];
+  const levels = new Set(rows.map((r) => r.detail));
+  assert.ok(levels.has('full'), 'the top of the ranking carries the full file');
+  const before = { ...discoveryState };
+  try {
+    discoveryState.filter = 'all';
+    discoveryState.shown = 10_000;
+    const all = clean('discovery[all levels]', discoveryMarkup(snap));
+    if (levels.has('list')) assert.ok(all.includes('data-detail="list"'), 'list rows render as compact cards');
+    discoveryState.shown = 30;
+    const paged = String(discoveryMarkup(snap));
+    if (rows.length > 30) assert.ok(paged.includes('data-dmore'), 'a long list is paged');
+    const unpublished = (snap.discovery.analysed ?? 0) - rows.length;
+    if (unpublished > 0) assert.ok(paged.includes('#/univers'), 'and points to the Univers screen for the rest of the horizon');
+  } finally {
+    Object.assign(discoveryState, before);
+  }
+});
+
+test('the Univers screen renders while loading, once loaded, and when the table is missing', async () => {
+  const { universeMarkup, universeState, decodeTable } = await import('../../web/assets/js/views/universe.js');
+  const { readFile } = await import('node:fs/promises');
+  const { join } = await import('node:path');
+  const saved = { ...universeState };
+  try {
+    universeState.status = 'loading';
+    assert.ok(String(universeMarkup(snap)).includes('Se încarcă'), 'a loading state, not a blank screen');
+
+    const doc = JSON.parse(await readFile(join(run.outDir, 'universe.json'), 'utf8'));
+    universeState.status = 'ready';
+    universeState.data = { ...doc, assetRows: decodeTable(doc.assets), futuresRows: decodeTable(doc.futures) };
+    for (const [k, v] of [['alpha', 'ALL'], ['alpha', 'ANY'], ['alpha', 'BOTH'], ['only', 'perps'], ['only', 'simultaneous'], ['sort', 'opportunity'], ['sort', 'mcap'], ['stage', '1']]) {
+      universeState[k] = v;
+      clean(`univers[${k}=${v}]`, universeMarkup(snap));
+    }
+    universeState.alpha = 'ALL';
+    universeState.only = 'ALL';
+    universeState.stage = 'ALL';
+    universeState.sort = 'rank';
+    const table = String(universeMarkup(snap));
+    assert.ok(table.includes('Gate'), 'the Alpha programmes are visible per row');
+    assert.ok(table.includes('data-umore') || doc.assets.rows.length <= 100, 'a long table is paged');
+    universeState.tab = 'futures';
+    assert.ok(clean('univers[futures]', universeMarkup(snap)).includes('Nivele de research'));
+
+    universeState.status = 'error';
+    universeState.error = 'HTTP 404';
+    assert.ok(String(universeMarkup(snap)).includes('HTTP 404'));
+    assert.ok(String(universeMarkup({ ...snap, meta: { ...snap.meta, universe: undefined } })).includes('nu are încă'), 'an older snapshot explains the missing table');
+  } finally {
+    Object.assign(universeState, saved);
+  }
+});

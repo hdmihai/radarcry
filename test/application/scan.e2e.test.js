@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { validateSchema } from '../../src/adapters/outbound/publishing/schema-validator.js';
+import { decodeTable } from '../../src/application/use-cases/universe-view.js';
 import { ROOT, runFixtureDays } from '../fixture-run.js';
 
 let run;
@@ -191,8 +192,8 @@ test('discovery-driven projects are researched first: the capped checks reach th
   // Security and holder checks are capped (45 projects). Projects brought in by the change engine,
   // or kept for continuity, must not lose them to projects selected by the legacy score alone.
   const rows = last.discovery.rows;
-  assert.ok(rows.every((r) => ['CHANGE_ENGINE', 'CONTINUITY', 'SCORE'].includes(r.selectedBy)), 'every row says why it was researched');
-  const driven = rows.filter((r) => r.selectedBy !== 'SCORE' && r.contract);
+  assert.ok(rows.every((r) => ['CHANGE_ENGINE', 'CONTINUITY', 'SCORE', 'HORIZON'].includes(r.selectedBy)), 'every row says why it was researched');
+  const driven = rows.filter((r) => ['CHANGE_ENGINE', 'CONTINUITY'].includes(r.selectedBy) && r.contract);
   assert.ok(driven.length > 0);
   const scanned = driven.filter((r) => r.onchain?.security).length;
   assert.ok(scanned >= driven.length * 0.9, `${scanned}/${driven.length} discovery-driven projects have a contract scan`);
@@ -208,5 +209,61 @@ test('Binance Alpha tokens below the top 1000 are part of the universe and build
   const raw = JSON.parse(await readFile(join(run.stateDir, 'discovery.json'), 'utf8'));
   const alphaSrc = raw.metrics.indexOf('holdersSource');
   const tracked = Object.values(raw.assets).filter((a) => a.p.some((pt) => pt[1]?.[alphaSrc] === 'A'));
-  assert.ok(tracked.length >= u.alphaOnlyEligible, `${tracked.length} projects carry Binance Alpha holder readings in their norm`);
+  // Every eligible project the universe holds only through Binance Alpha has Alpha holder readings.
+  const table = decodeTable(JSON.parse(await readFile(join(run.outDir, 'universe.json'), 'utf8')).assets);
+  const binanceOnly = table.filter((r) => r.sources === 'BA').length;
+  assert.ok(tracked.length >= binanceOnly, `${tracked.length} projects carry Binance Alpha holder readings in their norm (${binanceOnly} Binance-only)`);
+});
+
+test('the research horizon is the whole eligible universe, published as one table next to the contract', async () => {
+  const u = last.health.universe;
+  assert.ok(u.deep > run.config.deep.limit + run.config.deep.keepWatchlist, `${u.deep} researched — beyond the old shortlist`);
+  assert.ok(u.deep >= u.eligible * 0.9, `${u.deep}/${u.eligible} eligible projects researched in depth`);
+  assert.ok(u.priority <= run.config.deep.limit + run.config.deep.keepWatchlist, 'the priority stays the shortlist');
+  assert.equal(last.discovery.analysed, u.discovered);
+  assert.ok(last.discovery.rows.length <= run.config.snapshot.discoveryRows + last.discovery.earlyCandidates, 'the contract carries the top of the ranking');
+  assert.ok(new Set(last.discovery.rows.map((r) => r.detail)).size >= 2, 'with graded levels of evidence');
+
+  const uSchema = JSON.parse(await readFile(join(ROOT, 'schema/universe.schema.json'), 'utf8'));
+  const universe = JSON.parse(await readFile(join(run.outDir, 'universe.json'), 'utf8'));
+  assert.deepEqual(validateSchema(universe, uSchema), []);
+  assert.equal(universe.runId, last.meta.runId, 'the table belongs to the same run');
+  assert.equal(universe.assets.rows.length, u.eligible, 'one row per eligible project');
+  for (const t of [universe.assets, universe.futures]) for (const r of t.rows) assert.equal(r.length, t.fields.length);
+  assert.equal(last.meta.universe.projects, u.eligible);
+
+  const rows = decodeTable(universe.assets);
+  const byKey = new Map(rows.map((r) => [r.key, r]));
+  for (const d of last.discovery.rows) assert.equal(byKey.get(d.key)?.detail, d.detail, `${d.symbol}: the table says where its evidence is`);
+  assert.ok(rows.filter((r) => r.detail === 'research').length > 0, 'researched projects beyond the published top are in the table');
+  assert.ok(rows.every((r, i) => r.rank === i + 1));
+});
+
+test('the Futures Radar covers every perpetual market of the universe', () => {
+  const f = last.futures.summary;
+  assert.ok(f.scanned > run.config.futures.watchlist.length + run.config.futures.extraFromRadar, `${f.scanned} instruments`);
+  assert.ok(last.futures.rows.length <= run.config.snapshot.futuresRows);
+  assert.equal(f.published, last.futures.rows.length);
+});
+
+test('Gate Alpha is a universe source and a venue, next to Binance Alpha', () => {
+  const u = last.health.universe;
+  assert.ok(u.gateAlpha > 0, 'Gate\'s list is read');
+  assert.ok(u.alphaPrograms.gate > 0 && u.alphaPrograms.both > 0, 'and tagged, including tokens on both programmes');
+  assert.ok(last.discovery.rows.some((r) => r.alphaPrograms?.includes('gate')));
+  assert.equal(last.health.providers.find((p) => p.id === 'gate_alpha')?.status, 'OK');
+  const entries = run.snapshots.flatMap((s) => s.catalysts).filter((e) => e.type === 'NEW_GATE_ALPHA');
+  assert.ok(entries.length > 0, 'projects joining Gate Alpha after the baseline are catalysts');
+  assert.equal(run.snapshots[0].catalysts.filter((e) => e.type === 'NEW_GATE_ALPHA').length, 0, 'the first read is only the baseline');
+});
+
+test('static facts are carried between runs, measurements are not, and coverage accumulates', async () => {
+  const roll = last.health.universe.rolling;
+  assert.ok(roll.tiers.security.carried > 0, 'contract scans from earlier runs are reused');
+  assert.ok(roll.cache.security > run.config.deep.securityLimit, `${roll.cache.security} contracts covered — more than one run's budget`);
+  const cache = JSON.parse(await readFile(join(run.stateDir, 'deep-cache.json'), 'utf8'));
+  for (const [key, e] of Object.entries(cache)) {
+    if (e.security) assert.equal(e.security.data.holders, undefined, `${key}: a holder count is never cached`);
+    if (e.detail) assert.equal(e.detail.data.watchlistUsers, undefined, `${key}: a watchlist count is never cached`);
+  }
 });

@@ -36,6 +36,7 @@ function probes(P) {
     { id: 'upbit', run: () => P.upbit.markets() },
     { id: 'bithumb', run: () => P.bithumb.markets() },
     { id: 'binance_alpha', run: () => P.binanceAlpha.markets() },
+    { id: 'gate_alpha', run: () => P.gateAlpha.markets() },
     { id: 'dexscreener', run: () => P.dexscreener.boosts() },
     { id: 'geckoterminal', run: () => P.geckoterminal.trendingPools() },
     // A well-known, long-lived contract: WBNB on BSC. Any answer at all proves the endpoint.

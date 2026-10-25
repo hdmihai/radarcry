@@ -243,7 +243,7 @@ export function researchMarkup(s) {
       </section>
 
       ${row.onchain.security ? html`<section class="panel wide">
-        <div class="panel-head"><h4 class="panel-title">Securitatea contractului</h4><span class="muted xs">GoPlus Security, plan gratuit</span></div>
+        <div class="panel-head"><h4 class="panel-title">Securitatea contractului</h4><span class="muted xs">GoPlus Security, plan gratuit${row.onchain.security.carried && row.onchain.security.asOf ? html` · citit ${dateTime(row.onchain.security.asOf)}, păstrat între rulări (faptele contractului se schimbă rar)` : ''}</span></div>
         <div class="facts">
           ${Object.entries({
             isHoneypot: 'Honeypot', isMintable: 'Mintable', isProxy: 'Proxy', canTakeBackOwnership: 'Owner poate reveni',

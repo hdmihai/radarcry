@@ -38,6 +38,7 @@ jobs:
           node scripts/build-site.js
           test -f dist/index.html
           test -f dist/data/latest.json
+          test -f dist/data/universe.json
 
       - name: The pulse runs on top of the published snapshot without breaking the contract
         run: |

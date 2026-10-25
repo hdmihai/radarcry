@@ -20,6 +20,7 @@ const usd = (x) => {
   return `$${x.toFixed(0)}`;
 };
 
+const f0 = (snap) => snap.futures?.summary?.scanned ?? 0;
 const path = process.argv[2] ?? 'data/latest.json';
 const s = JSON.parse(await readFile(path, 'utf8'));
 const d = s.discovery ?? {};
@@ -31,6 +32,9 @@ out.push('');
 out.push(`**Întrebarea proiectului:** ${d.answering ?? 0} ${(d.answering ?? 0) === 1 ? 'proiect răspunde' : 'proiecte răspund'} · ${d.earlyCandidates ?? 0} candidați timpurii · ${d.analysed ?? 0} analizate în adâncime din ${s.health?.universe?.eligible ?? '—'} eligibile`);
 out.push('');
 out.push(`Sănătate date: **${s.health?.overall}** · paritate atinsă **${n(s.parity?.achieved)}%** (permanent ${n(s.parity?.permanent)}%, cu chei ${n(s.parity?.withKeys)}%) · durată ${((s.meta.durationMs ?? 0) / 1000).toFixed(1)} s`);
+const u = s.health?.universe ?? {};
+out.push('');
+out.push(`Orizont: CoinGecko ${u.coingecko ?? 0} · CoinMarketCap ${u.coinmarketcap ?? 0}${u.coinmarketcap ? '' : ' (adaugă CMC_API_KEY, cheie Basic gratuită)'} · Binance Alpha ${u.binanceAlpha ?? 0} · Gate Alpha ${u.gateAlpha ?? 0} (${u.alphaOnly ?? 0} tokenuri Alpha în afara top 1000) → ${u.eligible ?? 0} eligibile · ${u.deep ?? 0} cercetate în profunzime (prioritate ${u.priority ?? '—'}) · ${u.futures ?? f0(s)} piețe perpetue`);
 
 const answering = rows.filter((r) => r.verdict?.answersQuestion);
 const shown = answering.length ? answering : [...rows].sort((a, b) => (b.verdict?.opportunity ?? 0) - (a.verdict?.opportunity ?? 0)).slice(0, 8);

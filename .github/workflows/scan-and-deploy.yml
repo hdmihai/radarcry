@@ -3,10 +3,13 @@
 #  1. restores the research state (own history, holder snapshots, listings registry, cohort,
 #     quota ledger, references) from the `cri-state` branch — a single-commit orphan branch,
 #     force-pushed each run, so it never grows;
-#  2. runs the full scan: top 1000 CoinGecko + CoinMarketCap, every venue, holder lists, contract
-#     security, development and attention — all on public or free-account APIs;
+#  2. runs the full scan: top 1000 CoinGecko + CoinMarketCap plus the Binance Alpha and Gate Alpha
+#     lists, every venue, and deep research on every eligible project (up to 1000) — candles and DEX
+#     liquidity each run, holder lists for the priority, contract security, development and attention
+#     through a rolling cache — all on public or free-account APIs;
 #  3. validates the published contract against schema/latest.schema.json;
-#  4. saves the new state and deploys the static dashboard to GitHub Pages.
+#  4. saves the new state (with data/latest.json and the whole-horizon table data/universe.json)
+#     and deploys the static dashboard to GitHub Pages.
 #
 # If the live scan fails (both aggregators down, say) the last valid snapshot is redeployed, so the
 # dashboard degrades to "older data" rather than to a blank page.
@@ -52,7 +55,8 @@ concurrency:
 jobs:
   scan:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # runtime.maxMinutes (22) bounds the scan itself; the rest is CI, state and the site build.
+    timeout-minutes: 40
     env:
       MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || 'live' }}
     steps:
@@ -107,6 +111,7 @@ jobs:
             echo "::warning::Scanarea a eșuat (cod $code). Republic ultimul snapshot valid."
             if [ -f .state/snapshot/latest.json ]; then
               mkdir -p data && cp .state/snapshot/latest.json data/ && cp .state/snapshot/summary.json data/ 2>/dev/null || true
+              cp .state/snapshot/universe.json data/ 2>/dev/null || true
             else
               exit "$code"
             fi
@@ -114,6 +119,7 @@ jobs:
             mkdir -p .state/snapshot
             cp data/latest.json .state/snapshot/
             cp data/summary.json .state/snapshot/ 2>/dev/null || true
+            cp data/universe.json .state/snapshot/ 2>/dev/null || true
           fi
 
       - name: Scan (demo, simulated market)

@@ -41,16 +41,25 @@ function holderTable(classified, { rows: maxRows = 15 } = {}) {
   };
 }
 
+/** Platform links a list row keeps: the four a researcher opens first. */
+const LIST_LINKS = ['dexscreener', 'coingecko', 'goplus', 'arkham'];
+
 /**
  * @param {{asset:any, cmp:any, baseline:any, changed:any, pre:any, risk:any, verdict:any, thesis:any}} row
- * @param {{keys?:any, links?:any[], full?:boolean}} ctx
- *   `full` ships the complete evidence (holder table, every invalidator, the whole baseline
- *   comparison). It is reserved for the rows a researcher will actually open; the rest carry the
- *   verdict, the thesis and the changes, which is what a list needs. The dashboard can ask for more
- *   by opening the asset, and the next full run will have published it.
+ * @param {{keys?:any, links?:any[], full?:boolean, level?:'full'|'card'|'list'}} ctx
+ *   Three levels of evidence, because the horizon is a thousand projects and the page must still
+ *   open on a phone:
+ *    · `full` — the complete evidence (holder table, every invalidator, the whole baseline
+ *      comparison, the platform panel): the early candidates and the top of the ranking;
+ *    · `card` — verdict, thesis, changes, factor bars and the main invalidators: the next rows;
+ *    · `list` — the verdict, the headline of the thesis, the top changes and invalidators: the rest
+ *      of the published ranking. Every other researched project is a row of data/universe.json.
+ *   `full: true|false` is the older two-level switch (full / card).
  */
 export function discoveryView(row, ctx = {}) {
-  const full = ctx.full !== false;
+  const level = ctx.level ?? (ctx.full === false ? 'card' : 'full');
+  const full = level === 'full';
+  const list = level === 'list';
   const a = row.asset;
   const m = a.market ?? {};
   const oc = a.onchain ?? {};
@@ -65,6 +74,8 @@ export function discoveryView(row, ctx = {}) {
     chain: a.primary?.chain ?? null,
     contract: a.primary?.address ?? null,
     image: a.image ?? null,
+    detail: level,
+    alphaPrograms: a.venues?.alphaPrograms ?? [],
 
     /* ── headline verdict ────────────────────────────────────────────────────────────────────── */
     verdict: {
@@ -83,11 +94,27 @@ export function discoveryView(row, ctx = {}) {
       confidence: v.confidence,
       verdict: v.verdict,
       tests: v.tests,
-      why: v.why,
+      why: list ? [] : v.why,
     },
 
     /* ── the thesis a researcher reads ───────────────────────────────────────────────────────── */
-    thesis: {
+    thesis: list ? {
+      headline: row.thesis.headline,
+      paragraph: shortParagraph(row.thesis.paragraph),
+      timing: row.thesis.timing,
+      confidenceLabel: row.thesis.confidenceLabel,
+      oneLiner: row.thesis.oneLiner,
+      confirms: [],
+      // The verdict lines stay; the question text and the invalidator list are in the full file.
+      questionAnswer: row.thesis.questionAnswer ? {
+        question: null,
+        small: row.thesis.questionAnswer.small ?? null,
+        simultaneous: row.thesis.questionAnswer.simultaneous ?? null,
+        notYetObvious: row.thesis.questionAnswer.notYetObvious ?? null,
+        risksThatInvalidate: [],
+        verdict: row.thesis.questionAnswer.verdict ?? null,
+      } : null,
+    } : {
       headline: row.thesis.headline,
       paragraph: row.thesis.paragraph,
       timing: row.thesis.timing,
@@ -108,7 +135,7 @@ export function discoveryView(row, ctx = {}) {
       earliness: row.changed.earliness,
       windowDays: row.changed.windowDays,
       summary: row.changed.summary,
-      changes: full ? row.changed.changes : row.changed.changes.slice(0, 5),
+      changes: full ? row.changed.changes : row.changed.changes.slice(0, list ? 3 : 5),
       conditions: row.changed.conditions ?? [],
     },
 
@@ -120,8 +147,8 @@ export function discoveryView(row, ctx = {}) {
       confidence: row.pre.confidence,
       coverage: row.pre.coverage,
       redistributed: row.pre.redistributed,
-      factors: row.pre.factors,
-      missing: row.pre.missing,
+      factors: list ? [] : row.pre.factors,
+      missing: list ? [] : row.pre.missing,
     },
 
     /* ── risk: the named invalidators ────────────────────────────────────────────────────────── */
@@ -129,8 +156,8 @@ export function discoveryView(row, ctx = {}) {
       score: row.risk.score,
       level: row.risk.level,
       counts: row.risk.counts,
-      invalidators: full ? row.risk.invalidators : row.risk.invalidators.slice(0, 4),
-      note: row.risk.note,
+      invalidators: full ? row.risk.invalidators : row.risk.invalidators.slice(0, list ? 2 : 4),
+      note: list ? null : row.risk.note,
     },
 
     /* ── market facts ────────────────────────────────────────────────────────────────────────── */
@@ -188,6 +215,8 @@ export function discoveryView(row, ctx = {}) {
         buyTaxPct: pctRound(oc.security.buyTaxPct, 2),
         sellTaxPct: pctRound(oc.security.sellTaxPct, 2),
         lpLockedPct: pctRound(oc.security.lpLockedPct, 1),
+        asOf: oc.security.asOf ?? null,
+        carried: oc.security.carried === true,
       } : null,
       note: oc.note,
     },
@@ -205,7 +234,7 @@ export function discoveryView(row, ctx = {}) {
     },
 
     /* ── supply, narrative, development, structure ───────────────────────────────────────────── */
-    supply: a.risk?.supply ? {
+    supply: !list && a.risk?.supply ? {
       floatRatio: pctRound(a.risk.supply.floatRatio, 3),
       fdvToMcap: pctRound(a.risk.supply.fdvToMcap, 2),
       inflationPctYear: a.risk.supply.inflationPctYear,
@@ -214,9 +243,9 @@ export function discoveryView(row, ctx = {}) {
       unlockWithin30d: a.risk.supply.unlockWithin30d,
       warnings: a.risk.supply.warnings,
     } : null,
-    narrative: a.narrative ?? null,
-    social: a.social ?? null,
-    features: a.features?.daily ? {
+    narrative: list ? null : a.narrative ?? null,
+    social: list ? null : a.social ?? null,
+    features: !list && a.features?.daily ? {
       source: a.features.d1Source,
       bars: a.features.daily.bars,
       rsi14: pctRound(a.features.daily.rsi14, 1),
@@ -252,10 +281,19 @@ export function discoveryView(row, ctx = {}) {
     quality: a.quality ?? null,
     // The platform catalogue (labels, roles, plans, layers) ships once in `methodology.platforms`;
     // each row only carries the URLs, which is what differs per asset.
-    platformUrls: Object.fromEntries((ctx.links ?? []).map((l) => [l.key, l.url])),
+    platformUrls: Object.fromEntries((ctx.links ?? []).filter((l) => !list || LIST_LINKS.includes(l.key)).map((l) => [l.key, l.url])),
     platforms: full ? (ctx.links ?? []) : [],
-    catalysts: (a.catalysts ?? []).slice(0, 6),
+    catalysts: (a.catalysts ?? []).slice(0, list ? 2 : 6),
   };
+}
+
+/** The first sentences of a thesis, up to ~280 characters, for a list row. */
+function shortParagraph(text) {
+  const t = String(text ?? '');
+  if (t.length <= 280) return t;
+  const cut = t.slice(0, 280);
+  const end = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf('; '));
+  return end >= 40 ? `${cut.slice(0, end + 1)}` : `${cut.replace(/\s+\S*$/, '')}…`;
 }
 
 /** Flow view for a list row: the verdict and the counts, without the per-wallet movers. */

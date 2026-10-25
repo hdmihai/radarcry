@@ -322,6 +322,11 @@ test('answering the question needs both the candidate test and real simultaneity
   assert.equal(wide.answersQuestion, true);
   assert.equal(narrow.earlyResearchCandidate, true, 'still a candidate by the three conditions');
   assert.equal(narrow.answersQuestion, false, 'but not an answer to a question that asks for simultaneity');
+  assert.match(wide.verdict, /simultan/);
+  assert.doesNotMatch(narrow.verdict, /s-au schimbat simultan/, 'a single-family candidate is not described as simultaneous');
+  const thin = classify({ asset: quietAsset(), pre: { ...pre, confidence: 50 }, risk, changed: { count: 2, familyCount: 1, obviousness: 10, earliness: 90, simultaneous: false, summary: '', changes: [] } });
+  assert.equal(thin.earlyResearchCandidate, true, 'half-measured is still a candidate: UNKNOWN is not bearish');
+  assert.match(thin.verdict, /date parțiale/, 'but the verdict says the picture is partial');
 });
 
 test('ranking puts candidates first, then prefers the finding nobody has seen yet', () => {
@@ -333,6 +338,12 @@ test('ranking puts candidates first, then prefers the finding nobody has seen ye
   ]);
   assert.equal(ranked[0].asset.symbol, 'CAND', 'a confirmed candidate outranks everything');
   assert.equal(ranked[1].asset.symbol, 'QUIET', 'a lower score that is still invisible beats a higher one everyone sees');
+
+  const withAnswer = rankCandidates([
+    row('SINGLE', { earlyResearchCandidate: true, answersQuestion: false, opportunity: 90, earliness: 100, confidence: 95 }),
+    row('ANSWER', { earlyResearchCandidate: true, answersQuestion: true, opportunity: 77, earliness: 70, confidence: 80 }),
+  ]);
+  assert.equal(withAnswer[0].asset.symbol, 'ANSWER', 'the exact answer to the question comes before a single-family candidate');
 });
 
 /* ─────────────────────────── prescreen: who gets the deep-research budget ────────────────────── */

@@ -1,7 +1,8 @@
 /**
  * Attach exchange / venue intelligence to canonical assets:
  *  - MEXC spot tickers, perpetual contracts (MEXC, Gate, Bitget, OKX) with funding + open interest
- *  - Korean KRW listings (Upbit, Bithumb), Binance Alpha (on-chain discovery venue of LAB/BTW/AGT)
+ *  - Korean KRW listings (Upbit, Bithumb), the exchange Alpha programmes with a public list: Binance
+ *    Alpha (the on-chain discovery venue of LAB/BTW/AGT) and Gate Alpha
  *  - attention markers (CoinGecko trending, DexScreener boosts, GeckoTerminal trending pools)
  *  - DefiLlama fundamentals (TVL, fees)
  * Symbol collisions are resolved with a price-sanity check, never by symbol alone.
@@ -40,14 +41,14 @@ function byPrice(candidates, venuePrice, tolerance) {
  *   mexcSpot?: {ok:boolean, data:any[]},
  *   perps?: {venue:string, ok:boolean, data:any[]}[],
  *   upbit?: {ok:boolean, data:any[]}, bithumb?: {ok:boolean, data:any[]},
- *   alpha?: {ok:boolean, data:any[]},
+ *   alpha?: {ok:boolean, data:any[]}, gateAlpha?: {ok:boolean, data:any[]},
  *   cgTrending?: {ok:boolean, data:any[]}, dexBoosts?: {ok:boolean, data:any[]}, gtTrending?: {ok:boolean, data:any[]},
  *   llamaProtocols?: {ok:boolean, data:any[]}, llamaFees?: {ok:boolean, data:any[]}
  * }} v
  */
 export function attachVenues(assets, v) {
   const idx = symbolIndex(assets);
-  const stats = { mexcSpot: 0, binanceSpot: 0, perps: {}, upbit: 0, bithumb: 0, alpha: 0, unmatched: {} };
+  const stats = { mexcSpot: 0, binanceSpot: 0, perps: {}, upbit: 0, bithumb: 0, alpha: 0, gateAlpha: 0, alphaPrograms: { binance: 0, gate: 0, both: 0 }, unmatched: {} };
   const knownPerpVenues = (v.perps ?? []).filter((p) => p.ok).map((p) => p.venue);
 
   for (const a of assets) {
@@ -58,6 +59,9 @@ export function attachVenues(assets, v) {
       perpsKnown: knownPerpVenues.length > 0,
       krw: { upbit: v.upbit?.ok ? false : null, bithumb: v.bithumb?.ok ? false : null, warning: null },
       alpha: v.alpha?.ok ? { status: 'NOT_LISTED' } : { status: 'UNKNOWN' },
+      // Absent from a list read only in part is not "not listed": it may sit on an unread page.
+      gateAlpha: v.gateAlpha?.ok && v.gateAlpha.meta?.listComplete !== false ? { status: 'NOT_LISTED' } : { status: 'UNKNOWN' },
+      alphaPrograms: [],
     };
     a.attention = {
       cgTrending: v.cgTrending?.ok ? false : null,
@@ -121,10 +125,17 @@ export function attachVenues(assets, v) {
     }
   }
 
+  let byChainAddr = null;
+  const contractIndex = () => {
+    if (byChainAddr) return byChainAddr;
+    byChainAddr = new Map();
+    for (const a of assets) for (const p of a.platforms) byChainAddr.set(`${p.chain}:${p.address}`, a);
+    return byChainAddr;
+  };
+
   // Binance Alpha — exact contract match first, symbol+price fallback.
   if (v.alpha?.ok) {
-    const byAddr = new Map();
-    for (const a of assets) for (const p of a.platforms) byAddr.set(`${p.chain}:${p.address}`, a);
+    const byAddr = contractIndex();
     for (const t of v.alpha.data) {
       const chain = normChain(t.chainId) ?? normChain(t.chainName);
       const addr = chain ? normAddress(chain, t.contractAddress) : null;
@@ -147,6 +158,37 @@ export function attachVenues(assets, v) {
       };
       stats.alpha += 1;
     }
+  }
+
+  // Gate Alpha — contract match first. Gate names tokens by an internal id, not a ticker, so the
+  // symbol + price fallback runs at a tighter tolerance than for Binance Alpha.
+  if (v.gateAlpha?.ok) {
+    const byAddr = contractIndex();
+    for (const t of v.gateAlpha.data) {
+      const chain = normChain(t.chain);
+      const addr = chain ? normAddress(chain, t.contractAddress) : null;
+      let hit = addr ? byAddr.get(`${chain}:${addr}`) : null;
+      if (!hit) hit = byPrice(idx.get(normSymbol(t.symbol)), toNum(t.price), 0.1);
+      if (!hit || hit.venues.gateAlpha.status === 'LISTED') continue;
+      hit.venues.gateAlpha = {
+        status: 'LISTED',
+        currency: t.currency ?? null,
+        volume24h: toNum(t.volume24h),
+        marketCap: toNum(t.marketCap),
+        changePct: toNum(t.change24h),
+      };
+      stats.gateAlpha += 1;
+    }
+  }
+
+  // Which exchange Alpha programmes list each asset: a token several exchanges have each chosen for
+  // their early-access programme is a different fact from a token one exchange carries.
+  for (const a of assets) {
+    if (a.venues.alpha?.status === 'LISTED') a.venues.alphaPrograms.push('binance');
+    if (a.venues.gateAlpha?.status === 'LISTED') a.venues.alphaPrograms.push('gate');
+    if (a.venues.alphaPrograms.includes('binance')) stats.alphaPrograms.binance += 1;
+    if (a.venues.alphaPrograms.includes('gate')) stats.alphaPrograms.gate += 1;
+    if (a.venues.alphaPrograms.length >= 2) stats.alphaPrograms.both += 1;
   }
 
   // Attention markers.

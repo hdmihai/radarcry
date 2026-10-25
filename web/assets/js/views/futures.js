@@ -166,6 +166,7 @@ export function futuresMarkup(s) {
       </div>
       <span class="result-count">${rows.length} ${rows.length === 1 ? 'instrument' : 'instrumente'}</span>
     </div>
+    ${(sum.scanned ?? 0) > f.rows.length ? html`<p class="panel-note">${icon('info', 12)} Aici sunt primele ${f.rows.length} instrumente după notă, cu toate dovezile; toate cele ${sum.scanned} piețe perpetue evaluate sunt în <a href="#/univers">Univers → Perpetue</a>.</p>` : ''}
 
     ${rows.length ? html`<div class="dlist">${rows.map(row)}</div>` : html`<div class="empty">
       <strong>Niciun setup nu trece pragul de 80 de puncte în această rulare.</strong>

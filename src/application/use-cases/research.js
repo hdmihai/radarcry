@@ -309,6 +309,8 @@ export function toCandidateView(r, ctx) {
       mexcSpot: Boolean(a.venues?.mexcSpot),
       krw: a.venues?.krw ?? null,
       alpha: a.venues?.alpha ?? null,
+      gateAlpha: a.venues?.gateAlpha ?? null,
+      alphaPrograms: a.venues?.alphaPrograms ?? [],
       perps: (a.venues?.perps ?? []).map((p) => p.venue),
     },
     attention: { ...a.attention, watchlistUsers: r.detail?.watchlistUsers ?? null },

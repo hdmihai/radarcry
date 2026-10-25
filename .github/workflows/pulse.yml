@@ -86,6 +86,8 @@ jobs:
           fi
           if [ -f .state/snapshot/latest.json ]; then
             cp .state/snapshot/latest.json data/latest.json
+            # The whole-horizon table belongs to the last full scan; the site keeps serving it.
+            cp .state/snapshot/universe.json data/universe.json 2>/dev/null || true
             echo "have_snapshot=true" >> "$GITHUB_OUTPUT"
           else
             echo "::notice::Nu există încă un snapshot publicat. Pulsul se oprește; rulează întâi „Scan & deploy”."

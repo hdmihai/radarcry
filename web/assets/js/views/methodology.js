@@ -28,10 +28,11 @@ export function methodologyMarkup(s) {
       <ul class="facts">${(m.principles ?? []).map((p) => html`<li><span>${p}</span></li>`)}</ul>
       <h3 class="section-title" style="margin-top:24px">Fluxul unei rulări</h3>
       <ol class="small ink2" style="padding-left:18px;display:grid;gap:6px;margin:0">
-        <li>Universul: top ${uni.topN ?? 1000} CoinGecko + CoinMarketCap (CoinPaprika ca rezervă), unificat după contract și nume.</li>
+        <li>Universul: top ${uni.topN ?? 1000} CoinGecko + CoinMarketCap (CoinPaprika ca rezervă) plus listele publice Binance Alpha și Gate Alpha, unificate după contract și nume.</li>
         <li>Filtre: market cap între ${usd(uni.minMarketCapUsd)} și ${usd(uni.maxMarketCapUsd)}, volum 24h peste ${usd(uni.minVolume24hUsd)}, fără stablecoin/wrapped.</li>
-        <li>Venue-uri: MEXC spot, perpetual MEXC/Gate/Bitget/OKX, Upbit/Bithumb, Binance Alpha, trending CoinGecko/GeckoTerminal, boost-uri DexScreener, DefiLlama.</li>
-        <li>Evaluare rapidă pentru toți eligibilii, apoi cercetare profundă pentru primii ${s.meta?.config?.deepLimit ?? 60} (lumânări MEXC 1D/4H, SMC, GoPlus, holderi, lichiditate DEX și, cu cheie Arkham, fluxurile de portofele și entități).</li>
+        <li>Venue-uri: MEXC spot, Binance spot, perpetual MEXC/Gate/Bitget/OKX/Hyperliquid, Upbit/Bithumb, Binance Alpha, Gate Alpha, trending CoinGecko/GeckoTerminal, boost-uri DexScreener, DefiLlama.</li>
+        <li>Cercetare profundă pe tot orizontul (până la ${m.horizon?.deep ?? s.meta?.config?.deepHorizon ?? 1000} de proiecte): lumânări 1D/4H și lichiditate DEX pentru fiecare; securitate, detalii, deținători și dezvoltare prin rotație între rulări; prioritatea de ${m.horizon?.priority ?? s.meta?.config?.deepLimit ?? 60} proiecte primește în plus liste complete de deținători și, cu cheie Arkham, fluxurile de portofele și entități.</li>
+        <li>Futures Radar pe fiecare piață perpetuă din univers (până la ${m.horizon?.futures ?? 1000}); tabelul complet al orizontului se publică în data/universe.json (ecranul Univers).</li>
         <li>Fuziunea dovezilor pe 9 domenii, stadiu, hype, risc, semnal și plan structural.</li>
         <li>Diferența față de rularea anterioară devine catalizatori și alerte; semnalele intră în track record.</li>
       </ol>

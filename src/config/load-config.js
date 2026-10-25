@@ -30,13 +30,15 @@ export async function loadConfig({ root, env = process.env, cli = {} }) {
 
   const envOver = {
     universe: { topN: int(env.CRI_TOP_N), minMarketCapUsd: int(env.CRI_MIN_MCAP), maxMarketCapUsd: int(env.CRI_MAX_MCAP), minVolume24hUsd: int(env.CRI_MIN_VOLUME) },
-    deep: { limit: int(env.CRI_DEEP_LIMIT) },
+    deep: { limit: int(env.CRI_DEEP_LIMIT), horizon: int(env.CRI_DEEP_HORIZON) },
+    futures: { maxInstruments: int(env.CRI_FUTURES_MAX) },
     runtime: { maxMinutes: int(env.CRI_MAX_MINUTES) },
   };
   config = deepMerge(config, prune(envOver));
   config = deepMerge(config, prune({
     universe: { topN: int(cli.limit) },
-    deep: { limit: int(cli.deep) },
+    deep: { limit: int(cli.deep), horizon: int(cli.horizon) },
+    futures: { maxInstruments: int(cli.futuresMax) },
     runtime: { maxMinutes: int(cli.maxMinutes) },
   }));
   validate(config);
@@ -85,6 +87,8 @@ function validate(c) {
   if (!(u.maxMarketCapUsd > u.minMarketCapUsd)) errs.push('universe.maxMarketCapUsd trebuie să fie mai mare decât minMarketCapUsd');
   if (!(u.minVolume24hUsd >= 0)) errs.push('universe.minVolume24hUsd trebuie să fie ≥ 0');
   if (!(c.deep?.limit >= 0 && c.deep.limit <= 300)) errs.push('deep.limit trebuie să fie între 0 și 300');
+  if (c.deep?.horizon !== undefined && !(c.deep.horizon >= 0 && c.deep.horizon <= 5000)) errs.push('deep.horizon trebuie să fie între 0 și 5000');
+  if (c.futures?.maxInstruments !== undefined && !(c.futures.maxInstruments >= 0 && c.futures.maxInstruments <= 5000)) errs.push('futures.maxInstruments trebuie să fie între 0 și 5000');
   if (!(c.runtime?.maxMinutes > 0 && c.runtime.maxMinutes <= 120)) errs.push('runtime.maxMinutes trebuie să fie între 1 și 120');
   const cohort = c.trackRecord?.cohort ?? {};
   if (!(cohort.minOpportunity >= 0 && cohort.minOpportunity <= 100)) errs.push('trackRecord.cohort.minOpportunity trebuie să fie între 0 și 100');

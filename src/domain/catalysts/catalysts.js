@@ -14,6 +14,7 @@ export const CATALYST_TYPES = {
   NEW_BITHUMB_KRW: { label: 'Listare Bithumb (KRW)', polarity: 'POSITIVE', confidence: 0.8 },
   NEW_BINANCE_ALPHA: { label: 'Intrare în Binance Alpha', polarity: 'POSITIVE', confidence: 0.7 },
   BINANCE_CEX_LISTING: { label: 'Alpha → listare Binance spot/futures', polarity: 'POSITIVE', confidence: 0.9 },
+  NEW_GATE_ALPHA: { label: 'Intrare în Gate Alpha', polarity: 'POSITIVE', confidence: 0.6 },
   ENTERED_TOP1000: { label: 'A intrat în top 1000', polarity: 'POSITIVE', confidence: 0.3 },
   RANK_JUMP: { label: 'Salt în clasamentul market cap', polarity: 'POSITIVE', confidence: 0.4 },
   VOLUME_SPIKE: { label: 'Explozie de volum (turnover)', polarity: 'POSITIVE', confidence: 0.45 },
@@ -24,6 +25,24 @@ export const CATALYST_TYPES = {
   UNLOCK: { label: 'Deblocare de tokeni', polarity: 'NEGATIVE', confidence: 0.8 },
   MANUAL: { label: 'Eveniment introdus manual', polarity: 'UNKNOWN', confidence: 0.6 },
 };
+
+/**
+ * The catalysts that open *access* to a token: a new venue, a new market type, a new region, or an
+ * exchange's Alpha programme. The change engine (NEW_VENUE) and the Smart Money score
+ * (EXCHANGE_EXPANSION) both read this one list. They used to keep their own copies, spelled
+ * differently from the types the registry actually emits ('ALPHA_LISTED', 'NEW_KRW_LISTING'…), so
+ * an Alpha entry, a Korean listing or an Alpha → Binance spot move never counted as a change.
+ */
+export const ACCESS_CATALYSTS = Object.freeze([
+  'NEW_PERP',
+  'NEW_MEXC_SPOT',
+  'NEW_BINANCE_SPOT',
+  'NEW_UPBIT_KRW',
+  'NEW_BITHUMB_KRW',
+  'NEW_BINANCE_ALPHA',
+  'BINANCE_CEX_LISTING',
+  'NEW_GATE_ALPHA',
+]);
 
 export function makeEvent({ type, assetKey, symbol, observedAt, source, title, polarity, confidence, eventTime = null, details = null }) {
   const spec = CATALYST_TYPES[type] ?? CATALYST_TYPES.MANUAL;
@@ -47,9 +66,11 @@ export function makeEvent({ type, assetKey, symbol, observedAt, source, title, p
  * Only venues whose provider succeeded are included, so an outage never looks like a delisting.
  */
 export function buildRegistry(assets, okVenues) {
-  const reg = { mexcSpot: {}, binanceSpot: {}, perps: {}, upbit: {}, bithumb: {}, alpha: {}, alphaCex: {}, universe: {} };
+  const reg = { mexcSpot: {}, binanceSpot: {}, perps: {}, upbit: {}, bithumb: {}, alpha: {}, alphaCex: {}, gateAlpha: {}, universe: {} };
   for (const a of assets) {
-    reg.universe[a.key] = true;
+    // "Entered the top 1000" is about the aggregators' ranking: an asset the universe holds only
+    // because an exchange Alpha list carries it has not entered anything.
+    if (!a.sources || a.sources.some((src) => src === 'coingecko' || src === 'coinmarketcap')) reg.universe[a.key] = true;
     if (okVenues.mexcSpot && a.venues?.mexcSpot) reg.mexcSpot[a.key] = true;
     if (okVenues.binanceSpot && a.venues?.binanceSpot) reg.binanceSpot[a.key] = true;
     for (const p of a.venues?.perps ?? []) {
@@ -62,6 +83,7 @@ export function buildRegistry(assets, okVenues) {
       reg.alpha[a.key] = true;
       if (a.venues.alpha.listingCex) reg.alphaCex[a.key] = true;
     }
+    if (okVenues.gateAlpha && a.venues?.gateAlpha?.status === 'LISTED') reg.gateAlpha[a.key] = true;
   }
   for (const venue of okVenues.perpVenues ?? []) reg.perps[venue] ??= {};
   return reg;
@@ -110,6 +132,9 @@ export function diffRegistry(prev, current, assetsByKey, nowMs, okVenues, { forg
   section('bithumb', current.bithumb, 'NEW_BITHUMB_KRW', 'bithumb', okVenues.bithumb);
   section('alpha', current.alpha, 'NEW_BINANCE_ALPHA', 'binance_alpha', okVenues.alpha);
   section('alphaCex', current.alphaCex, 'BINANCE_CEX_LISTING', 'binance_alpha', okVenues.alpha);
+  // Only a complete read of Gate's list may say what is new on it: a list cut at the page budget can
+  // reorder between runs, and a token that was always there must not come back as an entry.
+  section('gateAlpha', current.gateAlpha ?? {}, 'NEW_GATE_ALPHA', 'gate_alpha', okVenues.gateAlpha);
   section('universe', current.universe, 'ENTERED_TOP1000', 'coingecko+coinmarketcap', okVenues.universe);
 
   for (const e of events) {

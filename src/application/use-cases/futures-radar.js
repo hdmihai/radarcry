@@ -1,10 +1,13 @@
 /**
  * USE-CASE: FUTURES RADAR — section ① of the dashboard.
  *
- * For a bounded watchlist (the configured majors plus whatever the Small-Cap Radar surfaced that has
- * a perpetual market), collect 1D and 4H candles plus derivatives data and run the five-block grading
- * from the technical solution. Everything is research output: entry zones, invalidation and targets
- * are levels derived from structure, and no part of this project places or transmits an order.
+ * For every instrument of the universe that has a perpetual market (the configured majors first,
+ * then the Small-Cap Radar's order, then the rest of the top 1000 by open interest — up to
+ * `futures.maxInstruments`), take 1D and 4H candles plus derivatives data and run the five-block
+ * grading from the technical solution. Candles already read by the deep research are reused, so the
+ * wider horizon costs calls only for the large caps the small-cap research does not cover.
+ * Everything is research output: entry zones, invalidation and targets are levels derived from
+ * structure, and no part of this project places or transmits an order.
  */
 import { isNum, round, toNum } from '../../domain/shared/math.js';
 import { dailyTrend } from '../../domain/futures/trend.js';
@@ -19,7 +22,9 @@ const STOP = new Set(['BUDGET_EXHAUSTED', 'CIRCUIT_OPEN', 'QUOTA_EXHAUSTED', 'NO
 
 /**
  * Choose which assets get the futures treatment: the configured watchlist first (so the section is
- * never empty), then the highest-ranked radar candidates that actually have a perpetual market.
+ * never empty), then the Small-Cap Radar's candidates in its own order, then every other asset of
+ * the universe with a perpetual market, deepest open interest first — up to `maxInstruments`.
+ * Without `maxInstruments` the radar keeps its original size: the watchlist plus `extraFromRadar`.
  */
 export function pickWatchlist({ assets, radarRows, cfg }) {
   const bySymbol = new Map();
@@ -29,18 +34,30 @@ export function pickWatchlist({ assets, radarRows, cfg }) {
   }
   const chosen = [];
   const seen = new Set();
+  const take = (a, reason) => {
+    chosen.push({ asset: a, reason });
+    seen.add(a.key);
+  };
   for (const sym of cfg.watchlist ?? []) {
     const a = bySymbol.get(sym);
-    if (a && !seen.has(a.key)) { chosen.push({ asset: a, reason: 'listă de urmărire configurată' }); seen.add(a.key); }
+    if (a && !seen.has(a.key)) take(a, 'listă de urmărire configurată');
   }
-  const extra = cfg.extraFromRadar ?? 10;
+  const max = Number.isFinite(cfg.maxInstruments) ? cfg.maxInstruments : (cfg.watchlist?.length ?? 0) + (cfg.extraFromRadar ?? 10);
   for (const r of radarRows ?? []) {
-    if (chosen.length >= (cfg.watchlist?.length ?? 0) + extra) break;
+    if (chosen.length >= max) break;
     const a = r.asset;
     if (!a || seen.has(a.key)) continue;
     if (!(a.venues?.perps?.length)) continue;
-    chosen.push({ asset: a, reason: `din Small-Cap Radar (${r.verdict?.bandLabel ?? 'candidat'})` });
-    seen.add(a.key);
+    take(a, `din Small-Cap Radar (${r.verdict?.bandLabel ?? 'candidat'})`);
+  }
+  if (Number.isFinite(cfg.maxInstruments)) {
+    const oi = (a) => (a.venues?.perps ?? []).reduce((sum, p) => sum + (toNum(p.oiUsd) ?? 0), 0);
+    const rest = assets.filter((a) => a.venues?.perps?.length && !seen.has(a.key))
+      .sort((x, y) => oi(y) - oi(x) || (y.market?.marketCap ?? 0) - (x.market?.marketCap ?? 0));
+    for (const a of rest) {
+      if (chosen.length >= max) break;
+      take(a, 'piață perpetuă în universul scanat');
+    }
   }
   return chosen;
 }
@@ -109,9 +126,11 @@ export function coinalyzePayload({ markets, funding, oi, oiHistory, liquidations
 
 /**
  * @param {{watchlist:{asset:any, reason:string}[], providers:any, cfg:any,
- *          timeLeft:()=>number, logger:any, nowMs:number}} input
+ *          timeLeft:()=>number, logger:any, nowMs:number, candles?:Map<string, any>|null}} input
+ *   `candles` — what the deep research already read (key → {d1, h4, d1Source}); those instruments
+ *   are not fetched again.
  */
-export async function runFuturesRadar({ watchlist, providers: P, cfg, timeLeft, logger, nowMs }) {
+export async function runFuturesRadar({ watchlist, providers: P, cfg, timeLeft, logger, nowMs, candles = null }) {
   const usage = {};
   const track = (provider, r) => {
     const u = (usage[provider] ??= { calls: 0, ok: 0, units: 0, lastStatus: null, lastMessage: '' });
@@ -138,16 +157,24 @@ export async function runFuturesRadar({ watchlist, providers: P, cfg, timeLeft, 
         P.coinalyze.current('funding-rate', slice).then((r) => track('coinalyze', r)),
         P.coinalyze.current('open-interest', slice).then((r) => track('coinalyze', r)),
       ]);
-      // History only for the deepest market of each symbol, to stay inside 40 calls/minute.
+      // History only for the deepest market of each symbol, to stay inside 40 calls/minute; the
+      // adapter takes 20 symbols per call, so a wider budget is read in batches.
       const primary = [...mapped.values()].map((list) => list[0]?.symbol).filter(Boolean).slice(0, budget);
       const fromSec = Math.floor((nowMs - (cfg.coinalyze?.historyDays ?? 14) * 86_400_000) / 1000);
       const toSec = Math.floor(nowMs / 1000);
-      const [oiHistory, liquidations] = enough(60_000)
-        ? await Promise.all([
-          P.coinalyze.history('open-interest-history', primary, '4hour', fromSec, toSec).then((r) => track('coinalyze', r)),
-          P.coinalyze.history('liquidation-history', primary, '4hour', fromSec, toSec).then((r) => track('coinalyze', r)),
-        ])
-        : [{ ok: false, data: null, status: 'SKIPPED' }, { ok: false, data: null, status: 'SKIPPED' }];
+      const batched = async (kind) => {
+        const merged = new Map();
+        let last = { ok: false, data: null, status: 'SKIPPED' };
+        for (let i = 0; i < primary.length; i += 20) {
+          if (!enough(60_000)) break;
+          const r = track('coinalyze', await P.coinalyze.history(kind, primary.slice(i, i + 20), '4hour', fromSec, toSec));
+          last = r;
+          if (r.ok) for (const [k, v] of r.data) merged.set(k, v);
+          else if (STOP.has(r.status)) break;
+        }
+        return merged.size ? { ok: true, data: merged, status: 'OK' } : last;
+      };
+      const [oiHistory, liquidations] = await Promise.all([batched('open-interest-history'), batched('liquidation-history')]);
 
       for (const [base, list] of mapped) {
         coinalyzeBySymbol.set(base, coinalyzePayload({
@@ -165,23 +192,46 @@ export async function runFuturesRadar({ watchlist, providers: P, cfg, timeLeft, 
     }
   }
 
+  /* ── candles: reuse the deep research, fetch the rest (one lane per venue) ─────────────────────── */
+  const bars = new Map();
+  const missing = [];
+  for (const { asset } of watchlist) {
+    const c = candles?.get?.(asset.key);
+    if (c?.d1?.length && c?.h4?.length) bars.set(asset.key, { d1: c.d1, h4: c.h4, source: c.d1Source ?? null });
+    else missing.push(asset);
+  }
+  const lanes = new Map();
+  for (const asset of missing) {
+    const venueSym = asset.venues?.binanceSpot?.symbol ?? asset.venues?.mexcSpot?.symbol ?? null;
+    const api = asset.venues?.binanceSpot ? P.binanceSpot : asset.venues?.mexcSpot ? P.mexc : null;
+    if (!venueSym || !api?.klines) continue;
+    if (!lanes.has(api.id)) lanes.set(api.id, []);
+    lanes.get(api.id).push({ asset, api, venueSym });
+  }
+  await Promise.all([...lanes.values()].map(async (list) => {
+    let i = 0;
+    const worker = async () => {
+      while (i < list.length && enough(35_000)) {
+        const { asset, api, venueSym } = list[i];
+        i += 1;
+        const [rd, rh] = await Promise.all([
+          api.klines(venueSym, '1d', cfg.klines?.d1Limit ?? 260).then((r) => track(api.id, r)),
+          api.klines(venueSym, '4h', cfg.klines?.h4Limit ?? 260).then((r) => track(api.id, r)),
+        ]);
+        bars.set(asset.key, { d1: rd.ok && rd.data.length ? rd.data : null, h4: rh.ok && rh.data.length ? rh.data : null, source: rd.ok && rd.data.length ? api.id : null });
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(3, list.length) }, worker));
+  }));
+
   /* ── per asset ─────────────────────────────────────────────────────────────────────────────── */
   const rows = [];
   for (const { asset, reason } of watchlist) {
-    if (!enough(35_000)) break;
-    const venueSym = asset.venues?.binanceSpot?.symbol ?? asset.venues?.mexcSpot?.symbol ?? null;
-    const api = asset.venues?.binanceSpot ? P.binanceSpot : asset.venues?.mexcSpot ? P.mexc : null;
-    let d1 = null;
-    let h4 = null;
-    let candleSource = null;
-    if (venueSym && api?.klines) {
-      const [rd, rh] = await Promise.all([
-        api.klines(venueSym, '1d', cfg.klines?.d1Limit ?? 260).then((r) => track(api.id, r)),
-        api.klines(venueSym, '4h', cfg.klines?.h4Limit ?? 260).then((r) => track(api.id, r)),
-      ]);
-      if (rd.ok && rd.data.length) { d1 = rd.data; candleSource = api.id; }
-      if (rh.ok && rh.data.length) h4 = rh.data;
-    }
+    if (!enough(20_000)) break;
+    const b = bars.get(asset.key) ?? null;
+    const d1 = b?.d1 ?? null;
+    const h4 = b?.h4 ?? null;
+    const candleSource = d1 ? b.source : null;
 
     const coinalyze = coinalyzeBySymbol.get(asset.symbol) ?? null;
     const derivatives = derivativesFacts(asset, { coinalyze });

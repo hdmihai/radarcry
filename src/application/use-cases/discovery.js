@@ -168,6 +168,10 @@ export function securityFacts(raw) {
     lpLockedPct: isNum(raw.lpLockedPct) ? raw.lpLockedPct : null,
     creatorAddress: raw.creatorAddress ?? null,
     ownerAddress: raw.ownerAddress ?? null,
+    // A contract's flags change rarely, so a scan from an earlier run is carried (see deep-cache.js);
+    // the reader is told when it was read.
+    asOf: isNum(raw.asOf) ? new Date(raw.asOf).toISOString() : null,
+    carried: raw.carried === true,
   };
   const measured = ['isHoneypot', 'isMintable', 'hiddenOwner', 'canTakeBackOwnership', 'transferPausable', 'isProxy', 'buyTaxPct', 'sellTaxPct']
     .some((k) => facts[k] !== null);

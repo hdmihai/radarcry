@@ -94,7 +94,7 @@ export function buildThesis({ asset, verdict, changed, pre, risk, market, levels
           : 'Semnal incipient: una sau două schimbări, insuficiente pentru o teză.';
 
   const oneLiner = verdict.earlyResearchCandidate
-    ? `${asset.symbol}: ${changed.count} schimbări simultane, oportunitate ${round(pre.score, 0)}, risc ${risk.score}, precocitate ${changed.earliness} — candidat de research timpuriu.`
+    ? `${asset.symbol}: ${changed.count} ${changed.simultaneous ? 'schimbări simultane' : `${changed.count === 1 ? 'schimbare' : 'schimbări'} în ${changed.familyCount} ${changed.familyCount === 1 ? 'familie' : 'familii'}`}, oportunitate ${round(pre.score, 0)}, risc ${risk.score}, precocitate ${changed.earliness} — candidat de research timpuriu.`
     : `${asset.symbol}: ${verdict.verdict.split('—')[0].trim().toLowerCase()}, oportunitate ${isNum(pre?.score) ? round(pre.score, 0) : '—'}, risc ${isNum(risk?.score) ? risk.score : '—'}.`;
 
   /* ── the literal answer to the project's question ──────────────────────────────────────────── */

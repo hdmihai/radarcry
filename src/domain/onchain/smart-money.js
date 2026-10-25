@@ -28,6 +28,7 @@
 import { clamp, isNum, round } from '../shared/math.js';
 import { HOLDER_CLASSES } from './labels.js';
 import { VERDICT } from './holder-flows.js';
+import { ACCESS_CATALYSTS } from '../catalysts/catalysts.js';
 
 export const POSITIVE = {
   WHALE_ACCUMULATION: { points: 15, label: 'Acumulare de whale-uri' },
@@ -147,7 +148,7 @@ export function smartMoneyScore({ asset, cmp }) {
     add('NARRATIVE_MOMENTUM', asset.narrative.score >= 65, `${asset.narrative.label ?? 'sector'} la ${round(asset.narrative.score, 0)}/100`, (asset.narrative.score - 55) / 35);
   }
 
-  const freshListings = (asset.catalysts ?? []).filter((c) => c.fresh && ['NEW_PERP', 'NEW_KRW_LISTING', 'NEW_BINANCE_SPOT', 'ALPHA_LISTED', 'NEW_SPOT_LISTING'].includes(c.type));
+  const freshListings = (asset.catalysts ?? []).filter((c) => c.fresh && ACCESS_CATALYSTS.includes(c.type));
   if (asset.catalysts) {
     add('EXCHANGE_EXPANSION', freshListings.length > 0, freshListings.length ? freshListings.map((c) => c.label).join('; ') : 'nicio listare nouă în fereastra urmărită');
   }
