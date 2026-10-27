@@ -526,6 +526,15 @@ export function createFixtureProviders({ market, clock }) {
       if (!d) return fail('solana_rpc', 'getTokenLargestAccounts', 'INVALID_PAYLOAD', 'fără stare');
       return ok('solana_rpc', 'getTokenLargestAccounts', { ...d, source: 'solana_rpc', holders: d.holders.slice(0, 20) }, { records: 20 });
     },
+    // The live adapter is a pool of nodes; the simulator is one node that serves every method.
+    diagnose: async () => [{
+      id: 'fixture', label: 'simulator DEMO', keyed: false,
+      methods: {
+        getTokenSupply: { status: 'OK', httpStatus: 200, latencyMs: 1, records: 1, message: '' },
+        getTokenLargestAccounts: { status: 'OK', httpStatus: 200, latencyMs: 1, records: 20, message: '' },
+      },
+    }],
+    describe: () => ({ account: null, endpoints: [{ id: 'fixture', label: 'simulator DEMO', keyed: false }] }),
   };
 
   /* ───────────────────────── GitHub + YouTube (DEMO) ────────────────────────────────────────── */

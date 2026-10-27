@@ -129,6 +129,32 @@ test('deep research covers the whole horizon: bulk facts for all, budgeted slice
   assert.equal(cov.projects, n);
 });
 
+test('the rate-limited slices stop at the reserve, leaving the later phases their time', async () => {
+  // A rate-limited free plan is now waited for instead of abandoned, so its slice could otherwise run
+  // to the end of the run. Below the reserve only the bulk sources still work.
+  const assets = Array.from({ length: 6 }, (_, i) => ({
+    key: `r${i}`, symbol: `R${i}`, name: `R${i}`, ids: { coingecko: `r${i}` }, links: {}, market: {},
+    venues: { mexcSpot: { symbol: `R${i}USDT` } },
+    primary: { chain: 'bsc', address: `0x${String(i + 50).padStart(40, '0')}` },
+  }));
+  const calls = { goplus: 0, gt: 0, detail: 0, klines: 0, dex: 0 };
+  const okR = (data) => ({ ok: true, status: 'OK', data, message: '', meta: { units: 1 } });
+  const P = {
+    mexc: { klines: async () => { calls.klines += 1; return okR(Array.from({ length: 60 }, (_, j) => ({ t: j, o: 1, h: 1, l: 1, c: 1, v: 1 }))); } },
+    dexscreener: { tokens: async (chain, addrs) => { calls.dex += 1; return okR(Object.fromEntries(addrs.map((a) => [a, { liquidityUsd: 1 }]))); } },
+    goplus: { security: async (chain, addrs) => { calls.goplus += addrs.length; return okR({}); } },
+    geckoterminal: { tokenInfo: async () => { calls.gt += 1; return okR({ holders: 1 }); } },
+    coingecko: { detail: async () => { calls.detail += 1; return okR({}); }, marketChart: async () => okR([]) },
+  };
+  const cfg = { ...config.deep, reserveSeconds: 240, githubLimit: 0, youtubeLimit: 0 };
+  await collectDeepData(assets, P, cfg, { timeLeft: () => 200_000, logger: quiet }, { cache: {}, nowMs: NOW });
+  assert.equal(calls.klines, 12, 'candles still come from the bulk sources');
+  assert.equal(calls.dex, 1);
+  assert.deepEqual([calls.goplus, calls.gt, calls.detail], [0, 0, 0], 'no budgeted slice starts inside the reserve');
+  await collectDeepData(assets, P, cfg, { timeLeft: () => 600_000, logger: quiet }, { cache: {}, nowMs: NOW });
+  assert.ok(calls.goplus > 0 && calls.gt > 0 && calls.detail > 0, 'and all of them run when there is time');
+});
+
 test('the cache stays bounded by the universe', () => {
   const cache = {};
   storeFact(cache, 'gone', 'security', goplusPayload(1), NOW - 30 * 86_400_000);

@@ -81,7 +81,7 @@ export const PLATFORMS = [
   {
     key: 'solana_rpc', label: 'Solana JSON-RPC', layer: LAYER.AUTO, group: 'On-chain intelligence',
     role: 'cele mai mari conturi de token și supply-ul pe Solana',
-    plan: 'endpoint public, fără cheie',
+    plan: 'noduri publice fără cheie; opțional SOLANA_RPC_URL dintr-un cont gratuit (Helius Free) pentru getTokenLargestAccounts',
     // Only a Solana token has a Solscan page: an EVM contract here would open an empty search.
     build: ({ address, chain }) => (address && chain === 'solana' ? `https://solscan.io/token/${enc(address)}#holders` : null),
   },
@@ -100,7 +100,7 @@ export const PLATFORMS = [
   {
     key: 'geckoterminal', label: 'GeckoTerminal', layer: LAYER.AUTO, group: 'On-chain intelligence',
     role: 'informații de token on-chain, pool-uri în trending, serii OHLCV pe DEX',
-    plan: 'API public, ~10 apeluri/minut, fără cheie',
+    plan: 'API public, 30 apeluri/minut (oficial), fără cheie',
     build: ({ address, chainMeta }) => (address && chainMeta?.geckoterminal ? `https://www.geckoterminal.com/${chainMeta.geckoterminal}/tokens/${enc(address)}` : 'https://www.geckoterminal.com/'),
   },
   {
@@ -307,6 +307,9 @@ export const SECRETS = [
   { env: 'CMC_API_KEY', key: 'coinmarketcap', label: 'CoinMarketCap Basic', plan: 'cheie Basic gratuită — 10 000 credite/lună, 30 apeluri/minut', unlocks: 'al doilea univers independent (top 1000) și verificarea încrucișată a capitalizării', signup: 'pro.coinmarketcap.com/signup' },
   { env: 'COINALYZE_API_KEY', key: 'coinalyze', label: 'Coinalyze', plan: 'cont gratuit — 40 apeluri/minut', unlocks: 'funding și open interest pe Binance, Bybit și OKX (înlocuiește CoinGlass, care are API plătit)', signup: 'coinalyze.net/api' },
   { env: 'NODEREAL_API_KEY', key: 'nodereal', label: 'NodeReal Free', plan: 'plan Free, gratuit — 10 mil. unități de calcul/lună', unlocks: 'lista de deținători pe lanțurile EVM (BSC, Ethereum, Base, Arbitrum, Polygon…)', signup: 'nodereal.io' },
+  // `fallback`: the capability also runs without the secret (here on public nodes), only less reliably —
+  // so its absence is never reported as "not configured", and the probe never asks for it as a key.
+  { env: 'SOLANA_RPC_URL', key: 'solana_rpc', label: 'Solana RPC (cont gratuit)', plan: 'URL de RPC dintr-un cont gratuit, fără card — recomandat Helius Free: 1 mil. credite/lună, 10 cereri/s, un credit per apel', unlocks: 'lista celor mai mari deținători pe Solana din GitHub Actions — nodurile publice fără cheie limitează sau refuză getTokenLargestAccounts de pe adresele runner-elor', signup: 'dashboard.helius.dev/signup → copiază URL-ul Mainnet RPC (https://mainnet.helius-rpc.com/?api-key=…) în secretul SOLANA_RPC_URL', fallback: 'noduri publice fără cheie: Solana Foundation, PublicNode, dRPC, OnFinality' },
   { env: 'CRYPTOQUANT_API_KEY', key: 'cryptoquant', label: 'CryptoQuant Basic', plan: 'cheie Basic gratuită — 10 000 credite/lună, fereastră zilnică', unlocks: 'context de ciclu pe BTC/ETH (netflow-urile on-chain cer plan plătit, deci nu sunt folosite)', signup: 'cryptoquant.com/pricing' },
   { env: 'YOUTUBE_API_KEY', key: 'youtube', label: 'YouTube Data API v3', plan: 'cheie gratuită — 10 000 unități/zi (o căutare = 100)', unlocks: 'atenția video, în locul API-ului X care nu are nivel gratuit de citire', signup: 'console.cloud.google.com → YouTube Data API v3' },
   { env: 'GITHUB_TOKEN', key: 'github', label: 'GitHub', plan: 'token gratuit — 5 000 cereri/oră (60/oră fără token)', unlocks: 'activitatea de dezvoltare; în GitHub Actions este deja disponibil', signup: 'github.com/settings/tokens (scope: public_repo)' },

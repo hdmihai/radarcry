@@ -9,7 +9,12 @@ import { toNum } from '../../../domain/shared/math.js';
 import { normChain, splitMultiplier } from '../../../domain/shared/symbols.js';
 import { disabled, mapResult, unsupported } from './common.js';
 
-const opt = (provider, cfg, endpoint, extra = {}) => ({ provider, endpoint, timeoutMs: cfg.timeoutMs, retries: cfg.retries, minIntervalMs: cfg.minIntervalMs, maxCalls: cfg.maxCalls, breakerThreshold: 4, ...extra });
+/** Pacing, budget and rate-limit behaviour come from the provider's block in config/default.json. */
+const opt = (provider, cfg, endpoint, extra = {}) => ({
+  provider, endpoint, timeoutMs: cfg.timeoutMs, retries: cfg.retries, minIntervalMs: cfg.minIntervalMs, maxCalls: cfg.maxCalls, breakerThreshold: 4,
+  rateLimitCooldownMs: cfg.rateLimitCooldownMs, rateLimitStrikes: cfg.rateLimitStrikes, maxSlowMs: cfg.maxSlowMs,
+  ...extra,
+});
 
 /* ----------------------------------------------------------------------------- MEXC */
 export function createMexc({ http, cfg, futuresCfg }) {

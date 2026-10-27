@@ -5,6 +5,11 @@
 # It is also the fastest way to learn that a provider started geo-blocking GitHub's runners, which
 # otherwise shows up only as a quietly thinner scan.
 #
+# Verdicts (scripts/probe-sources.js): ok · benign (optional key absent) · limited (rate limit or a
+# public node that will not serve a method to this address — a warning) · broken (an error). Sources
+# that are not ok get a second pass after a pause, so one noisy call on a shared runner address does
+# not fail the run. Only a broken source fails the workflow.
+#
 # The probe writes no state and publishes no snapshot.
 name: Probe surse
 
@@ -37,13 +42,14 @@ jobs:
           CMC_API_KEY: ${{ secrets.CMC_API_KEY }}
           COINALYZE_API_KEY: ${{ secrets.COINALYZE_API_KEY }}
           NODEREAL_API_KEY: ${{ secrets.NODEREAL_API_KEY }}
+          SOLANA_RPC_URL: ${{ secrets.SOLANA_RPC_URL }}
           CRYPTOQUANT_API_KEY: ${{ secrets.CRYPTOQUANT_API_KEY }}
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ARKHAM_API_KEY: ${{ secrets.ARKHAM_API_KEY }}
         run: |
-          node src/main.js probe --json > probe.json || true
-          node src/main.js probe | tee probe.txt
+          # One pass over the providers: the table on stdout, the same report as JSON for the gate.
+          node src/main.js probe --json-out probe.json | tee probe.txt || true
           {
             echo '### Verificarea surselor gratuite'
             echo ''
@@ -52,23 +58,18 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: probe-${{ github.run_id }}
           path: |
             probe.json
             probe.txt
-          retention-days: 30
+          retention-days: 3 # the repository's maximum artifact retention
 
-      - name: Fail only when a source that needs no key stopped answering
+      - name: Fail only when a source is broken (limits and absent optional keys are warnings)
         run: |
-          node -e '
-            const fs = require("fs");
-            if (!fs.existsSync("probe.json")) { console.log("fără raport JSON"); process.exit(0); }
-            const r = JSON.parse(fs.readFileSync("probe.json", "utf8"));
-            // A missing optional key is expected. A keyless public endpoint that stopped answering is not.
-            const broken = r.rows.filter((x) => !x.ok && !x.needsKey && !["NOT_CONFIGURED", "SKIPPED"].includes(x.status));
-            if (!broken.length) { console.log(`${r.summary.working}/${r.summary.total} surse funcționale`); process.exit(0); }
-            for (const b of broken) console.log(`::error::${b.label}: ${b.status} ${b.message}`);
-            process.exit(1);
-          '
+          if [ ! -f probe.json ]; then
+            echo "::error title=Probe::raportul probe.json lipsește — sonda nu a rulat"
+            exit 1
+          fi
+          node src/main.js probe --gate probe.json

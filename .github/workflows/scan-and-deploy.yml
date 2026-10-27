@@ -93,6 +93,9 @@ jobs:
           COINALYZE_API_KEY: ${{ secrets.COINALYZE_API_KEY }}
           # Holder lists on EVM chains — NodeReal Free, 10M compute units a month.
           NODEREAL_API_KEY: ${{ secrets.NODEREAL_API_KEY }}
+          # Holder lists on Solana — optional RPC URL from a free account (Helius Free, no card).
+          # Without it the scan asks public nodes, which limit getTokenLargestAccounts from runners.
+          SOLANA_RPC_URL: ${{ secrets.SOLANA_RPC_URL }}
           # Cycle context on BTC/ETH — CryptoQuant Basic (market data only on the free plan).
           CRYPTOQUANT_API_KEY: ${{ secrets.CRYPTOQUANT_API_KEY }}
           # Attention — YouTube Data API, in place of X which has no free read tier.

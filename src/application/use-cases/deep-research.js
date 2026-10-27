@@ -17,7 +17,7 @@
  *     attention    YouTube Data API (free key, 100 units per search), same rotation
  *
  *   The research priority only — need the same wallets on consecutive runs
- *     holder lists NodeReal Free (EVM) → Solana public RPC
+ *     holder lists NodeReal Free (EVM) → Solana RPC pool (free-account URL first, then public nodes)
  *     entities     Arkham Intel API (optional key) for the top holders of the best candidates
  */
 import { chartToDaily } from '../../domain/similarity/references.js';
@@ -70,6 +70,11 @@ export async function collectDeepData(targets, P, cfg, rt, { priorityKeys = null
   const memo = cache ?? {};
   const ttlHours = { ...DEFAULT_TTL_HOURS, ...(cfg.cacheHours ?? {}) };
   const enough = (ms = 45_000) => rt.timeLeft() > ms;
+  // The budgeted slices come from free plans that rate-limit, and a rate-limited provider is now
+  // waited for rather than abandoned. They stop early enough to leave the later phases (the futures
+  // radar, the snapshot) their time, however slowly a provider answers on a given day.
+  const reserveMs = (cfg.reserveSeconds ?? 240) * 1000;
+  const budgeted = (ms = 45_000) => enough(Math.max(ms, reserveMs));
   const usage = {};
   const track = (provider, r) => {
     const u = (usage[provider] ??= { calls: 0, ok: 0, units: 0, lastStatus: null, lastMessage: '' });
@@ -130,7 +135,7 @@ export async function collectDeepData(targets, P, cfg, rt, { priorityKeys = null
       && !a.venues?.mexcSpot && !a.venues?.binanceSpot && !(a.venues?.alpha?.status === 'LISTED' && a.venues.alpha.alphaId && P.binanceAlpha?.klines));
     const charts = rotationOrder(noVenue, { priority, last: (a) => lastMeasured(memo, a.key, 'chart'), nowMs }).slice(0, cfg.cgChartFallback ?? 12);
     for (const a of charts) {
-      if (!enough(90_000)) break;
+      if (!budgeted(90_000)) break;
       const r = track('coingecko', await P.coingecko.marketChart(a.ids.coingecko, 120));
       if (r.ok) {
         const slot = out.get(a.key);
@@ -149,7 +154,7 @@ export async function collectDeepData(targets, P, cfg, rt, { priorityKeys = null
     }
     const refresh = rotationOrder(stale, { priority, last: (a) => memo[a.key]?.detail?.at ?? null, nowMs, minRefreshHours: 0 }).slice(0, cfg.coinDetailLimit ?? 25);
     for (const a of refresh) {
-      if (!enough(80_000)) break;
+      if (!budgeted(80_000)) break;
       const r = track('coingecko', await P.coingecko.detail(a.ids.coingecko));
       if (r.ok) {
         out.get(a.key).detail = r.data;
@@ -183,20 +188,29 @@ export async function collectDeepData(targets, P, cfg, rt, { priorityKeys = null
       if (hit) { out.get(a.key).security = { ...hit.data, asOf: hit.at, carried: true }; tiers.security.carried += 1; } else stale.push(a);
     }
     const list = rotationOrder(stale, { priority, last: (a) => memo[a.key]?.security?.at ?? null, nowMs, minRefreshHours: 0 }).slice(0, cfg.securityLimit ?? 45);
+    // GoPlus answers one contract per call; a chain's group is read in small parts so the time
+    // budget is checked between them, not only once per chain — a rate-limited GoPlus waits out its
+    // cooldowns now, and forty BSC contracts in one piece could otherwise run past the reserve.
+    const chunk = Math.max(1, cfg.securityChunk ?? 10);
+    let stop = false;
     for (const [chain, group] of groupByChain(list)) {
-      if (!enough()) break;
-      const r = track('goplus', await P.goplus.security(chain, group.map((a) => a.primary.address)));
-      if (!r.ok) {
-        if (STOP.has(r.status)) break;
-        continue;
+      for (let i = 0; i < group.length && !stop; i += chunk) {
+        if (!budgeted()) { stop = true; break; }
+        const part = group.slice(i, i + chunk);
+        const r = track('goplus', await P.goplus.security(chain, part.map((a) => a.primary.address)));
+        if (!r.ok) {
+          if (STOP.has(r.status)) stop = true;
+          continue;
+        }
+        for (const a of part) {
+          const s = r.data[a.primary.address];
+          if (!s) continue;
+          out.get(a.key).security = s;
+          storeFact(memo, a.key, 'security', s, nowMs);
+          tiers.security.fresh += 1;
+        }
       }
-      for (const a of group) {
-        const s = r.data[a.primary.address];
-        if (!s) continue;
-        out.get(a.key).security = s;
-        storeFact(memo, a.key, 'security', s, nowMs);
-        tiers.security.fresh += 1;
-      }
+      if (stop) break;
     }
   };
 
@@ -206,7 +220,7 @@ export async function collectDeepData(targets, P, cfg, rt, { priorityKeys = null
     let solanaOpen = Boolean(P.solanaRpc);
     const list = targets.filter((a) => a.primary?.address && priority.has(a.key)).slice(0, cfg.holdersLimit ?? 45);
     for (const a of list) {
-      if (!enough(60_000)) break;
+      if (!budgeted(60_000)) break;
       if (!noderealOpen && !solanaOpen) break;
       const slot = out.get(a.key);
       const { chain, address } = a.primary;
@@ -229,7 +243,7 @@ export async function collectDeepData(targets, P, cfg, rt, { priorityKeys = null
     const candidates = targets.filter((a) => a.primary?.address && !out.get(a.key).holders);
     const list = rotationOrder(candidates, { priority, last: (a) => lastMeasured(memo, a.key, 'holdersInfo'), nowMs }).slice(0, cfg.holdersInfoLimit ?? cfg.holdersLimit ?? 45);
     for (const a of list) {
-      if (!enough(60_000)) break;
+      if (!budgeted(60_000)) break;
       const g = track('geckoterminal', await P.geckoterminal.tokenInfo(a.primary.chain, a.primary.address));
       if (g.ok) {
         out.get(a.key).holdersInfo = g.data;
@@ -244,7 +258,7 @@ export async function collectDeepData(targets, P, cfg, rt, { priorityKeys = null
     if (!P.arkham?.keyed) return;
     const list = targets.filter((a) => a.primary?.address && priority.has(a.key)).slice(0, cfg.arkhamAddressLimit ?? 20);
     for (const a of list) {
-      if (!enough(70_000)) break;
+      if (!budgeted(70_000)) break;
       const slot = out.get(a.key);
       const addresses = (slot.holders?.holders ?? []).slice(0, 15).map((h) => h.address).filter(Boolean);
       if (!addresses.length) continue;
@@ -258,7 +272,7 @@ export async function collectDeepData(targets, P, cfg, rt, { priorityKeys = null
   const flowsTask = async () => {
     if (!P.arkham?.keyed) return;
     for (const a of targets.filter((x) => x.ids?.coingecko && priority.has(x.key)).slice(0, cfg.arkhamLimit)) {
-      if (!enough(60_000)) break;
+      if (!budgeted(60_000)) break;
       const r = track('arkham', await P.arkham.tokenFlows(a.ids.coingecko));
       if (r.ok) out.get(a.key).arkhamFlows = r.data;
       else if (STOP.has(r.status)) break;
@@ -275,7 +289,7 @@ export async function collectDeepData(targets, P, cfg, rt, { priorityKeys = null
     const withRepo = targets.filter((a) => repoOf(a));
     const list = rotationOrder(withRepo, { priority, last: (a) => lastMeasured(memo, a.key, 'dev'), nowMs }).slice(0, cfg.githubLimit ?? 18);
     for (const a of list) {
-      if (!enough(60_000)) break;
+      if (!budgeted(60_000)) break;
       const slot = out.get(a.key);
       const parsed = repoOf(a);
       const [meta, activity] = await Promise.all([
@@ -295,7 +309,7 @@ export async function collectDeepData(targets, P, cfg, rt, { priorityKeys = null
     if (!P.youtube) return;
     const list = rotationOrder(targets, { priority, last: (a) => lastMeasured(memo, a.key, 'mentions'), nowMs }).slice(0, cfg.youtubeLimit ?? 12);
     for (const a of list) {
-      if (!enough(60_000)) break;
+      if (!budgeted(60_000)) break;
       const r = track('youtube', await P.youtube.mentions({ symbol: a.symbol, name: a.name, days: 30, max: 50 }));
       if (r.ok) {
         out.get(a.key).mentions = r.data;

@@ -118,7 +118,7 @@ export function parityMarkup(s) {
           <td class="small">${k.label} — ${k.plan}</td>
           <td class="small">${k.unlocks}</td>
           <td class="small">${k.signup}</td>
-          <td><span class="pill" data-tone="${k.configured ? 'good' : 'muted'}">${k.configured ? 'configurată' : 'absentă (opțională)'}</span></td>
+          <td><span class="pill" data-tone="${k.configured ? 'good' : 'muted'}">${k.configured ? 'configurată' : 'absentă (opțională)'}</span>${!k.configured && k.fallback ? html`<div class="xs muted">fără ea: ${k.fallback}</div>` : ''}</td>
         </tr>`)}</tbody>
       </table></div>
       <p class="panel-note">Nicio cheie nu este obligatorie. Fără ea, capabilitatea devine UNKNOWN — care nu înseamnă „negativ”, doar „nemăsurat” — sau rămâne disponibilă prin interfața web gratuită a platformei.</p>

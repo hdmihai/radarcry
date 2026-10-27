@@ -140,11 +140,22 @@
 
 /**
  * HoldersPort — the holder list behind concentration and cohort flows: NodeReal Free on EVM
- * chains (10M compute units a month, metered by the quota gate) and the public Solana RPC.
- * Without a key this port answers NOT_CONFIGURED and concentration stays UNKNOWN.
+ * chains (10M compute units a month, metered by the quota gate) and a pool of Solana RPC nodes
+ * (an optional free-account URL first, then public nodes). Without a key, or when no Solana node
+ * serves the list to this address, this port answers NOT_CONFIGURED and concentration stays UNKNOWN.
  * @typedef {Object} HoldersPort
  * @property {(chain:string, address:string, limit:number) => Promise<ProviderResult<{address:string,balance:number,share:number}[]>>} topHolders
  * @property {(chain:string, address:string) => Promise<ProviderResult<{holders:number|null}>>} [holderCount]
+ */
+
+/**
+ * SolanaHoldersPort — the Solana pool. `tokenHolders` answers from the first node that serves each
+ * method; `diagnose` asks every node once per method (for the probe), `describe` names the nodes
+ * without ever exposing the free-account URL, which carries its key.
+ * @typedef {Object} SolanaHoldersPort
+ * @property {(mint:string) => Promise<ProviderResult<{holders:{address:string,balance:number,share:number|null,isContract:boolean|null}[], totalSupply:number|null}>>} tokenHolders
+ * @property {(mint:string, opts?:{methods?:string[], retries?:number}) => Promise<{id:string,label:string,keyed:boolean,invalid?:string,methods:Record<string,{status:string,httpStatus:number|null,latencyMs:number|null,records:number|null,message:string}>}[]>} diagnose
+ * @property {() => {account:{label?:string, invalid?:string}|null, endpoints:{id:string,label:string,keyed:boolean}[]}} describe
  */
 
 /**
@@ -298,7 +309,7 @@
  * @property {OnchainPort} geckoterminal
  * @property {OnchainPort} goplus
  * @property {HoldersPort} nodereal
- * @property {HoldersPort} solanaRpc
+ * @property {SolanaHoldersPort} solanaRpc
  * @property {FundamentalsPort} defillama
  * @property {MarketContextPort} sentiment
  * @property {CyclePort} cryptoquant

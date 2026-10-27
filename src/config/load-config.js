@@ -54,6 +54,8 @@ export async function loadConfig({ root, env = process.env, cli = {} }) {
     coinalyze: env.COINALYZE_API_KEY || null,
     cryptoquant: env.CRYPTOQUANT_API_KEY || null,
     nodereal: env.NODEREAL_API_KEY || null,
+    // A full RPC URL from a free account (it carries the key). Without it the pool uses public nodes.
+    solana_rpc: env.SOLANA_RPC_URL || null,
     youtube: env.YOUTUBE_API_KEY || null,
     github: env.GITHUB_TOKEN || env.GH_TOKEN || null,
     arkham: env.ARKHAM_API_KEY || null,

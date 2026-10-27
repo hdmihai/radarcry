@@ -25,6 +25,7 @@
     "arkhamAddressLimit": 20,
     "githubLimit": 40,
     "youtubeLimit": 20,
+    "reserveSeconds": 240,
     "cacheHours": { "security": 168, "detail": 336 }
   },
   "futures": {
@@ -236,7 +237,9 @@
       "timeoutMs": 15000,
       "retries": 1,
       "minIntervalMs": 4000,
-      "maxCalls": 70
+      "maxCalls": 70,
+      "rateLimitCooldownMs": 30000,
+      "maxSlowMs": 12000
     },
     "goplus": {
       "enabled": true,
@@ -244,7 +247,9 @@
       "retries": 1,
       "minIntervalMs": 3000,
       "maxCalls": 75,
-      "batchSize": 1
+      "batchSize": 1,
+      "rateLimitCooldownMs": 15000,
+      "maxSlowMs": 9000
     },
     "nodereal": {
       "enabled": true,
@@ -258,7 +263,11 @@
       "timeoutMs": 20000,
       "retries": 1,
       "minIntervalMs": 1200,
-      "maxCalls": 40
+      "accountMinIntervalMs": 150,
+      "maxCalls": 90,
+      "rateLimitCooldownMs": 10000,
+      "rateLimitStrikes": 2,
+      "failoverWaitMs": 3000
     },
     "defillama": {
       "enabled": true,

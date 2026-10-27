@@ -61,6 +61,12 @@ doua oară — un proiect nemăsurat în rularea curentă raportează „necunos
 Futures Radar evaluează **fiecare piață perpetuă** din univers. Dashboard-ul arată vârful fiecărui
 clasament cu toate dovezile, iar ecranul **Univers** (`data/universe.json`) arată toate rândurile.
 
+Pe adresele partajate ale runner-elor GitHub, planurile gratuite răspund des „prea multe cereri”.
+O limită de rată nu oprește furnizorul: încetinește toată coada lui (pauza cerută de server, apoi un
+ritm mai rar, care revine treptat după răspunsuri reușite), iar circuitul se deschide doar după
+câteva cereri la rând refuzate chiar și după pauză. Sursele lente se opresc cu 4 minute înainte de
+termenul rulării, ca Futures Radar și snapshot-ul să aibă timpul lor.
+
 Citirile care depind de cine le-a măsurat — deținători, lichiditate, concentrare — își păstrează
 sursa, iar norma compară doar citiri din aceeași sursă: o rulare în care a răspuns GoPlus și una în
 care a răspuns GeckoTerminal nu produc o „creștere a deținătorilor” falsă.
@@ -121,10 +127,10 @@ npm run build && npm run serve
 |---|---|
 | `npm run scan` | scanare completă (univers, venue-uri, deținători, securitate, dezvoltare, atenție) |
 | `npm run pulse` | reîmprospătare de 15 minute: preț, funding, open interest — nimic cu cuotă lunară |
-| `npm run probe` | o cerere mică per furnizor; raportează stare, latență, chei lipsă și pașii de înscriere |
+| `npm run probe` | o cerere mică per furnizor (a doua trecere pentru ce nu a răspuns); stare, latență, chei lipsă, pașii de înscriere și ce nod Solana servește ce metodă |
 | `npm run labels` | reconstruiește setul de etichete on-chain din eth-labels (MIT) |
 | `npm run demo` | scanare simulată + build + server local |
-| `npm run ci` | verificare de sintaxă + 201 de teste (arhitectură, motoare, contract, end-to-end) |
+| `npm run ci` | verificare de sintaxă + 226 de teste (arhitectură, motoare, contract, end-to-end) |
 | `npm run summary` | raportul de rulare, așa cum apare în GitHub Actions |
 
 ---
@@ -139,7 +145,8 @@ gratuit declarat — exact pasul de review care împiedică un endpoint plătit 
 ### Fără nicio cheie
 CoinPaprika · MEXC spot și futures · oglinda publică de date Binance (`data-api.binance.vision`) ·
 Gate (perpetue + Gate Alpha) · Bitget · OKX · Hyperliquid · Upbit · Bithumb · Binance Alpha · DexScreener · GeckoTerminal ·
-RPC public Solana · DefiLlama Open API · alternative.me Fear & Greed · setul de etichete
+noduri RPC Solana publice (Solana Foundation, PublicNode, dRPC, OnFinality — încercate pe rând) ·
+DefiLlama Open API · alternative.me Fear & Greed · setul de etichete
 [eth-labels](https://github.com/dawsbot/eth-labels) (MIT, 61 108 adrese, inclus în repository)
 
 ### Cu o cheie gratuită, opțională
@@ -149,6 +156,7 @@ RPC public Solana · DefiLlama Open API · alternative.me Fear & Greed · setul 
 | `CMC_API_KEY` | Basic, 10 000 credite/lună (top 1000 = 5 credite) | **top 1000 CoinMarketCap** — al doilea univers independent + verificare încrucișată |
 | `COINALYZE_API_KEY` | cont gratuit, 40 apeluri/minut | funding și open interest pe Binance, Bybit, OKX |
 | `NODEREAL_API_KEY` | Free, 10 mil. unități/lună | lista de deținători pe lanțurile EVM |
+| `SOLANA_RPC_URL` | Helius Free (fără card), 1 mil. credite/lună, 10 cereri/s | lista de deținători pe Solana din GitHub Actions — URL-ul întreg, cu cheia: `https://mainnet.helius-rpc.com/?api-key=…` |
 | `CRYPTOQUANT_API_KEY` | Basic, 10 000 credite/lună | context de ciclu pe BTC/ETH |
 | `YOUTUBE_API_KEY` | gratuit, 10 000 unități/zi | atenție video (API-ul X nu are nivel gratuit de citire) |
 | `GITHUB_TOKEN` | gratuit, 5 000 cereri/oră | activitate de dezvoltare (în Actions există deja) |
@@ -156,6 +164,16 @@ RPC public Solana · DefiLlama Open API · alternative.me Fear & Greed · setul 
 
 **Nicio cheie nu este obligatorie.** Fără ea, capabilitatea devine `UNKNOWN` — ceea ce nu înseamnă
 „negativ”, ci „nemăsurat” — sau rămâne disponibilă prin interfața web gratuită a platformei.
+
+**De ce `SOLANA_RPC_URL`.** Lista celor mai mari deținători pe Solana vine din `getTokenLargestAccounts`,
+metoda pe care nodurile gratuite o restricționează primele (parcurge toate conturile token-ului).
+Nodul public al Solana Foundation a răspuns HTTP 429 la fiecare astfel de apel din GitHub Actions, la
+fiecare rulare. Scanarea întreabă acum pe rând mai multe noduri publice și ține minte, pe durata
+rulării, care metodă e refuzată unde; dacă niciunul nu o servește, raportează exact asta, iar
+concentrarea pe Solana vine în continuare din GeckoTerminal. Un URL dintr-un cont gratuit Helius
+(înscriere fără card, 1 credit per apel; o rulare folosește cel mult 90) este încercat primul și
+face lista disponibilă la fiecare rulare. URL-ul conține cheia: este citit doar din secret și nu apare
+niciodată în loguri, în snapshot sau pe dashboard.
 
 ### Platformele cu API plătit, păstrate ca link gratuit
 **CoinGlass**, **Dune Analytics**, **Arkham Intelligence** (web) și **exploratoarele de lanț** rămân
@@ -252,8 +270,8 @@ Dashboard-ul este mobile-first: fiecare ecran a fost verificat la 390 px fără 
 |---|---|---|
 | `Scan & deploy` | la 4 ore, la :17 | scanare completă, validare contract, salvare stare, deploy Pages |
 | `Pulse` | la 15 minute | preț, funding, open interest; nu atinge nicio cuotă lunară |
-| `CI` | la fiecare push | sintaxă, reguli de arhitectură, 201 de teste, build DEMO offline |
-| `Probe surse` | săptămânal | o cerere per furnizor; eșuează doar dacă o sursă fără cheie a căzut |
+| `CI` | la fiecare push | sintaxă, reguli de arhitectură, 226 de teste, build DEMO offline |
+| `Probe surse` | săptămânal | o cerere per furnizor, a doua trecere pentru ce nu a răspuns; limitele de rată sunt avertismente, eșuează doar pe o sursă stricată |
 | `Actualizare etichete` | lunar | reconstruiește setul eth-labels și deschide un pull request |
 
 Starea de cercetare trăiește pe ramura orfană `cri-state`, un singur commit, force-push la fiecare
@@ -302,7 +320,7 @@ src/
 web/               dashboard static, ES module native, fără build step
 schema/            contractul backend ↔ dashboard, validat la fiecare publicare
 config/labels/     setul de etichete on-chain inclus în repo (MIT)
-test/              201 de teste, inclusiv cele de arhitectură
+test/              226 de teste, inclusiv cele de arhitectură
 ```
 
 Detalii de proiectare, inclusiv de ce fiecare prag este unde este: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).

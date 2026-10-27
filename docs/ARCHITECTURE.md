@@ -351,6 +351,60 @@ deținători, cota brută top 10, commit-urile și mențiunile nu sunt păstrate
 neîmprospătat în rularea curentă le raportează „necunoscut”. Altfel aceeași citire ar intra de două
 ori în istoric, ar aplatiza norma proiectului și ar fabrica schimbări față de ea.
 
+### Limitele de rată pe adrese partajate
+
+Runner-ele GitHub ies pe internet prin adrese pe care le folosesc și alții, deci limita „pe IP” a
+unui plan gratuit este consumată parțial înainte de primul nostru apel. În primele rulări live, GoPlus
+a răspuns la 28 din 55 de apeluri și GeckoTerminal la 7 din 12: reîncercarea unui 429 aștepta singură,
+apelul următor din coadă pleca imediat, primea același refuz, iar patru refuzuri în câteva secunde
+deschideau circuitul pentru toată rularea. Adaptorul HTTP tratează acum o limită de rată drept ceea
+ce este — o cerere de a încetini:
+
+| Mecanism | Efect |
+|---|---|
+| pauza este a **cozii**, nu a apelului | `Retry-After` (sau fereastra furnizorului, `rateLimitCooldownMs`) se aplică următorului apel, oricare ar fi |
+| ritm adaptiv | intervalul cozii se dublează la fiecare refuz (până la `maxSlowMs`) și revine treptat după succese |
+| circuit pentru limite | se deschide doar după `rateLimitStrikes` cereri la rând refuzate *după* pauză — minute de refuz, nu secunde |
+| rezervă de timp | felii rotative se opresc cu `deep.reserveSeconds` (240) înainte de termen; Futures Radar și snapshot-ul își păstrează timpul |
+
+O simulare cu fereastră fixă (6 apeluri/minut rămase pentru noi) dă 58/60 de răspunsuri în locul a
+6/60; un furnizor blocat complet se oprește, ca înainte, după 8 cereri.
+
+O **coadă** (*lane*) este unitatea de ritm și de circuit. Implicit este furnizorul; un adaptor care
+vorbește cu mai multe host-uri (piscina Solana) dă fiecărui host și fiecărei metode coada ei, ca
+limita unui nod să nu le blocheze pe celelalte. Bugetul de apeluri, cuota și telemetria rămân per
+furnizor.
+
+### Solana: o piscină de noduri, nu un endpoint
+
+Lista celor mai mari deținători pe Solana cere `getTokenLargestAccounts`, metoda pe care nodurile
+gratuite o restricționează primele. Nodul public al Solana Foundation a răspuns HTTP 429 la fiecare
+astfel de apel din GitHub Actions (supply-ul trecea), deci nicio rulare nu a avut o listă Solana.
+Adaptorul (`adapters/outbound/providers/holders.js`) este acum o piscină:
+
+1. `SOLANA_RPC_URL`, dacă există — un URL dintr-un cont gratuit (Helius Free: fără card, 1 mil.
+   credite/lună, 10 cereri/s). URL-ul conține cheia; eticheta lui numește doar familia furnizorului,
+   iar orice mesaj trece printr-un redactor care maschează fiecare parte secretă a URL-ului.
+2. Noduri publice fără cheie, în ordine: Solana Foundation, PublicNode, dRPC, OnFinality.
+
+Răspunsurile JSON-RPC sunt clasificate după a cui este problema: a **nodului** (limită, nod în urmă,
+eroare internă → următorul nod), a **metodei pe acel nod** (`-32601`, `-32010`, 400/404 → nodul nu mai
+este întrebat de metoda asta în rularea curentă), sau a **intrării** (`-32602`, „nu este un mint” →
+oprire, orice nod ar spune la fel). Un nod public nu este reîncercat — nodul următor este
+reîncercarea — iar un nod aflat în pauză este sărit, nu așteptat. Metoda care a mers rămâne legată de
+nodul care a servit-o. Când niciun nod nu o servește, rezultatul spune exact asta (`NOT_CONFIGURED`,
+cu pasul de înscriere), iar cercetarea nu mai cheltuie apeluri pe Solana până la rularea următoare.
+
+### Sonda săptămânală: patru verdicte
+
+`npm run probe` face o cerere mică per furnizor și dă fiecăruia un verdict: **ok**, **benign** (cheie
+opțională absentă), **limitat** (limită de rată, cotă, nod public care refuză o metodă de pe această
+adresă — avertisment, cu ce l-ar ridica) sau **stricat** (eroare HTTP, răspuns invalid, blocare
+geografică, rețea — eroare). Tot ce nu este ok primește o a doua trecere, după o pauză, pe un client
+nou, cu o reîncercare; contează cel mai bun dintre cele două răspunsuri. Workflow-ul eșuează doar pe
+un verdict „stricat”. Sonda arată și matricea nod × metodă pentru Solana, iar un `SOLANA_RPC_URL`
+configurat dar refuzat este o eroare chiar dacă nodurile publice au acoperit apelul.
+
 ---
 
 ## 10. Cadența: scanare completă la 4 ore, puls la 15 minute

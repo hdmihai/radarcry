@@ -96,6 +96,11 @@ const APPROVED_HOSTS = {
   'api.geckoterminal.com': 'GeckoTerminal (public, fără cheie)',
   'api.gopluslabs.io': 'GoPlus Security (plan gratuit, 150k unități/lună)',
   'api.mainnet-beta.solana.com': 'Solana public RPC (fără cheie)',
+  // The Solana pool's other public nodes — keyless, read-only JSON-RPC; the optional free-account URL
+  // (SOLANA_RPC_URL) comes from a secret, never from code.
+  'solana-rpc.publicnode.com': 'PublicNode Solana RPC (public, fără cheie)',
+  'solana.drpc.org': 'dRPC Solana, endpoint public (fără cheie)',
+  'solana.api.onfinality.io': 'OnFinality Solana, endpoint public (fără cheie, 5 cereri/s)',
   'api.llama.fi': 'DefiLlama Open API (fără cheie)',
   // sentiment, development, attention
   'api.alternative.me': 'alternative.me Fear & Greed (public)',

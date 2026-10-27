@@ -60,10 +60,10 @@ export const PROVIDER_CATALOG = {
   binance_alpha: { label: 'Binance Alpha', role: 'Tokeni Alpha în univers, holderi, lichiditate, lumânări 1D/4H, listare CEX (habitatul LAB/BTW/AGT)', plan: 'endpoint-uri publice documentate (token list, exchange info, klines)' },
   gate_alpha: { label: 'Gate Alpha', role: 'Al doilea program Alpha cu listă publică: tokenuri on-chain în univers, preț, volum, capitalizare, intrări noi', plan: 'API v4 public, fără cheie (/alpha/currencies, /alpha/tickers)' },
   dexscreener: { label: 'DexScreener', role: 'Lichiditate DEX, buys/sells, boost-uri plătite ca semnal de atenție', plan: 'API public, fără cheie' },
-  geckoterminal: { label: 'GeckoTerminal', role: 'Informații token on-chain, pool-uri trending, distribuție aproximativă', plan: 'API public, ~10/minut' },
+  geckoterminal: { label: 'GeckoTerminal', role: 'Informații token on-chain, pool-uri trending, distribuție aproximativă', plan: 'API public, 30 apeluri/minut (oficial), fără cheie' },
   goplus: { label: 'GoPlus Security', role: 'Securitate contract: honeypot, mint, taxe, LP blocat, owner ascuns', plan: 'plan gratuit — 150k unități/lună, atribuire obligatorie' },
   nodereal: { label: 'NodeReal', role: 'Lista de deținători pe lanțurile EVM (nr_getTokenHolders)', plan: 'plan Free — 10 mil. unități de calcul/lună' },
-  solana_rpc: { label: 'Solana JSON-RPC', role: 'Cele mai mari conturi de token și supply pe Solana', plan: 'endpoint public, fără cheie' },
+  solana_rpc: { label: 'Solana JSON-RPC', role: 'Cele mai mari conturi de token și supply pe Solana', plan: 'noduri publice fără cheie (Solana Foundation, PublicNode, dRPC, OnFinality) + opțional SOLANA_RPC_URL, cont gratuit (Helius Free)' },
   defillama: { label: 'DefiLlama', role: 'TVL + taxe/venituri de protocol', plan: 'Open API, fără cheie' },
   alternative_me: { label: 'alternative.me', role: 'Fear & Greed Index cu istoric', plan: 'API public, fără cheie' },
   cryptoquant: { label: 'CryptoQuant', role: 'Context de ciclu pe BTC/ETH (date de piață, fereastră zilnică)', plan: 'cheie Basic gratuită — 10 000 credite/lună' },
@@ -111,7 +111,9 @@ export function buildProviderHealth(results, telemetrySummary, successRates, key
       message = `${t.ok}/${t.calls} apeluri reușite · ${failureMix(t.statuses)}${t.lastMessage ? ` · ultimul: ${t.lastMessage}` : ''}`;
     }
     const secret = SECRETS.find((s) => s.key === id);
-    if (status === 'SKIPPED' && secret && !keyed[id] && !(t?.calls > 0)) {
+    // A secret with a keyless fallback (SOLANA_RPC_URL) is never "missing": the capability simply ran
+    // on public nodes, or had nothing to do this run.
+    if (status === 'SKIPPED' && secret && !secret.fallback && !keyed[id] && !(t?.calls > 0)) {
       status = 'NOT_CONFIGURED';
       message = `lipsește ${secret.env} — ${secret.plan}; deblochează: ${secret.unlocks}`;
     }
@@ -239,7 +241,7 @@ export function methodology(config, { keys = {} } = {}) {
       published: { discoveryRows: config.snapshot?.discoveryRows ?? null, futuresRows: config.snapshot?.futuresRows ?? null, table: 'data/universe.json' },
     },
     quotas: config.quotas,
-    secrets: SECRETS.map((s) => ({ env: s.env, label: s.label, plan: s.plan, unlocks: s.unlocks, signup: s.signup, configured: Boolean(keys[s.key]) })),
+    secrets: SECRETS.map((s) => ({ env: s.env, label: s.label, plan: s.plan, unlocks: s.unlocks, signup: s.signup, fallback: s.fallback ?? null, configured: Boolean(keys[s.key]) })),
     platforms: platformCatalogue({ keys }),
     // Legacy similarity engine (LAB/BTW/AGT analogs) keeps its own documented weights.
     similarity: {

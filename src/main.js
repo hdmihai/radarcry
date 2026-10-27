@@ -79,7 +79,7 @@ export function createLiveProviders({ config, keys, telemetry, logger, deadlineM
     geckoterminal: createGeckoTerminal({ http, cfg: p.geckoterminal }),
     goplus: createGoPlus({ http, cfg: p.goplus }),
     nodereal: createNodeReal({ http, cfg: p.nodereal, apiKey: keys.nodereal }),
-    solanaRpc: createSolanaRpc({ http, cfg: p.solana_rpc }),
+    solanaRpc: createSolanaRpc({ http, cfg: p.solana_rpc, accountUrl: keys.solana_rpc }),
     defillama: createDefiLlama({ http, cfg: p.defillama }),
     sentiment: createSentiment({ http, cfg: p.alternative_me }),
     cryptoquant: createCryptoQuant({ http, cfg: p.cryptoquant, apiKey: keys.cryptoquant }),
@@ -216,7 +216,10 @@ Utilizare:
                         [--deep 60] [--horizon 1000] [--futures-max 1000]
                         [--out data] [--state .cri-state] [--verbose]
   node src/main.js pulse [--out data]   reîmprospătează preț, funding și open interest peste ultimul snapshot
-  node src/main.js probe [--json]       verifică fiecare sursă gratuită și raportează ce funcționează
+  node src/main.js probe [--json] [--json-out probe.json] [--settle 15]
+                                        verifică fiecare sursă gratuită și raportează ce funcționează
+  node src/main.js probe --gate probe.json
+                                        avertismente/erori GitHub din raport; eșuează doar pe surse stricate
   node src/main.js serve [--dir dist] [--port 8080]
 
 Chei opționale — toate gratuite, niciun abonament. Fără ele, capabilitatea devine UNKNOWN
@@ -238,7 +241,14 @@ async function main(argv) {
       return pulse(opts);
     case 'probe': {
       const { probeSources } = await import('../scripts/probe-sources.js');
-      return probeSources({ root: ROOT, json: Boolean(opts.json) });
+      const settle = Number(opts.settle);
+      return probeSources({
+        root: ROOT,
+        json: opts.json === true,
+        jsonOut: typeof opts.jsonOut === 'string' ? resolve(opts.jsonOut) : null,
+        gate: typeof opts.gate === 'string' ? resolve(opts.gate) : null,
+        settleMs: Number.isFinite(settle) && settle >= 0 ? settle * 1000 : 15_000,
+      });
     }
     case 'serve': {
       const dir = resolve(opts.dir ?? join(ROOT, 'dist'));
