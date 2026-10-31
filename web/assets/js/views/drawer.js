@@ -9,7 +9,7 @@ import { L, POLARITY, RELIABILITY, SEVERITY, icon, sourceLabel } from '../core/l
 import { candleChart } from '../charts/candles.js';
 import { dnaCompare } from '../charts/dna.js';
 import { criHistoryChart, dailyChart } from '../charts/lines.js';
-import { change, extLink, gradeBadge, lifecycle, polarity, refChip, signalBadge, statusLine, validityBadge, validityList } from './widgets.js';
+import { change, extLink, forecastBlock, gradeBadge, lifecycle, polarity, refChip, signalBadge, statusLine, validityBadge, validityList } from './widgets.js';
 
 let CHART_W = 860; // set per render: narrow screens get a narrower viewBox so chart text stays legible
 const DOMAIN_ORDER = ['similarity', 'structure', 'setup', 'activity', 'derivatives', 'onchain', 'catalyst', 'attention', 'fundamentals'];
@@ -319,6 +319,7 @@ export function drawerMarkup(c, s, { narrow = false } = {}) {
     ${onchain(c)}
     ${walletIntel(c, s)}
     ${validity(c)}
+    ${c.forecast ? html`<section><h3 class="block-title">Prognoză ≥100× și ≥20× în 12 luni <span class="muted">față de câștigătorii ultimului an, la minimul lor</span></h3>${forecastBlock(c.forecast, { base: s.forecast?.baseRates })}</section>` : ''}
     ${venues(c)}
     ${catalysts(c)}
     ${history(c, s)}

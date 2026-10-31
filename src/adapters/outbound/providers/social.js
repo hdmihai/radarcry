@@ -89,7 +89,7 @@ export function createGithub({ http, cfg, token = null }) {
     if (!cfg.enabled) return disabled('github', '/stats/commit_activity');
     const res = await http.getJson(
       `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/stats/commit_activity`,
-      opt('/stats/commit_activity', { retries: 1, validate: (d) => Array.isArray(d) }),
+      opt('/stats/commit_activity', { retries: 1, validate: (d) => Array.isArray(d), emptyAs: [] }),
     );
     if (!res.ok) return res;
     if (!res.data.length) {

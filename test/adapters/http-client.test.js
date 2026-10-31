@@ -68,6 +68,36 @@ test('a plain 403 is an auth error, not a geo block', async () => {
   assert.equal(r.status, STATUS.HTTP_ERROR);
 });
 
+test('a 404 answers for that resource only: it never opens the circuit for the provider', async () => {
+  // Two projects with deleted repositories used to open GitHub's circuit for the rest of the run.
+  const f = scriptedFetch([
+    { status: 404, body: '{"message":"Not Found"}' },
+    { status: 404, body: '{"message":"Not Found"}' },
+    { status: 410, body: '{"message":"Gone"}' },
+    { status: 404, body: '{"message":"Not Found"}' },
+    { status: 200, body: { full_name: 'a/b' } },
+  ]);
+  const { client } = fastClient(f.impl);
+  for (let i = 0; i < 4; i += 1) {
+    const r = await client.getJson(`https://api.example.com/repos/x/${i}`, { provider: 'gh', breakerThreshold: 3 });
+    assert.equal(r.status, STATUS.HTTP_ERROR);
+    assert.match(r.message, /resursa nu există/);
+  }
+  const ok = await client.getJson('https://api.example.com/repos/a/b', { provider: 'gh', breakerThreshold: 3 });
+  assert.equal(ok.status, STATUS.OK, 'the circuit is still closed after four not-found answers');
+  assert.equal(f.calls.length, 5, 'and a 404 is not retried');
+});
+
+test('an empty 202 is an answer when the adapter says what empty means, otherwise an invalid payload', async () => {
+  const f = scriptedFetch([{ status: 202, body: '' }, { status: 202, body: '' }]);
+  const { client } = fastClient(f.impl);
+  const computing = await client.getJson('https://api.example.com/stats', { provider: 'gh', emptyAs: [] });
+  assert.equal(computing.status, STATUS.OK);
+  assert.deepEqual(computing.data, []);
+  const plain = await client.getJson('https://api.example.com/stats', { provider: 'gh', retries: 0 });
+  assert.equal(plain.status, STATUS.INVALID_PAYLOAD);
+});
+
 test('budget, validation and invalid JSON are explicit statuses', async () => {
   const f = scriptedFetch([{ status: 200, body: { a: 1 } }, { status: 200, body: 'not json' }, { status: 200, body: { b: 2 } }]);
   const { client } = fastClient(f.impl);

@@ -14,7 +14,7 @@
 import { isNum, round, sig } from '../../domain/shared/math.js';
 import { VALIDITY_CODE, validityWhy } from './validity.js';
 
-export const UNIVERSE_SCHEMA_VERSION = '1.1.0';
+export const UNIVERSE_SCHEMA_VERSION = '1.2.0';
 
 export const ASSET_FIELDS = Object.freeze([
   'key', 'symbol', 'name', 'chain',
@@ -28,6 +28,9 @@ export const ASSET_FIELDS = Object.freeze([
   'selectedBy', 'detail',
   // The validity gate: V verified · P pending (evidence missing) · R rejected; why; warnings count.
   'valid', 'validWhy', 'validWarn',
+  // The forecast: probability (percent) of a ≥100× and a ≥20× run within twelve months, and the
+  // ≥100× lift over the base rate. Null for a project the validity gate rejected.
+  'fc100', 'fc20', 'fcLift',
 ]);
 
 export const FUTURES_FIELDS = Object.freeze([
@@ -37,6 +40,15 @@ export const FUTURES_FIELDS = Object.freeze([
 ]);
 
 const VALIDITY_GROUP = { VALID: 0, PENDING: 1, REJECTED: 2 };
+
+/** fc100, fc20 (percent) and the ≥100× lift for one row; nulls when there is no forecast. */
+function forecastCells(forecast, key) {
+  const f = forecast && !forecast.isRejected(key) ? forecast.byKey.get(key) : null;
+  if (!f) return [null, null, null];
+  const [t1, t2] = forecast.targets;
+  const pctOf = (t) => (isNum(f.targets?.[t]?.p) ? sig(f.targets[t].p * 100, 3) : null);
+  return [pctOf(t1), pctOf(t2), isNum(f.targets?.[t1]?.lift) ? f.targets[t1].lift : null];
+}
 const SOURCE_CODE = { coingecko: 'CG', coinmarketcap: 'CMC', coinpaprika: 'CP', binance_alpha: 'BA', gate_alpha: 'GA' };
 /** Centralised spot markets, one letter each: Binance, MEXC, Gate, OKX, biTget, Upbit, bitHumb. */
 export const SPOT_CODE = Object.freeze({ binance: 'B', mexc: 'M', gate: 'G', okx: 'O', bitget: 'T', upbit: 'U', bithumb: 'H' });
@@ -47,9 +59,11 @@ const flag = (x) => (x ? 1 : 0);
 
 /**
  * @param {{eligible:any[], researched:any[], ranked:any[], futuresRows:any[], published:{discovery:Map<string,'full'|'row'>, futures:Set<string>},
- *          selectedBy:(key:string)=>string, validity?:Map<string, any>|null, meta:{generatedAt:string, runId:string, mode:string}}} input
+ *          selectedBy:(key:string)=>string, validity?:Map<string, any>|null,
+ *          forecast?:{byKey:Map<string, any>, targets:number[], isRejected:(key:string)=>boolean}|null,
+ *          meta:{generatedAt:string, runId:string, mode:string}}} input
  */
-export function universeTable({ eligible, researched, ranked, futuresRows, published, selectedBy, validity = null, meta }) {
+export function universeTable({ eligible, researched, ranked, futuresRows, published, selectedBy, validity = null, forecast = null, meta }) {
   const legacy = new Map(researched.map((r) => [r.asset.key, r]));
   const disc = new Map(ranked.map((r, i) => [r.asset.key, { r, i }]));
   const fut = new Map(futuresRows.map((f) => [f.key, f]));
@@ -117,6 +131,7 @@ export function universeTable({ eligible, researched, ranked, futuresRows, publi
       val ? VALIDITY_CODE[val.status] ?? null : null,
       val ? validityWhy(val) : null,
       val ? val.warnings.length : null,
+      ...forecastCells(forecast, a.key),
     ];
   });
 
@@ -142,7 +157,7 @@ export function universeTable({ eligible, researched, ranked, futuresRows, publi
     generatedAt: meta.generatedAt,
     runId: meta.runId,
     mode: meta.mode,
-    note: 'Fiecare proiect cercetat în această rulare, câte un rând. Dovezile complete (teza, invalidatorii, deținătorii clasificați) sunt publicate în data/latest.json pentru vârful fiecărui clasament; coloana „detail” spune unde se află: full = fișă completă, card = card cu factori, list = rând de listă, research = cercetat în profunzime, doar aici, table = doar date de piață. Coloana „valid”: V = verificat (intră în listele CRI), P = în verificare (lipsește o dovadă), R = respins (motivul în „validWhy”).',
+    note: 'Fiecare proiect cercetat în această rulare, câte un rând. Dovezile complete (teza, invalidatorii, deținătorii clasificați) sunt publicate în data/latest.json pentru vârful fiecărui clasament; coloana „detail” spune unde se află: full = fișă completă, card = card cu factori, list = rând de listă, research = cercetat în profunzime, doar aici, table = doar date de piață. Coloana „valid”: V = verificat (intră în listele CRI), P = în verificare (lipsește o dovadă), R = respins (motivul în „validWhy”). Coloanele „fc100” și „fc20”: probabilitatea (în procente) unei creșteri de cel puțin 100×, respectiv 20×, în 12 luni; „fcLift”: de câte ori peste rata de bază.',
     assets: { fields: [...ASSET_FIELDS], rows },
     futures: { fields: [...FUTURES_FIELDS], rows: futures },
   };

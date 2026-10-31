@@ -29,6 +29,8 @@ import { CHAIN_PRIORITY, exclusionReason, namesMatch, normAddress, normChain, no
  * @property {number|null} ath
  * @property {number|null} athChangePct
  * @property {string|null} athDate
+ * @property {number|null} atl
+ * @property {string|null} atlDate
  * @property {string|null} dateAdded
  * @property {string|null} firstDataAt
  * @property {string[]} tags
@@ -49,7 +51,7 @@ function emptyAsset(key, row) {
     rank: { cmc: null, coingecko: null, paprika: null },
     market: {
       price: null, marketCap: null, fdv: null, volume24h: null, circulating: null, total: null, max: null,
-      change: {}, mcapChange24h: null, ath: null, athChangePct: null, athDate: null, numMarketPairs: null, lastUpdated: null,
+      change: {}, mcapChange24h: null, ath: null, athChangePct: null, athDate: null, atl: null, atlDate: null, numMarketPairs: null, lastUpdated: null,
       marketCapSource: null, marketCapBySource: {},
     },
     listing: { dateAdded: null, firstDataAt: null },
@@ -120,6 +122,10 @@ function resolve(asset) {
   m.ath = pick(cg.ath, cmc.ath, cp.ath);
   m.athChangePct = pick(cg.athChangePct, cmc.athChangePct, cp.athChangePct);
   m.athDate = pick(cg.athDate, cp.athDate);
+  // The all-time low travels with the high: together they flag the last year's big runs across the
+  // whole market (the forecast's learning list), at no extra call.
+  m.atl = pick(cg.atl);
+  m.atlDate = pick(cg.atlDate);
   m.numMarketPairs = pick(cmc.numMarketPairs);
   m.lastUpdated = pick(cg.lastUpdated, cmc.lastUpdated, cp.lastUpdated);
   asset.listing.dateAdded = pick(cmc.dateAdded, ba.dateAdded);

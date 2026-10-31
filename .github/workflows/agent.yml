@@ -1,0 +1,128 @@
+# CRI Radar — the AI quality agent (agent/, a module separate from the scanner).
+#
+# After every CI run, every scan, every probe and every label refresh — and hourly as a fallback —
+# the agent:
+#   1. restores its memory (the `cri-agent` branch) and the research state (`cri-state`);
+#   2. observes everything the project relies on: workflow runs, jobs and the CI gate report
+#      (annotations), the published snapshot, the deployed site, the free plans' quotas, public prices;
+#   3. evaluates every quality gate, learns its norms from the project's own history, keeps the
+#      incidents and the commits that fixed them, and records the ≥100× forecasts to measure their
+#      calibration as the months pass;
+#   4. writes a summary with an open model running locally in this runner (Ollama — free, no account,
+#      no key, nothing leaves the runner), guarded so that every number in it comes from the facts;
+#      the model is installed only when the summary must change;
+#   5. starts a scan or a pulse GitHub's scheduler skipped (within daily limits) and keeps one GitHub
+#      issue in step with the serious findings;
+#   6. saves memory and report on `cri-agent`; the scan and the pulse publish the report on the site.
+#
+# Cost: the workflow token (1 000 requests an hour; the agent makes about twenty), a few keyless
+# CoinGecko calls, a public-repository runner. No secret is read.
+name: Agent AI
+
+on:
+  workflow_run:
+    workflows: ['CI', 'Scan & deploy', 'Probe surse', 'Actualizare etichete on-chain']
+    types: [completed]
+  schedule:
+    # Hourly fallback, off the busy minutes. GitHub may skip some; the workflow_run trigger is the
+    # reliable one.
+    - cron: '43 * * * *'
+  workflow_dispatch:
+    inputs:
+      narrate:
+        description: 'auto = doar când s-a schimbat starea; always = rescrie acum; never = doar șablonul'
+        type: choice
+        options: [auto, always, never]
+        default: auto
+
+permissions:
+  contents: write # push the cri-agent branch
+  actions: write # workflow_dispatch of a skipped scan or pulse (self-heal)
+  issues: write # the rolling findings issue
+  checks: read # the CI gate report (annotations)
+
+concurrency:
+  # Agents queue behind agents only; one agent never cancels another mid-save.
+  group: cri-agent
+  cancel-in-progress: false
+
+jobs:
+  agent:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+
+      - name: Restore the agent memory (cri-agent) and the research state (cri-state)
+        run: |
+          mkdir -p .agent .state
+          if git fetch --no-tags --depth=1 origin cri-agent 2>/dev/null; then
+            git archive --format=tar FETCH_HEAD | tar -x -C .agent
+            echo "Memorie restaurată: $(ls .agent | tr '\n' ' ')"
+          else
+            echo "Prima rulare a agentului: memoria pornește de la zero; istoricul de rulări GitHub și telemetria scanărilor sunt importate acum."
+          fi
+          if git fetch --no-tags --depth=1 origin cri-state 2>/dev/null; then
+            git archive --format=tar FETCH_HEAD | tar -x -C .state
+          fi
+
+      - name: Observe, evaluate every gate, learn (deterministic)
+        id: analyze
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CRI_AGENT_NARRATE: ${{ inputs.narrate || vars.CRI_AGENT_NARRATE || 'auto' }}
+          CRI_AGENT_HEAL: ${{ vars.CRI_AGENT_HEAL || 'on' }}
+          CRI_AGENT_ISSUES: ${{ vars.CRI_AGENT_ISSUES || 'on' }}
+        run: node agent/main.js analyze --memory .agent --state .state --out .agent/report
+
+      - name: Local open model for the summary (Ollama — free, no account, runs in this runner)
+        id: llm
+        if: steps.analyze.outputs.narrate == 'true' && vars.CRI_AGENT_LLM != 'off'
+        continue-on-error: true # without the model the summary comes from the deterministic template
+        timeout-minutes: 12
+        env:
+          MODEL: ${{ vars.CRI_AGENT_MODEL || 'qwen2.5:3b' }}
+        run: |
+          curl -fsSL https://ollama.com/install.sh | sh
+          for i in $(seq 1 30); do curl -sf http://127.0.0.1:11434/api/version >/dev/null && break; sleep 1; done
+          ollama pull "$MODEL"
+          echo "model=$MODEL" >> "$GITHUB_OUTPUT"
+
+      - name: Summary (every number checked against the facts, otherwise the template)
+        if: steps.analyze.outputs.narrate == 'true'
+        env:
+          CRI_AGENT_MODEL: ${{ steps.llm.outputs.model }}
+          CRI_AGENT_LLM: ${{ vars.CRI_AGENT_LLM || 'on' }}
+        run: node agent/main.js narrate --memory .agent --out .agent/report
+
+      - name: Act (start a skipped scan or pulse, keep the findings issue in step)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CRI_AGENT_HEAL: ${{ vars.CRI_AGENT_HEAL || 'on' }}
+          CRI_AGENT_ISSUES: ${{ vars.CRI_AGENT_ISSUES || 'on' }}
+        run: node agent/main.js act --memory .agent --out .agent/report
+
+      - name: Validate the report contract
+        run: node scripts/validate-snapshot.js --agent .agent/report/agent.json
+
+      - name: Save memory and report (single-commit orphan branch cri-agent)
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd .agent
+          rm -rf .git
+          git init -q -b cri-agent
+          git add -A
+          git -c user.name="cri-radar[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -q -m "agent: run ${GITHUB_RUN_ID} ($(date -u +%Y-%m-%dT%H:%MZ))"
+          git push -q --force "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:refs/heads/cri-agent
+          echo "Memorie salvată: $(du -sh . | cut -f1)"
+
+      - name: Run summary
+        if: always()
+        run: test -f .agent/report/agent.md && cat .agent/report/agent.md >> "$GITHUB_STEP_SUMMARY" || true

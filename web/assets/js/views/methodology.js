@@ -1,4 +1,4 @@
-/** Methodology: principles, weights, fingerprint features, thresholds and the lifecycle vocabulary. */
+/** Methodology: principles, weights, fingerprint features, thresholds, the validity gate, the ≥100× forecast and the lifecycle vocabulary. */
 import { html } from '../core/dom.js';
 import { usd } from '../core/format.js';
 import { L } from '../core/labels.js';
@@ -37,6 +37,22 @@ function validityMethod(v) {
   </section>`;
 }
 
+/** The ≥100× forecast in one paragraph per step, with the numbers of the current run. */
+function forecastMethod(f) {
+  if (!f?.model) return '';
+  const r100 = (f.baseRates ?? []).find((r) => r.multiple === 100);
+  const confirmed = (f.winners ?? []).filter((w) => w.status === 'CONFIRMED').length;
+  return html`<section class="section"><h3 class="section-title">Prognoza ≥100× în 12 luni</h3>
+    <ol class="small ink2" style="padding-left:18px;display:grid;gap:6px;margin:0">
+      <li>Lista de învățare: proiectele care au crescut de cel puțin ${f.targets?.[1] ?? 20}× în ultimele ${f.windowDays ?? 365} de zile — semințe documentate din surse publice (LAB, BTW, IRYS…) plus candidații semnalați automat de minimele și maximele istorice ale pieței — confirmate fiecare din istoricul zilnic CoinGecko, pe mediana a trei zile, cu minimul acceptat doar unde capitalizarea și volumul erau reale.</li>
+      <li>Amprenta fiecărui câștigător se calculează la minimul lui, doar din lumânările de până atunci, pe aceleași trăsături ca analogii LAB/BTW/AGT. Ce s-a întâmplat după minim este eticheta, niciodată o trăsătură.</li>
+      <li>Rata de bază: câștigătorii împărțiți la proiectele urmărite în fereastră, cu o estimare prudentă la pornire (${f.model.prior?.pct}% pe an, cântărită ca ${f.model.prior?.weight} de proiecte) și interval Wilson de 90%.</li>
+      <li>Ajustarea: raportul de densitate dintre câștigători (la minim) și universul de azi, nucleu gaussian (σ = ${f.model.sigma}, acoperire minimă ${Math.round((f.model.minCoverage ?? 0) * 100)}%), tras spre 1 cât timp câștigătorii sunt puțini (k = ${f.model.shrinkK}) și limitat la ×${f.model.lrClamp}. Probabilitatea finală: p = p₀·LR / (p₀·LR + 1 − p₀).</li>
+    </ol>
+    <p class="small ink2" style="margin-top:10px">Rularea curentă: ${confirmed} câștigători confirmați, rata de bază ≥100× ${r100 ? `${r100.pct}% (${r100.lo}–${r100.hi}%)` : '—'} — detaliile în ecranul <a href="#/prognoza">Prognoză</a>.</p>
+  </section>`;
+}
+
 export function methodologyMarkup(s) {
   const m = s.methodology ?? {};
   const th = m.thresholds ?? {};
@@ -61,6 +77,7 @@ export function methodologyMarkup(s) {
         <li>Futures Radar pe fiecare piață perpetuă din univers (până la ${m.horizon?.futures ?? 1000}); tabelul complet al orizontului se publică în data/universe.json (ecranul Univers).</li>
         <li>Fuziunea dovezilor pe 9 domenii, stadiu, hype, risc, semnal și plan structural.</li>
         <li>Poarta de validitate (ecranul <a href="#/validare">Validare</a>): în listele CRI intră doar proiectele care trec cinci verificări obligatorii — capitalizare mică sau medie confirmată de un agregator, proiect real și identificat, listare pe burse, contract fără capcane (GoPlus) și lichiditate reală. O dovadă negativă respinge; o dovadă lipsă ține proiectul „în verificare”, fără să-l eticheteze.</li>
+        <li>Prognoza (ecranul <a href="#/prognoza">Prognoză</a>): probabilitatea fiecărui proiect verificat de a crește de cel puțin 100× (și 20×) în 12 luni, din rata de bază a ultimului an și din cât seamănă azi cu câștigătorii la minimul lor.</li>
         <li>Diferența față de rularea anterioară devine catalizatori și alerte; semnalele intră în track record.</li>
       </ol>
     </section>
@@ -86,12 +103,14 @@ export function methodologyMarkup(s) {
     <div class="tbl-wrap"><table class="tbl"><tbody>${L.stageOrder.map((st) => html`<tr><td><b>${L.stages[st] ?? st}</b></td><td class="ink2" style="white-space:normal">${STAGE_HELP[st] ?? ''}</td></tr>`)}</tbody></table></div>
   </section>
   ${validityMethod(s.validity)}
+  ${forecastMethod(s.forecast)}
   <section class="section"><h3 class="section-title">Limitări asumate</h3>
     <ul class="facts">
       <li><span>Poarta de validitate reduce riscul, nu îl elimină: GoPlus nu acoperă toate lanțurile, iar o listare pe o bursă mare nu garantează proiectul. Atenționările (concentrare, taxe mici, mint) rămân de verificat manual.</span></li>
       <li><span>API-urile gratuite au limite de rată; o rulare durează câteva minute și poate omite surse lente (marcate explicit).</span></li>
       <li><span>Holderii și concentrarea vin din GeckoTerminal/GoPlus și pot include adrese de exchange sau contracte de vesting neetichetate.</span></li>
       <li><span>Trei referințe sunt un eșantion mic: similaritatea ridicată arată un tipar comun, nu garantează un rezultat similar.</span></li>
+      <li><span>Prognoza ≥100× estimează un eveniment rar dintr-o listă scurtă de câștigători: cea mai mare probabilitate rămâne de ordinul procentelor, iar agregatorii păstrează mai ales supraviețuitorii, deci rata de bază este o limită superioară. Calibrarea se măsoară în timp, de agentul AI.</span></li>
       <li><span>${s.meta?.disclaimer ?? ''}</span></li>
     </ul>
   </section>`;

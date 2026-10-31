@@ -75,7 +75,6 @@ test('frontend is self-contained: it only reads the published contract', async (
 const APPROVED_HOSTS = {
   // aggregators — free key or keyless
   'api.coingecko.com': 'CoinGecko Demo (cheie gratuită, 10 000 apeluri/lună)',
-  'pro-api.coingecko.com': 'CoinGecko Pro host, folosit doar dacă operatorul are deja o cheie',
   'pro-api.coinmarketcap.com': 'CoinMarketCap Basic (cheie gratuită, 10 000 credite/lună)',
   'api.coinpaprika.com': 'CoinPaprika (public, fără cheie)',
   // exchanges — public market-data endpoints
@@ -147,6 +146,7 @@ test('no adapter reaches a host known to require a subscription', async () => {
     ['deep-index.moralis.io', 'Moralis — plan plătit'],
     ['api.etherscan.io', 'Etherscan — cheile per-lanț necesare sunt plătite'],
     ['cryptopanic.com', 'CryptoPanic — planul Developer gratuit a fost retras'],
+    ['pro-api.coingecko.com', 'CoinGecko Pro/Analyst API — abonament; proiectul folosește doar cheia Demo gratuită'],
   ];
   for (const f of await jsFiles(join(ROOT, 'src'))) {
     const src = await readFile(f, 'utf8');

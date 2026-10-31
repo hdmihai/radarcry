@@ -24,6 +24,8 @@ import { marketStrip, noticeMarkup, notices, topMeta } from './views/shell.js';
 import { trackMarkup } from './views/track.js';
 import { bindUniverse, ensureUniverse, universeMarkup } from './views/universe.js';
 import { bindValidity, validityMarkup } from './views/validity.js';
+import { forecastMarkup } from './views/forecast.js';
+import { agentMarkup, agentState, ensureAgent } from './views/agent.js';
 import { criTipBody, gradeTipBody, lifeTipBody, shortSignal, signalTipBody } from './views/widgets.js';
 
 /**
@@ -39,6 +41,8 @@ const ROUTES = [
   { id: 'univers', label: 'Univers', render: universeMarkup, count: (s) => s.meta?.universe?.projects ?? 0, enter: (s) => (s.meta?.universe ? ensureUniverse(s.meta.universe.file ?? 'data/universe.json') : Promise.resolve()) },
   // The gate in front of every CRI list: its rules, its counts, and every project it held back.
   { id: 'validare', label: 'Validare', render: validityMarkup, count: (s) => s.validity?.summary?.valid ?? 0 },
+  // The ≥100× forecast for every verified project, and the learning list of the last year's winners.
+  { id: 'prognoza', label: 'Prognoză ≥100×', render: forecastMarkup, count: (s) => (s.forecast?.winners ?? []).filter((w) => w.status === 'CONFIRMED' || w.status === 'DOCUMENTED').length },
   { id: 'alerte', label: 'Alerte', render: catalystsMarkup, count: (s) => (s.alerts?.items ?? []).length },
   { id: 'analogi', label: 'Analogi LAB/BTW/AGT', render: analogsMarkup, count: (s) => (s.references ?? []).length },
   { id: 'radar', label: 'Radar CRI', render: radarMarkup, count: (s) => s.candidates.length },
@@ -46,6 +50,8 @@ const ROUTES = [
   { id: 'narative', label: 'Narative', render: narrativesMarkup },
   { id: 'track-record', label: 'Track record', render: trackMarkup, count: (s) => (s.trackRecord?.recent ?? []).length },
   { id: 'paritate', label: 'Paritate și bugete', render: parityMarkup },
+  // The AI quality agent's report, from data/agent.json — loaded only when this screen is opened.
+  { id: 'agent', label: 'Agent AI', render: agentMarkup, count: () => (agentState.status === 'ready' ? agentState.data.findings?.length ?? 0 : null), enter: () => ensureAgent('data/agent.json') },
   { id: 'surse', label: 'Date și surse', render: healthMarkup },
   { id: 'metodologie', label: 'Metodologie', render: methodologyMarkup },
 ];

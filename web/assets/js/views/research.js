@@ -9,7 +9,7 @@
 import { html, tip } from '../core/dom.js';
 import { compact, dateTime, days, frac, num, pct, price, score, shortAddr, signClass, usd } from '../core/format.js';
 import { SEVERITY, icon } from '../core/labels.js';
-import { meter, qualityDot, validityBadge, validityList } from './widgets.js';
+import { forecastBlock, forecastPill, meter, qualityDot, validityBadge, validityList } from './widgets.js';
 
 export const researchState = { key: null };
 
@@ -166,6 +166,7 @@ export function researchMarkup(s) {
           <span class="pill">${v.bandLabel}</span>
           ${v.answersQuestion ? html`<span class="pill" data-tone="good">${icon('target', 12)} răspunde la întrebare</span>` : ''}
           ${validityBadge(row.validity)}
+          ${forecastPill(row.forecast)}
           ${row.chain ? html`<span class="pill" data-tone="muted">${row.chain}</span>` : ''}
         </div>
         <div class="dcard-nums">
@@ -193,6 +194,11 @@ export function researchMarkup(s) {
       </section>
 
       ${validityPanel(row.validity)}
+
+      ${row.forecast ? html`<section class="panel">
+        <div class="panel-head"><h4 class="panel-title">Prognoză: ≥100× și ≥20× în 12 luni</h4>${forecastPill(row.forecast)}</div>
+        ${forecastBlock(row.forecast, { base: s.forecast?.baseRates })}
+      </section>` : ''}
 
       <section class="panel"><div class="panel-head"><h4 class="panel-title">Teza, în proză</h4><span class="muted xs">${t.confidenceLabel}</span></div>
         <p class="thesis">${t.paragraph}</p>

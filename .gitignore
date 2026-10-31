@@ -9,6 +9,15 @@ coverage/
 # Snapshot-ul generat local; în CI se publică direct în artefactul Pages
 data/latest.json
 data/summary.json
+data/universe.json
 
 .state-demo/
 config/local.json
+
+# Agentul AI: memoria locală, raportul demo și rapoartele porților din CI
+.agent/
+.agent-demo/
+data/agent.json
+data/agent.md
+.gates.json
+.gates-syntax.json

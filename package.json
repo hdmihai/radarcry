@@ -19,12 +19,15 @@
     "labels": "node --max-old-space-size=3072 scripts/update-labels.js",
     "build": "node scripts/build-site.js",
     "serve": "node src/main.js serve --dir dist --port 8080",
-    "demo": "npm run scan:demo && npm run build && npm run serve",
+    "demo": "npm run scan:demo && npm run agent:demo && npm run build && npm run serve",
     "validate": "node scripts/validate-snapshot.js data/latest.json",
     "summary": "node scripts/run-summary.js data/latest.json",
     "check": "node scripts/check-syntax.js",
     "test": "node --test --test-reporter=spec \"test/**/*.test.js\"",
-    "ci": "npm run check && npm test"
+    "ci": "npm run check && npm test",
+    "ci:gates": "node scripts/check-syntax.js --json .gates-syntax.json && node --test --test-reporter=spec --test-reporter-destination=stdout --test-reporter=./scripts/gate-reporter.js --test-reporter-destination=.gates.json \"test/**/*.test.js\"",
+    "agent": "node agent/main.js run",
+    "agent:demo": "node agent/main.js run --fixtures --state .cri-state-demo --data data --memory .agent-demo --out data"
   },
   "keywords": [
     "crypto",

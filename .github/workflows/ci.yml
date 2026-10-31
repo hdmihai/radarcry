@@ -2,11 +2,15 @@
 # offline DEMO build. No network access to any crypto API is needed — the end-to-end tests run
 # against the deterministic simulated market through the same ports as the live adapters, which is
 # the whole reason those ports exist.
+#
+# The suite reports itself as quality gates: one annotation with the count per group (syntax,
+# architecture rules, each layer's tests, the agent) and one per failed test. The AI agent
+# (agent.yml) reads those annotations through the API, so it knows which gate failed.
 name: CI
 
 on:
   push:
-    branches-ignore: [cri-state]
+    branches-ignore: [cri-state, cri-agent]
   pull_request:
 
 permissions:
@@ -29,16 +33,23 @@ jobs:
           package-manager-cache: false # zero runtime dependencies
 
       - name: Syntax + tests (architecture rules, domain engines, contract, end to end)
-        run: npm run ci
+        run: npm run ci:gates
+
+      - name: Quality gates summary (read by the AI agent)
+        if: always()
+        run: node scripts/gates-annotate.js .gates.json .gates-syntax.json
 
       - name: Offline DEMO scan, contract validation and site build
         run: |
           node src/main.js scan --fixtures --simulate-days 10 --state .cri-state-demo --out data
           node scripts/validate-snapshot.js data/latest.json
+          node agent/main.js run --fixtures --state .cri-state-demo --data data --memory .agent-demo --out data
+          node scripts/validate-snapshot.js --agent data/agent.json
           node scripts/build-site.js
           test -f dist/index.html
           test -f dist/data/latest.json
           test -f dist/data/universe.json
+          test -f dist/data/agent.json
 
       - name: The pulse runs on top of the published snapshot without breaking the contract
         run: |

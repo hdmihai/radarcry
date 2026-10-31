@@ -26,6 +26,8 @@ const FILES = {
   lastSeenV4: 'last-seen-v4.json',
   // The rolling research cache (static facts + when each measurement was last refreshed).
   deepCache: 'deep-cache.json',
+  // The forecast's learning list: the last year's big runs, confirmed from daily history.
+  winners: 'winners.json',
   meta: 'meta.json',
 };
 
@@ -207,6 +209,7 @@ export function emptyState() {
     lastSeen: {},
     lastSeenV4: {},
     deepCache: {},
+    winners: { items: [], updatedAt: null },
     meta: { runs: 0, firstRunAt: null, lastRunAt: null },
   };
 }
@@ -243,6 +246,7 @@ export function createFsStateRepository({ dir, logger = null }) {
       if (!s.references?.items) s.references = { items: [], fetchedAt: null, configHash: null };
       if (!s.ledger || typeof s.ledger !== 'object') s.ledger = {};
       if (!s.deepCache || typeof s.deepCache !== 'object' || Array.isArray(s.deepCache)) s.deepCache = {};
+      if (!s.winners || !Array.isArray(s.winners.items)) s.winners = { items: [], updatedAt: null };
       return s;
     },
     async save(state) {

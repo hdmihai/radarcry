@@ -7,10 +7,11 @@ import { toNum } from '../../../domain/shared/math.js';
 import { normChain } from '../../../domain/shared/symbols.js';
 import { disabled, mapResult, mergePages } from './common.js';
 
-export function createCoinGecko({ http, cfg, apiKey = null, plan = 'demo' }) {
-  const isPro = apiKey && plan === 'pro';
-  const base = isPro ? 'https://pro-api.coingecko.com/api/v3' : 'https://api.coingecko.com/api/v3';
-  const headers = apiKey ? { [isPro ? 'x-cg-pro-api-key' : 'x-cg-demo-api-key']: apiKey } : {};
+export function createCoinGecko({ http, cfg, apiKey = null }) {
+  // Only the public host and the free Demo key: the Pro/Analyst API is a subscription and is excluded
+  // by the brief (the architecture test denies its host).
+  const base = 'https://api.coingecko.com/api/v3';
+  const headers = apiKey ? { 'x-cg-demo-api-key': apiKey } : {};
   const o = (endpoint, extra = {}) => ({
     provider: 'coingecko',
     endpoint,
@@ -138,6 +139,7 @@ export function normalizeMarket(r) {
     ath: toNum(r.ath),
     athChangePct: toNum(r.ath_change_percentage),
     athDate: r.ath_date ?? null,
+    atl: toNum(r.atl),
     atlDate: r.atl_date ?? null,
     dateAdded: null,
     firstDataAt: null,

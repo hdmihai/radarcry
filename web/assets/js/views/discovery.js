@@ -12,7 +12,7 @@
 import { html, tip } from '../core/dom.js';
 import { compact, days, frac, num, pct, price, score, signClass, usd } from '../core/format.js';
 import { SEVERITY, icon } from '../core/labels.js';
-import { meter, qualityDot, searchBox, sortSelect, validityBadge, validityList } from './widgets.js';
+import { forecastPill, meter, qualityDot, searchBox, sortSelect, validityBadge, validityList } from './widgets.js';
 
 const STAGE_TONE = { 0: 'muted', 1: 'good', 2: 'good', 3: 'warning', 4: 'serious' };
 
@@ -156,6 +156,7 @@ function listCard(row, s) {
         <span class="pill" data-tone="${STAGE_TONE[v.stage] ?? 'muted'}">Stage ${v.stage} · ${v.stageLabel}</span>
         <span class="pill" data-tone="${BAND_TONE[v.band] ?? 'muted'}">${v.bandLabel}</span>
         ${validityBadge(row.validity)}
+        ${forecastPill(row.forecast, { compact: true })}
         ${alphaPills(row)}
         ${SELECTED_BY[row.selectedBy] ? html`<span class="pill" data-tone="muted" data-tip="${tip(SELECTED_BY[row.selectedBy].tip)}">${SELECTED_BY[row.selectedBy].label}</span>` : ''}
       </div>
@@ -200,6 +201,7 @@ function card(row, s) {
         <span class="pill" data-tone="${BAND_TONE[v.band] ?? 'muted'}">${v.bandLabel}</span>
         ${v.answersQuestion ? html`<span class="pill" data-tone="good" data-tip="${tip('Îndeplinește toate cele trei condiții pentru candidat timpuriu ȘI are schimbări simultane în cel puțin două familii — exact forma întrebării proiectului.')}">${icon('target', 12)} răspunde la întrebare</span>` : ''}
         ${validityBadge(row.validity)}
+        ${forecastPill(row.forecast)}
         ${alphaPills(row)}
         ${SELECTED_BY[row.selectedBy] ? html`<span class="pill" data-tone="muted" data-tip="${tip(SELECTED_BY[row.selectedBy].tip)}">${SELECTED_BY[row.selectedBy].label}</span>` : ''}
       </div>

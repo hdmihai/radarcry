@@ -67,8 +67,10 @@ export function createFixtureProviders({ market, clock }) {
       mcapChange24h: source === 'coingecko' ? s.change.h24 : null,
       ath: s.ath,
       athChangePct: source === 'coinmarketcap' ? null : s.athChangePct,
-      athDate: null,
-      atlDate: null,
+      // CoinGecko's market list carries the all-time high and low with their dates.
+      athDate: source === 'coingecko' ? new Date(s.athMs).toISOString() : null,
+      atl: source === 'coingecko' ? s.atl : null,
+      atlDate: source === 'coingecko' ? new Date(s.atlMs).toISOString() : null,
       dateAdded: source === 'coinmarketcap' ? new Date(a.listedAt).toISOString() : null,
       firstDataAt: source === 'coinpaprika' ? new Date(a.listedAt).toISOString() : null,
       tags: source === 'coinmarketcap' ? [...a.tags, ...(a.categories ?? []).map((c) => c.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''))] : [],

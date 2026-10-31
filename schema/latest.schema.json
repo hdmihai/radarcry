@@ -109,6 +109,17 @@
         "secrets": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/secret" } }
       }
     },
+    "forecast": {
+      "description": "Prognoza ≥100× / ≥20× în 12 luni: ratele de bază, modelul, lista de învățare a câștigătorilor ultimului an și cele mai mari probabilități. Opțional — snapshot-urile de dinaintea modulului nu îl au.",
+      "type": "object",
+      "required": ["targets", "baseRates", "model", "winners", "top", "note"],
+      "properties": {
+        "targets": { "type": "array", "minItems": 1, "items": { "type": "number" } },
+        "baseRates": { "type": "array", "items": { "type": "object", "required": ["multiple", "pct", "lo", "hi", "events", "population"] } },
+        "winners": { "type": "array", "items": { "type": "object", "required": ["symbol", "status", "statusLabel"], "properties": { "status": { "enum": ["CONFIRMED", "DOCUMENTED", "PENDING", "BELOW"] } } } },
+        "top": { "type": "array", "items": { "type": "object", "required": ["key", "symbol", "targets"] } }
+      }
+    },
     "validity": {
       "description": "Poarta de validitate: politica, numărătorile și proiectele oprite (respinse cu motivul, în verificare cu dovada lipsă). Opțional — snapshot-urile de dinaintea porții nu îl au.",
       "type": "object",
@@ -133,6 +144,14 @@
   },
   "$defs": {
     "validityStatus": { "enum": ["VALID", "PENDING", "REJECTED"] },
+    "forecastView": {
+      "type": ["object", "null"],
+      "required": ["targets", "coverage", "nearest"],
+      "properties": {
+        "targets": { "type": "object" },
+        "nearest": { "type": "array", "items": { "type": "object", "required": ["symbol", "multiple", "similarity"] } }
+      }
+    },
     "validityVerdict": {
       "type": "object",
       "required": ["status", "label", "checks", "warnings"],
@@ -206,6 +225,7 @@
       "required": ["key", "symbol", "name", "verdict", "thesis", "changed", "score", "risk", "market", "onchain", "platforms"],
       "properties": {
         "validity": { "$ref": "#/$defs/validityVerdict" },
+        "forecast": { "$ref": "#/$defs/forecastView" },
         "verdict": {
           "type": "object",
           "required": ["answersQuestion", "earlyResearchCandidate", "stage", "stageLabel", "band", "opportunity", "momentum", "earliness", "risk", "confidence", "tests"],
@@ -308,6 +328,7 @@
       "required": ["key", "symbol", "name", "depth", "market", "score", "stage", "hype", "signal", "analogs", "domains", "risk", "whyNow", "missing"],
       "properties": {
         "validity": { "$ref": "#/$defs/validityVerdict" },
+        "forecast": { "$ref": "#/$defs/forecastView" },
         "depth": { "enum": ["deep", "light"] },
         "score": {
           "type": "object",

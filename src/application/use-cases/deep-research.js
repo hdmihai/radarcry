@@ -312,16 +312,17 @@ export async function collectDeepData(targets, P, cfg, rt, { priorityKeys = null
       if (!budgeted(60_000)) break;
       const slot = out.get(a.key);
       const parsed = repoOf(a);
-      const [meta, activity] = await Promise.all([
-        P.github.repo(parsed.owner, parsed.repo).then((r) => track('github', r)),
-        P.github.commitActivity(parsed.owner, parsed.repo).then((r) => track('github', r)),
-      ]);
+      // Metadata first: a repository that no longer exists (404) costs one call, not two.
+      const meta = track('github', await P.github.repo(parsed.owner, parsed.repo));
+      const activity = meta.ok
+        ? track('github', await P.github.commitActivity(parsed.owner, parsed.repo))
+        : { ok: false, status: 'SKIPPED', data: null, message: 'depozitul nu răspunde; activitatea nu a mai fost cerută' };
       if (meta.ok || activity.ok) {
         slot.dev = { repo: parsed, meta: meta.ok ? meta.data : null, activity: activity.ok ? activity.data : null };
         markMeasured(memo, a.key, 'dev', nowMs);
         tiers.dev += 1;
       }
-      if (STOP.has(meta.status) && STOP.has(activity.status)) break;
+      if (STOP.has(meta.status) || STOP.has(activity.status)) break;
     }
   };
 

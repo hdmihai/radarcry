@@ -274,6 +274,8 @@
  * @property {Record<string, any>} ledger                                        quota buckets per provider
  * @property {Record<string, {stage:string,cri:number|null,signal:string}>} lastSeen
  * @property {Record<string, any>} lastSeenV4                                    last discovery verdict per asset
+ * @property {Record<string, any>} deepCache                                     rolling static facts (security, details)
+ * @property {{items:any[], updatedAt:string|null}} winners                      the forecast's learning list (last year's runs)
  */
 
 /**

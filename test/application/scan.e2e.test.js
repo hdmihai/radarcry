@@ -303,3 +303,26 @@ test('only projects that pass the validity gate reach the CRI lists; the rest ar
   const codes = rows.map((r) => r.valid);
   assert.deepEqual(codes, [...codes].sort((a, b) => 'VPR'.indexOf(a) - 'VPR'.indexOf(b)), 'verified rows lead the table');
 });
+
+test('every researched project gets a ≥100× forecast; the learning list holds the last year\'s winners', async () => {
+  const f = last.forecast;
+  assert.ok(f, 'the snapshot carries the forecast');
+  assert.deepEqual(f.targets, [100, 20]);
+  const r100 = f.baseRates.find((r) => r.multiple === 100);
+  assert.ok(r100.pct > 0 && r100.pct < 5 && r100.lo <= r100.pct && r100.pct <= r100.hi, JSON.stringify(r100));
+  assert.ok(r100.population >= last.health.universe.eligible, 'the population is at least today\'s universe');
+  const confirmed = f.winners.filter((w) => w.status === 'CONFIRMED');
+  for (const sym of ['PYXL', 'WNRA', 'VLBT']) assert.ok(confirmed.some((w) => w.symbol === sym && w.multiple >= 100), `${sym}: the planted ≥100× run is confirmed from history`);
+  assert.ok(confirmed.some((w) => w.symbol === 'LAB'), 'the LAB seed is resolved by ticker and name, and confirmed');
+  assert.ok(f.winners.some((w) => w.symbol === 'AKE' && w.status === 'DOCUMENTED'), 'a seed without history stays documented, with its sources');
+  assert.ok(f.model.positives['100'] >= 3 && f.model.positives['20'] >= f.model.positives['100']);
+  assert.ok(f.top.length > 0 && f.top.every((t) => t.targets['100'].pct >= 0));
+  for (const row of last.discovery.rows) assert.ok(row.forecast?.targets?.['100'], `${row.symbol}: forecast published with the row`);
+  for (const c of last.candidates) assert.ok(c.forecast, `${c.symbol}: forecast on the research card`);
+
+  const universe = decodeTable(JSON.parse(await readFile(join(run.outDir, 'universe.json'), 'utf8')).assets);
+  assert.ok(universe.filter((r) => r.valid !== 'R').every((r) => Number.isFinite(r.fc100) && Number.isFinite(r.fc20)), 'every non-rejected row carries its forecast');
+  assert.ok(universe.filter((r) => r.valid === 'R').every((r) => r.fc100 === null), 'no forecast for a rejected project');
+  const state = JSON.parse(await readFile(join(run.stateDir, 'winners.json'), 'utf8'));
+  assert.equal(state.items.length, f.winners.length, 'the learning list persists between runs');
+});

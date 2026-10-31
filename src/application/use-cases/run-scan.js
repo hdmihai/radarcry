@@ -13,6 +13,8 @@
  *  → DISCOVERY: baseline → what changed → pre-expansion → risk → stage → thesis
  *  → VALIDITY: only verified projects (capitalisation, identity, listings, contract, liquidity)
  *              reach the CRI lists; the rest are published with the reason they were held back
+ *  → FORECAST: the last year's big winners (confirmed from daily history) as the learning list;
+ *              every project's probability of a ≥100× (and ≥20×) run within twelve months
  *  → FUTURES RADAR: 1D trend + 4H structure + positioning + liquidity + volume → grade
  *  → alerts, track record, parity benchmark, quota report
  *  → snapshot (the only contract with the dashboard) → publish → persist state
@@ -49,6 +51,7 @@ import { discoveryView } from './discovery-view.js';
 import { universeTable } from './universe-view.js';
 import { cacheCoverage, pruneCache } from './deep-cache.js';
 import { preRejected, validateAsset, validityPolicy, validityReport, validityView, VALIDITY } from './validity.js';
+import { forecastPolicy, forecastReport, forecastView, pastRunsByKey, refreshWinners, runForecast, trackedPopulation } from './forecast.js';
 
 export class UniverseUnavailableError extends Error {}
 
@@ -370,6 +373,27 @@ export async function runScan(deps, config) {
   logger.info(`validare: ${validityCounts.valid} verificate · ${validityCounts.pending} în verificare · ${validityCounts.rejected} respinse (din ${eligible.length} eligibile)`);
   logger.info(`discovery: ${ranked.length} analizați · ${rankedValid.length} verificați · ${earlyCandidates.length} candidați timpurii · ${answering.length} răspund exact la întrebarea proiectului`);
 
+  // 9c) FORECAST — the learning list of the last year's big runs (seeds + every ATL/ATH of the
+  //     market, confirmed from daily history within a small per-run budget), then each researched
+  //     project's probability of a ≥100× / ≥20× run within twelve months.
+  const fPolicy = forecastPolicy(config);
+  const winnersState = await refreshWinners({
+    cached: state.winners,
+    seeds: deps.winnersSeed?.items ?? [],
+    assets: merged,
+    history: P.coingecko,
+    nowMs,
+    policy: fPolicy,
+    logger,
+    canSpend: () => timeLeft() > 120_000,
+  });
+  const fProjects = researched.map((r) => ({ key: r.asset.key, vector: r.vector ?? null }));
+  const population = trackedPopulation({ eligible, history: state.history, nowMs, windowDays: fPolicy.windowDays });
+  const fc = runForecast({ winners: winnersState.items, projects: fProjects, population, policy: fPolicy });
+  const pastRuns = pastRunsByKey(winnersState.items);
+  const fcOf = (key) => (validity.get(key)?.status === VALIDITY.REJECTED ? null : forecastView(fc.byKey.get(key), fc.rates, pastRuns.get(key) ?? null));
+  logger.info(`prognoză: ${winnersState.stats.confirmed} câștigători confirmați din istoric · ${winnersState.stats.documented} documentați · ${winnersState.stats.pending} în verificare (${winnersState.stats.charts} istorice citite) · rata de bază ≥${fPolicy.targets[0]}×: ${(fc.rates[fPolicy.targets[0]].p * 100).toFixed(2)}% din ${population} proiecte`);
+
   // How far the per-project norms have got. On the first runs the honest answer to the project's
   // question is usually "nothing yet", and this block is what lets the dashboard say *why*: a change
   // can only be measured against a norm, and a norm needs several runs of the project's own history.
@@ -474,9 +498,9 @@ export async function runScan(deps, config) {
       historyView: goesDeep ? points.slice(-40).map((p) => [p.t, p.cri, p.stage, p.price]) : [],
       sparkline: sparkFrom(deep, points, r.lf.price),
     };
-    const view = { ...toCandidateView(r, ctx), validity: validityView(validity.get(r.asset.key)) };
+    const view = { ...toCandidateView(r, ctx), validity: validityView(validity.get(r.asset.key)), forecast: fcOf(r.asset.key) };
     if (goesDeep) deepViews.push(view);
-    else lightViews.push({ ...trimLight(view), validity: view.validity });
+    else lightViews.push({ ...trimLight(view), validity: view.validity, forecast: view.forecast });
   }
   const candidates = [...deepViews, ...lightViews].sort((x, y) => (y.score.cri ?? -1) - (x.score.cri ?? -1));
   const signalCounts = {};
@@ -608,6 +632,7 @@ export async function runScan(deps, config) {
           level,
         }),
         validity: validityView(validity.get(r.asset.key)),
+        forecast: fcOf(r.asset.key),
         selectedBy: selectedBy(r.asset.key),
       })),
       note: 'Rândurile sunt ordonate punând candidații timpurii primii, apoi după produsul dintre oportunitate, precocitate și încredere — un scor puțin mai mic, dar încă invizibil, trece înaintea unuia mai mare pe care îl vede toată lumea.',
@@ -617,6 +642,21 @@ export async function runScan(deps, config) {
     futures: {
       summary: { ...futures.summary, published: publishedFutures.length },
       rows: publishedFutures.map(futuresView),
+    },
+    // The forecast: base rates, the learning list of the last year's winners, the top forecasts.
+    forecast: {
+      ...forecastReport({
+        winners: winnersState.items,
+        rates: fc.rates,
+        separation: fc.separation,
+        byKey: fc.byKey,
+        ranked,
+        isValid,
+        policy: fPolicy,
+        excluded: deps.winnersSeed?.excluded ?? [],
+        projects: fProjects.length,
+      }),
+      learning: winnersState.stats,
     },
     // The gate: its policy, its counts, and every project it held back, with the reason.
     validity: validityReport({
@@ -651,6 +691,7 @@ export async function runScan(deps, config) {
     },
     selectedBy,
     validity,
+    forecast: { byKey: fc.byKey, targets: fPolicy.targets, isRejected: (key) => validity.get(key)?.status === VALIDITY.REJECTED },
     meta: { generatedAt: nowIso, runId, mode: deps.mode },
   });
   const published = await publisher.publish(snapshot, { universe: universeDoc });
@@ -690,6 +731,7 @@ export async function runScan(deps, config) {
     lastSeen: Object.fromEntries(researched.map((r) => [r.asset.key, { stage: r.stageInfo.stage, cri: r.cri, signal: r.signal.type, at: nowIso }])),
     lastSeenV4: Object.fromEntries(ranked.map((r) => [r.asset.key, lastSeenRecord(r)])),
     deepCache: pruneCache(deepCache, { keepKeys: new Set(eligible.map((a) => a.key)), nowMs }),
+    winners: { items: winnersState.items, updatedAt: winnersState.updatedAt },
     meta: { runs: (state.meta?.runs ?? 0) + 1, firstRunAt: state.meta?.firstRunAt ?? nowIso, lastRunAt: nowIso, lastRunId: runId },
   };
   await stateRepo.save(nextState);

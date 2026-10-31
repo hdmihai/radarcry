@@ -468,6 +468,17 @@ este vechi de ore, iar un test verifică faptul că scorurile, lista de schimbă
 Cost per puls: ~8 apeluri fără cheie plus cel mult 3 loturi Coinalyze. Nimic cu cuotă lunară nu este
 atins, deci pulsul nu poate fi niciodată motivul pentru care un plan gratuit se epuizează.
 
+### Cadența promisă și cadența livrată
+GitHub rulează programările *best effort*. Măsurat în prima săptămână: scanarea a rulat ~4,1 ori pe zi
+din 6, pulsul ~5,4 din 96. Promisiunea unui cron se calculează exact (agent/domain/cron.js parcurge un
+an întreg minut cu minut, deci pașii, intervalele, listele și regula „zi a lunii SAU zi a săptămânii”
+contează fără cazuri speciale), iar livrarea se citește din lista de rulări. Agentul completează
+scanările lipsă cu `workflow_dispatch` — singurul eveniment pe care tokenul workflow-ului are voie să-l
+pornească — doar când nu rulează nimic, la cel puțin 4,5 h de ultima scanare, cel mult de 4 ori pe zi,
+niciodată după două eșecuri la rând și niciodată peste 85 % din cota unui plan gratuit: toate cotele sunt
+bugetate pentru cele 6 scanări promise, deci completarea readuce sistemul la starea proiectată, fără
+cost în plus.
+
 ---
 
 ## 11. Modelul în trei straturi al platformelor
@@ -527,7 +538,77 @@ dashboard-ul explică lipsa.
 
 ---
 
-## 13. Ce nu face, și de ce
+## 13. Prognoza ≥100× în 12 luni
+
+Întrebarea „care este probabilitatea ca acest proiect să ajungă la cel puțin 100×” are un răspuns
+onest doar ca probabilitate a unui eveniment rar, cu baza ei. Modelul (src/domain/forecast/) are trei
+piese, fiecare cu o regulă care o ține cinstită.
+
+**Lista de învățare.** Câștigătorii ultimelor 365 de zile vin din semințe documentate cu surse
+(`config/winners.json`: AKEDO, BTW, pippin, LAB, AGT, VVV, IRYS, BEAT, RIVER, AIA) și din candidații
+semnalați de minimul și maximul istoric al fiecărui activ din lista CoinGecko pe care scanarea o
+citește oricum. Un ATL/ATH de agregator este o *afirmație*, nu o mișcare: un tick pe o pereche goală
+poate tipări un „minim” de o mie de ori sub prețul real, iar un ATL vechi de doi ani nu spune nimic
+despre ultimul an. Fiecare candidat se confirmă deci din istoricul zilnic (CoinGecko market_chart,
+câteva pe rulare, în bugetul gratuit; reîmprospătat la 30 de zile): mediană pe 3 zile, minim acceptat
+doar unde capitalizarea ≥ 1 M$ și volumul ≥ 25 000 $, vârf după minim, în fereastră. Stări: confirmat,
+documentat (doar surse), în verificare, infirmat.
+
+**Amprenta la minim, fără look-ahead.** Amprenta unui câștigător se calculează doar din lumânările de
+până la minimul lui (inclusiv), în unitățile motorului de similaritate. Ce s-a întâmplat după este
+eticheta. Faptele pe care istoricul nu le poate da (float, concentrare, perpetue, Alpha la acel moment)
+rămân necunoscute dacă nu le declară sămânța — și sunt excluse din comparație, nu tratate ca rele.
+
+**Rata de bază și ajustarea.** `p₀` = posterior Beta cu o estimare prudentă la pornire (0,5 % pe an,
+greutate 200) peste (câștigători confirmați + documentați) / (proiecte urmărite în fereastră), cu
+interval Wilson 90 %. `LR` = densitatea câștigătorilor la minim în jurul proiectului (nucleu gaussian,
+σ 22 pe scala 0–100, acoperire minimă 35 %) împărțită la densitatea universului de azi; tras spre 1 cu
+`exp(n/(n+5)·ln LR)` și limitat la [1/25, 25]. `p = p₀·LR / (p₀·LR + 1 − p₀)`. Intervalul publicat
+combină incertitudinea lui `p₀` cu împrăștierea lui `LR` când oricare câștigător lipsește
+(leave-one-out). Agregatorii păstrează mai ales supraviețuitorii, deci `p₀` este o limită superioară;
+separarea (ridicarea mediană a câștigătorilor la minimul lor) se publică, iar calibrarea reală se
+măsoară în timp de agent.
+
+---
+
+## 14. Agentul AI de calitate
+
+Un modul separat (agent/), cu propriul hexagon și propriile teste de arhitectură: nu importă nimic din
+src/ sau web/, iar acestea nu îl importă. Contractul lui cu scannerul este doar ce publică scannerul
+(ramura `cri-state`) și ce înregistrează GitHub.
+
+- **domain/** — catalogul celor 36 de porți și evaluatorii lor; cron și cadență; norme robuste (mediană
+  + MAD, verdict „în învățare” sub 8 puncte, un punct nu este niciodată propria normă); incidente
+  (deschise, escaladate, rezolvate cu commitul aterizat cât au fost deschise, sau „trecătoare”) și
+  reluarea istoricului (secvențele de eșecuri din ultimele 100 de rulări devin incidente rezolvate,
+  cu semnătura eșecului citită o dată din adnotări); calibrarea (cohorte săptămânale, maximul de
+  24 h, observat/așteptat cu interval Poisson exact, Brier și skill la scadență, sumele cohortelor
+  vechi păstrate); eficiența (paritate × prospețime × fiabilitate); auto-repararea (un plan pur);
+  narațiunea și garda ei. Fără ceas, fără aleatoriu, fără I/O — verificat mecanic.
+- **application/** — `analyze` (observă → învață → evaluează → incidente → registru → eficiență →
+  plan), `narrate` (model local → gardă → sau șablon, cu motivul), `act` (execută planul, ține
+  problema GitHub). Rulează ca pași separați: modelul se instalează doar când rezumatul trebuie rescris.
+- **adapters/** — API GitHub (citiri + exact două scrieri: `workflow_dispatch` și problema agentului;
+  testul de arhitectură interzice delete, cancel, re-run, merge, conținut), fișierele de stare,
+  Pages (`*.github.io`, cu deploy-ul din API ca rezervă), prețuri publice CoinGecko fără cheie (agentul
+  nu folosește niciodată cheia operatorului, deci nu poate consuma cota scannerului), Ollama doar pe
+  127.0.0.1, simulatorul determinist al unui repository cu trei săptămâni de istoric.
+
+**De ce un model local.** GitHub Models a fost retras; orice API de model găzduit ar cere cont sau
+abonament. Un model deschis rulat în runner (Ollama, `qwen2.5:3b` implicit) este gratuit, fără cont și
+fără ca vreo dată să părăsească runner-ul. Un model mic poate inventa un număr, deci garda cere ca
+fiecare cifră din text să apară în fapte (forme rotunjite permise), respinge limbajul de
+tranzacționare și linkurile; un text respins nu se publică.
+
+**Porțile de cod din CI.** `scripts/gate-reporter.js` (reporter node:test) atribuie fiecare test unei
+porți — după fișier sau, pentru testele de arhitectură, după regula verificată — iar
+`scripts/gates-annotate.js` publică numărătorile ca o adnotare `cri-gates` și fiecare test eșuat ca
+adnotare `gate:<grup>`. Agentul le citește prin Checks API, deci știe ce poartă a picat fără să
+descarce loguri.
+
+---
+
+## 15. Ce nu face, și de ce
 
 - **Nu execută nimic.** Nu există endpoint de ordine sau de retragere nicăieri în `src/`, iar un test
   verifică asta la fiecare commit.

@@ -71,6 +71,7 @@ const DETAIL = {
 
 const SORTS = [
   { id: 'rank', label: 'Ordinea motorului' },
+  { id: 'fc100', label: 'Probabilitate ≥100×' },
   { id: 'opportunity', label: 'Oportunitate' },
   { id: 'earliness', label: 'Precocitate' },
   { id: 'changes', label: 'Număr de schimbări' },
@@ -124,6 +125,7 @@ function sorted(rows) {
     cri: (r) => r.cri,
     chg7d: (r) => r.chg7d,
     fut: (r) => (r.futGrade ? (GRADE_RANK[r.futGrade] ?? 0) * 1000 + (r.futScore ?? 0) : null),
+    fc100: (r) => r.fc100,
   };
   const st = universeState.sort;
   if (st === 'rank') return rows;
@@ -184,6 +186,13 @@ function validPill(r) {
   return html`<span class="pill" data-tone="${v.tone}" data-tip="${tip(why)}">${icon(v.icon, 11)} ${v.label}${warn}</span>`;
 }
 
+/** ≥100× probability, its lift, and the ≥20× one under it. */
+function fcCell(r) {
+  if (!Number.isFinite(r.fc100)) return html`<span class="muted xs">—</span>`;
+  const p = (x) => (x < 1 ? x.toFixed(2) : x.toFixed(1));
+  return html`<span class="tok"><span>${p(r.fc100)}%${Number.isFinite(r.fcLift) && r.fcLift !== 1 ? html` <span class="muted xs">×${r.fcLift.toFixed(1)}</span>` : ''}</span><span class="tok-sub">${Number.isFinite(r.fc20) ? `≥20×: ${p(r.fc20)}%` : ''}</span></span>`;
+}
+
 function openAction(r, s) {
   if (r.detail === 'full') return html`<button class="linkish xs" type="button" data-dossier="${r.key}">dosar</button>`;
   if (s.byKey?.has(r.key)) return html`<button class="linkish xs" type="button" data-open="${r.key}">fișă</button>`;
@@ -204,6 +213,7 @@ function assetRow(r, s) {
     <td class="n">${Number.isFinite(r.changes) ? html`<span class="tok"><span>${r.changes}${r.simultaneous === 1 ? html` <span class="pill" data-tone="good">simultan</span>` : ''}</span><span class="tok-sub">${r.families ?? 0} familii</span></span>` : '—'}</td>
     <td class="n"><span class="tok"><span>${score(r.cri)}</span><span class="tok-sub">${r.analog ? `${r.analog} ${r.analogSim ?? ''}` : ''}</span></span></td>
     <td>${r.futGrade ? futuresGradeBadge(r.futGrade) : html`<span class="muted xs">${r.perps > 0 ? 'neevaluat' : 'fără perp'}</span>`}</td>
+    <td class="n">${fcCell(r)}</td>
     <td class="n"><span class="tok"><span>${usd(r.marketCap)}</span><span class="tok-sub num ${signClass(r.chg7d)}">${pct(r.chg7d)} 7z</span></span></td>
     <td class="n"><span class="tok"><span>${num(r.holders)}</span><span class="tok-sub">${usd(r.liquidityUsd)} lichid.</span></span></td>
     <td>${openAction(r, s)}</td>
@@ -281,6 +291,7 @@ function assetsPanel(s, data) {
           <th class="n">#</th><th>Token</th><th>Validare</th><th>Listări</th><th>Stadiu</th>
           <th class="n" title="Scorul de pre-expansiune">Oport.</th><th class="n" title="Cât de puțin evidentă este încă mișcarea">Precoc.</th><th class="n">Risc</th>
           <th class="n" title="Schimbări față de propria normă, în fereastra de 7 zile">Schimbări</th><th class="n">CRI · analog</th><th>Futures</th>
+          <th class="n" title="Probabilitatea unei creșteri de cel puțin 100× în 12 luni (și de câte ori peste rata de bază)">≥100×</th>
           <th class="n">Capitalizare</th><th class="n">Deținători</th><th>Detalii</th>
         </tr></thead>
         <tbody>${visible.map((r) => assetRow(r, s))}</tbody>

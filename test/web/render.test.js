@@ -23,6 +23,15 @@ import { researchMarkup, researchState } from '../../web/assets/js/views/researc
 import { parityMarkup } from '../../web/assets/js/views/parity.js';
 import { drawerMarkup } from '../../web/assets/js/views/drawer.js';
 import { validityMarkup, validityState } from '../../web/assets/js/views/validity.js';
+import { forecastMarkup } from '../../web/assets/js/views/forecast.js';
+import { agentMarkup, agentState } from '../../web/assets/js/views/agent.js';
+import { createFixturePorts } from '../../agent/adapters/fixtures.js';
+import { runAll } from '../../agent/application/monitor.js';
+import { loadAgentConfig } from '../../agent/main.js';
+import { ROOT } from '../fixture-run.js';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { validityBadge } from '../../web/assets/js/views/widgets.js';
 import { esc, html, tip } from '../../web/assets/js/core/dom.js';
 
@@ -49,7 +58,7 @@ test('escaping: interpolated values are escaped, tooltips are escaped exactly on
 });
 
 test('every view renders from the contract', () => {
-  for (const [name, fn] of Object.entries({ heroMarkup, discoveryMarkup, futuresMarkup, researchMarkup, parityMarkup, radarMarkup, analogsMarkup, catalystsMarkup, derivativesMarkup, narrativesMarkup, trackMarkup, healthMarkup, methodologyMarkup, validityMarkup, topMeta, marketStrip })) {
+  for (const [name, fn] of Object.entries({ heroMarkup, discoveryMarkup, futuresMarkup, researchMarkup, parityMarkup, radarMarkup, analogsMarkup, catalystsMarkup, derivativesMarkup, narrativesMarkup, trackMarkup, healthMarkup, methodologyMarkup, validityMarkup, forecastMarkup, topMeta, marketStrip })) {
     clean(name, fn(snap));
   }
   const n = notices(snap);
@@ -357,5 +366,69 @@ test('the Univers screen shows only verified projects by default, and every held
     assert.ok(legacy.includes(`${universeState.data.assetRows.length} proiecte`) || legacy.includes(`${universeState.data.assetRows.length.toLocaleString('ro-RO')} proiecte`), 'all rows shown');
   } finally {
     Object.assign(universeState, saved);
+  }
+});
+
+test('the forecast is on every screen that lists a project, and its own screen shows the learning list', () => {
+  const f = snap.forecast;
+  assert.ok(f, 'the demo snapshot carries the forecast');
+  const page = clean('prognoza', forecastMarkup(snap));
+  assert.ok(page.includes('Lista de învățare'), 'the learning list is shown');
+  for (const w of f.winners.filter((x) => x.status === 'CONFIRMED').slice(0, 3)) assert.ok(page.includes(`>${w.symbol}<`), `${w.symbol} listed`);
+  assert.ok(page.includes('rata de bază ≥100×'), 'the base rate is stated');
+  assert.ok(page.includes('nu este un sfat financiar'), 'and what the number is not');
+  assert.ok(!/NaN|undefined/.test(page));
+  assert.ok(String(forecastMarkup({ ...snap, forecast: undefined })).includes('nu are încă'), 'an older snapshot explains the missing forecast');
+
+  const before = discoveryState.filter;
+  try {
+    discoveryState.filter = 'all';
+    assert.ok(String(discoveryMarkup(snap)).includes('fcpill'), 'the Small-Cap Radar cards carry the forecast');
+  } finally {
+    discoveryState.filter = before;
+  }
+  const card = String(drawerMarkup(snap.candidates.find((c) => c.forecast), snap));
+  assert.ok(card.includes('Prognoză ≥100×'), 'the research card has its forecast section');
+  const dossierRow = (snap.discovery?.rows ?? []).find((r) => (r.onchain?.holderTable || r.comparison) && r.forecast);
+  if (dossierRow) {
+    const savedKey = researchState.key;
+    researchState.key = dossierRow.key;
+    try {
+      assert.ok(String(researchMarkup(snap)).includes('Prognoză: ≥100× și ≥20×'), 'the dossier has its forecast panel');
+    } finally {
+      researchState.key = savedKey;
+    }
+  }
+});
+
+test('the Agent AI screen renders while loading, without a report, and with one — every gate, cadence, efficiency, learning', async () => {
+  const saved = { ...agentState };
+  const dir = await mkdtemp(join(tmpdir(), 'cri-agent-view-'));
+  try {
+    agentState.status = 'loading';
+    assert.ok(String(agentMarkup()).includes('Se încarcă'));
+    agentState.status = 'error';
+    agentState.error = 'agentul nu a publicat încă un raport';
+    assert.ok(String(agentMarkup()).includes('npm run agent:demo'), 'the missing report explains how it appears');
+
+    const at = Date.parse(run.snapshots.at(-1).meta.generatedAt) + 3_600_000;
+    const cfg = await loadAgentConfig(ROOT);
+    cfg.mode = 'demo';
+    const clock = { now: () => at };
+    const ports = createFixturePorts({ anchorMs: at, clock, stateDir: run.stateDir, dataDir: run.outDir, memoryDir: join(dir, 'm'), reportDir: join(dir, 'r') });
+    const { report } = await runAll({ ports, cfg, nowMs: at, limits: { scanMaxMinutes: 22, topN: 1000 }, logger: { info() {}, warn() {}, debug() {} } });
+    agentState.status = 'ready';
+    agentState.data = JSON.parse(JSON.stringify(report));
+    const page = clean('agent', agentMarkup());
+    for (const g of report.gates.slice(0, 5)) assert.ok(page.includes(g.title), `gate ${g.id} listed`);
+    assert.ok(page.includes('Cadența reală față de cron'));
+    assert.ok(page.includes('Eficiența față de soluțiile profesionale'));
+    assert.ok(page.includes('Ce a învățat din istoric'));
+    assert.ok(page.includes('permisiuni contents: write'), 'the fix learned from the history is shown');
+    assert.ok(page.includes('Calibrarea prognozei'));
+    assert.ok(page.includes('Rezumat'));
+  } finally {
+    Object.assign(agentState, saved);
+    await rm(dir, { recursive: true, force: true });
   }
 });

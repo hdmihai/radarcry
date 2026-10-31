@@ -173,3 +173,47 @@ export function validityBadge(v, { compact = false } = {}) {
   const aria = v.status === 'VALID' ? `verificat${warn ? `, ${warn} ${warn === 1 ? 'atenționare' : 'atenționări'}` : ''}` : v.label ?? v.status;
   return html`<span class="pill${compact ? ' vpill' : ''}" data-tone="${tone}" aria-label="${aria}" data-tip="${tip(html`<b>Verificare de validitate: ${v.label ?? v.status}</b>${validityList(v, { compact: true })}`)}">${icon(v.status === 'VALID' ? 'check' : v.status === 'REJECTED' ? 'stop' : 'minus', 12)}${label ? ` ${label}` : ''}</span>`;
 }
+
+/* ── forecast (≥100× / ≥20× in twelve months) ───────────────────────────────────────────────── */
+
+const FC_TONE = { HIGH: 'good', ABOVE: 'good', BASE: 'muted', BELOW: 'muted', UNKNOWN: 'muted' };
+const pctText = (x) => (Number.isFinite(x) ? `${x < 1 ? x.toFixed(2) : x < 10 ? x.toFixed(1) : x.toFixed(0)}%` : '—');
+const liftText = (x) => (Number.isFinite(x) ? `×${x.toFixed(x < 10 ? 1 : 0)}` : '');
+
+/** One target of a forecast as text: "0.86% (0.37–1.65%)". */
+export function forecastText(t) {
+  if (!t || !Number.isFinite(t.pct)) return '—';
+  return `${pctText(t.pct)}${Number.isFinite(t.lo) && Number.isFinite(t.hi) ? ` (${pctText(t.lo)}–${pctText(t.hi)})` : ''}`;
+}
+
+/**
+ * The forecast pill shown next to a project: the ≥100× probability and its lift over the base rate,
+ * with the ≥20× probability, the nearest winners and the caveats in the tooltip.
+ */
+export function forecastPill(fc, { target = '100', compact = false } = {}) {
+  const t = fc?.targets?.[target];
+  if (!t || !Number.isFinite(t.pct)) return '';
+  const t20 = fc.targets?.['20'];
+  const near = (fc.nearest ?? []).map((n) => `${n.symbol} ${n.multiple}× (${n.similarity}%)`).join(', ');
+  const body = html`<b>Probabilitate ≥${target}× în 12 luni: ${forecastText(t)}</b><br>${t.basis === 'model' ? `${liftText(t.lift)} față de rata de bază` : 'egală cu rata de bază: nicio amprentă de câștigător comparabilă'}${t20 ? html`<br>≥20×: ${forecastText(t20)}` : ''}${near ? html`<br>Cei mai apropiați câștigători la minimul lor: ${near}` : ''}${fc.pastRun ? html`<br>A făcut deja ${fc.pastRun.multiple}× (vârf ${fc.pastRun.peakAt}), acum ${fc.pastRun.drawdownNowPct}% de la vârf.` : ''}<br><span class="muted">Estimare statistică a unui eveniment rar, nu predicție și nu sfat financiar.</span>`;
+  return html`<span class="pill fcpill" data-tone="${FC_TONE[t.band] ?? 'muted'}" data-tip="${tip(body)}">${icon('target', 11)} ≥${target}×: ${pctText(t.pct)}${!compact && t.basis === 'model' && Number.isFinite(t.lift) && t.lift !== 1 ? ` ${liftText(t.lift)}` : ''}</span>`;
+}
+
+/**
+ * The forecast as a block (dossier and research card): both targets with their intervals, the
+ * nearest winners at their low, and the reading rules.
+ */
+export function forecastBlock(fc, { base = null } = {}) {
+  if (!fc?.targets) return '';
+  const row = (target) => {
+    const t = fc.targets[target];
+    if (!t) return '';
+    const b = (base ?? []).find((x) => String(x.multiple) === String(target));
+    return html`<div class="kv"><span>≥${target}× în 12 luni</span><b>${forecastText(t)}</b></div>
+      <div class="kv"><span>față de rata de bază${b ? ` (${b.pct?.toFixed(2)}%)` : ''}</span><b>${t.basis === 'model' && Number.isFinite(t.lift) ? `×${t.lift.toFixed(2)}` : 'egală'}</b></div>`;
+  };
+  return html`<div class="facts">${row('100')}${row('20')}<div class="kv"><span>Trăsături cunoscute</span><b>${Number.isFinite(fc.coverage) ? `${Math.round(fc.coverage * 100)}%` : '—'}</b></div></div>
+    ${(fc.nearest ?? []).length ? html`<p class="small" style="margin-top:8px">Cel mai mult seamănă cu: ${fc.nearest.map((n, i) => html`${i ? ' · ' : ''}<b>${n.symbol}</b> ${n.multiple}× (similaritate ${n.similarity}%)`)} — comparat cu amprenta lor la minim, înainte de mișcare.</p>` : html`<p class="small muted" style="margin-top:8px">Nicio amprentă de câștigător destul de comparabilă: probabilitatea este rata de bază.</p>`}
+    ${fc.pastRun ? html`<p class="small" style="margin-top:6px">${icon('info', 12)} Proiectul este el însuși pe lista de învățare: a făcut ${fc.pastRun.multiple}× (vârf ${fc.pastRun.peakAt}) și este acum ${fc.pastRun.drawdownNowPct}% de la vârf.</p>` : ''}
+    <p class="panel-note">Estimare statistică a unui eveniment rar, nu predicție și nu sfat financiar. Detaliile modelului și lista câștigătorilor: <a href="#/prognoza">Prognoză</a>.</p>`;
+}

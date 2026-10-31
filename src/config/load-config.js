@@ -46,10 +46,11 @@ export async function loadConfig({ root, env = process.env, cli = {} }) {
   const references = await read('config/references.json', []);
   const catalysts = (await read('config/catalysts.json', { events: [] })).events ?? [];
   const labels = await read('config/labels/evm-labels.json', null);
+  // The forecast's documented learning list (the last year's big runs, each with its sources).
+  const winners = await read('config/winners.json', { items: [], excluded: [] });
 
   const keys = {
     coingecko: env.COINGECKO_API_KEY || env.COINGECKO_DEMO_API_KEY || null,
-    coingeckoPlan: env.COINGECKO_PLAN === 'pro' ? 'pro' : 'demo',
     coinmarketcap: env.CMC_API_KEY || env.COINMARKETCAP_API_KEY || null,
     coinalyze: env.COINALYZE_API_KEY || null,
     cryptoquant: env.CRYPTOQUANT_API_KEY || null,
@@ -66,7 +67,7 @@ export async function loadConfig({ root, env = process.env, cli = {} }) {
   /** Which providers are keyed this run — used by the quota gate and the parity benchmark. */
   const keyed = Object.fromEntries(SECRETS.map((s) => [s.key, Boolean(keys[s.key])]));
 
-  return { config, references, catalysts, labels, keys, keyed, secrets: SECRETS };
+  return { config, references, catalysts, labels, winners, keys, keyed, secrets: SECRETS };
 }
 
 function prune(obj) {
@@ -105,6 +106,14 @@ function validate(c) {
   for (const k of ['minDexLiquidityUsd', 'minSpotVolumeUsd', 'minAgeDays', 'fdvWarnRatio', 'turnoverWarn']) if (!nonNeg(k)) errs.push(`validity.${k} trebuie să fie ≥ 0`);
   if (v.warnTaxPct !== undefined && v.maxTaxPct !== undefined && !(v.warnTaxPct <= v.maxTaxPct)) errs.push('validity.warnTaxPct trebuie să fie ≤ validity.maxTaxPct');
   if (v.acceptGateAlphaOnly !== undefined && typeof v.acceptGateAlphaOnly !== 'boolean') errs.push('validity.acceptGateAlphaOnly trebuie să fie true sau false');
+  // The ≥100× forecast: optional (the domain has defaults), but a target below 2× or an unbounded
+  // history budget would make it meaningless or eat the CoinGecko quota.
+  const f = c.forecast ?? {};
+  if (f.targets !== undefined && !(Array.isArray(f.targets) && f.targets.length && f.targets.every((t) => Number.isFinite(t) && t >= 2))) errs.push('forecast.targets trebuie să fie o listă de multipli ≥ 2');
+  if (f.chartsPerRun !== undefined && !(Number.isInteger(f.chartsPerRun) && f.chartsPerRun >= 0 && f.chartsPerRun <= 40)) errs.push('forecast.chartsPerRun trebuie să fie un întreg între 0 și 40');
+  if (f.windowDays !== undefined && !(f.windowDays >= 30 && f.windowDays <= 365)) errs.push('forecast.windowDays trebuie să fie între 30 și 365 (istoricul gratuit CoinGecko acoperă un an)');
+  if (f.horizonDays !== undefined && !(f.horizonDays > 0 && f.horizonDays <= 730)) errs.push('forecast.horizonDays trebuie să fie între 1 și 730');
+  if (f.priorRate !== undefined && !(f.priorRate > 0 && f.priorRate < 1)) errs.push('forecast.priorRate trebuie să fie între 0 și 1');
   for (const [name, q] of Object.entries(c.quotas ?? {})) {
     if (q.month !== undefined && !(q.month > 0)) errs.push(`quotas.${name}.month trebuie să fie pozitiv`);
     if (q.day !== undefined && !(q.day > 0)) errs.push(`quotas.${name}.day trebuie să fie pozitiv`);

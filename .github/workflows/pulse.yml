@@ -119,6 +119,15 @@ jobs:
             commit -q -m "pulse: run ${GITHUB_RUN_ID} ($(date -u +%Y-%m-%dT%H:%MZ))"
           git push -q --force "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:refs/heads/cri-state
 
+      - name: Include the AI agent's report (cri-agent branch), when there is one
+        if: steps.restore.outputs.have_snapshot == 'true'
+        run: |
+          if git fetch --no-tags --depth=1 origin cri-agent 2>/dev/null && git show FETCH_HEAD:report/agent.json > data/agent.json 2>/dev/null; then
+            echo "Raportul agentului AI inclus în site."
+          else
+            rm -f data/agent.json
+          fi
+
       - name: Build static site
         if: steps.restore.outputs.have_snapshot == 'true'
         run: node scripts/build-site.js

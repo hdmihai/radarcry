@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
  * Assemble the static site: dist/ = web/ (frontend) + data/latest.json + data/summary.json +
- * data/universe.json (the whole research horizon, loaded by the dashboard on demand).
+ * data/universe.json (the whole research horizon, loaded by the dashboard on demand) +
+ * data/agent.json (the AI quality agent's report, when present; also loaded on demand).
  * The frontend has no build step (native ES modules); this only copies and validates inputs.
  *
  *   node scripts/build-site.js [--data data] [--out dist]
@@ -47,6 +48,14 @@ async function main() {
       JSON.parse(ubody); // same rule: never publish a truncated file
       await writeFile(join(outDir, 'data', 'universe.json'), ubody);
       extra = `, univers ${(ubody.length / 1024).toFixed(0)} KB`;
+    }
+    // The AI agent's report (from the cri-agent branch, or the demo agent), when there is one.
+    const agent = join(dataDir, 'agent.json');
+    if (await exists(agent)) {
+      const abody = await readFile(agent, 'utf8');
+      JSON.parse(abody);
+      await writeFile(join(outDir, 'data', 'agent.json'), abody);
+      extra += `, agent ${(abody.length / 1024).toFixed(0)} KB`;
     }
     console.log(`site: ${outDir} (snapshot ${(body.length / 1024).toFixed(0)} KB${extra})`);
   } else {

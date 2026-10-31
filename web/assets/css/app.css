@@ -664,6 +664,11 @@ details.domain .domain-facts div { display: flex; justify-content: space-between
 .tbl td.vcol-why { min-width: 260px; white-space: normal; line-height: 1.4; }
 .pill.vpill svg { flex: none; }
 
+/* ≥100× forecast pill */
+.pill.fcpill { padding-inline: 6px; gap: 3px; font-variant-numeric: tabular-nums; }
+.pill.fcpill svg { flex: none; }
+.tbl td.fccol { white-space: nowrap; }
+
 /* hard filters of the futures grade */
 .hardfilter { display: flex; gap: 8px; align-items: flex-start; margin-top: 10px; padding: 8px 10px; border-radius: 8px; font-size: 12.5px; }
 .hardfilter[data-kind='block'] { background: color-mix(in srgb, var(--critical) 14%, var(--surface)); border: 1px solid color-mix(in srgb, var(--critical) 40%, var(--line)); }
@@ -801,3 +806,15 @@ details.domain .domain-facts div { display: flex; justify-content: space-between
 .select-wrap > .select { width: 100%; }
 .fbar { min-width: 0; }
 .fbar > .bar-k { min-width: 0; overflow-wrap: anywhere; }
+
+/* Agent AI screen */
+.qstat[data-tone='critical'] > b { color: var(--critical); }
+.panel.agent-finding { padding: 12px 14px; }
+.panel.agent-finding + .panel.agent-finding { margin-top: 0; }
+.panel.agent-summary { padding: 14px 16px; }
+.view code, .panel code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.92em; padding: 0 3px; border-radius: 4px; background: var(--surface-2); overflow-wrap: anywhere; }
+.ameter { display: inline-flex; align-items: center; gap: 8px; }
+.ameter-track { position: relative; display: inline-block; width: 110px; height: 8px; border-radius: 3px; background: var(--surface-3); overflow: hidden; }
+.ameter-track > b { position: absolute; inset: 0 auto 0 0; background: var(--seq-3); border-radius: 3px; }
+.card-row.agent-row { cursor: default; }
+.card-row.agent-row .line { overflow-wrap: anywhere; }

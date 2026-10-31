@@ -61,7 +61,7 @@ export function createLiveProviders({ config, keys, telemetry, logger, deadlineM
   const http = createHttpClient({ telemetry, logger, deadlineMs, gate });
   const p = config.providers;
   return {
-    coingecko: createCoinGecko({ http, cfg: p.coingecko, apiKey: keys.coingecko, plan: keys.coingeckoPlan }),
+    coingecko: createCoinGecko({ http, cfg: p.coingecko, apiKey: keys.coingecko }),
     coinmarketcap: createCoinMarketCap({ http, cfg: p.coinmarketcap, apiKey: keys.coinmarketcap }),
     coinpaprika: createCoinPaprika({ http, cfg: p.coinpaprika }),
     mexc: createMexc({ http, cfg: p.mexc, futuresCfg: p.mexc_futures }),
@@ -91,7 +91,7 @@ export function createLiveProviders({ config, keys, telemetry, logger, deadlineM
 
 async function scan(opts) {
   const logger = createLogger({ verbose: Boolean(opts.verbose) });
-  const { config, references, catalysts, labels, keys, keyed } = await loadConfig({ root: ROOT, cli: opts });
+  const { config, references, catalysts, labels, winners, keys, keyed } = await loadConfig({ root: ROOT, cli: opts });
   const outDir = resolve(opts.out ?? process.env.CRI_OUT_DIR ?? join(ROOT, 'data'));
   const stateDir = resolve(opts.state ?? process.env.CRI_STATE_DIR ?? join(ROOT, '.cri-state'));
   // A replay starts from an empty state: time must only move forward inside a state directory.
@@ -120,6 +120,7 @@ async function scan(opts) {
         publisher,
         referencesConfig: references,
         manualCatalysts: catalysts,
+        winnersSeed: winners,
         labels,
         keys: {},
         keyed: {},
@@ -149,7 +150,7 @@ async function scan(opts) {
   try {
     const result = await runScan({
       clock, logger, telemetry, providers, stateRepo, publisher,
-      referencesConfig: references, manualCatalysts: catalysts, labels,
+      referencesConfig: references, manualCatalysts: catalysts, winnersSeed: winners, labels,
       keys, keyed, quotaGate, mode: 'live',
     }, config);
     report(logger, result);

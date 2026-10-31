@@ -5,7 +5,9 @@
  * The requirement was explicit: efficiency comparable to commercial solutions, at a minimum of 90 %
  * of their performance. That claim is only meaningful if it is computed, so this module holds the
  * capability matrix: every capability a paid desk (Nansen / Arkham Pro / CoinGlass / Messari /
- * Kaito class) offers, its weight in a *research* workflow, and the honest status of our coverage.
+ * Kaito / Token Metrics class) offers, its weight in a *research* workflow, and the honest status of
+ * our coverage. The operational side — how often the data is actually refreshed, how reliably — is
+ * measured by the AI agent (agent/domain/efficiency.js) on top of these figures.
  *
  * Status values:
  *   FREE_API      — reproduced in code, from a public or free-account API
@@ -84,6 +86,9 @@ export const CAPABILITIES = [
   { key: 'backtest', label: 'Track record verificabil al semnalelor', weight: 5, status: STATUS.FREE_API, how: 'jurnal point-in-time cu scadențe la 7/14/30 zile și intervale Wilson 95%', sources: [] },
   { key: 'explainability', label: 'Scor explicabil, factor cu factor, cu sursă', weight: 5, status: STATUS.FREE_API, how: 'fiecare factor își raportează ponderea, calitatea datelor și dovada', sources: [] },
   { key: 'pit_history', label: 'Istoric point-in-time propriu (normă per proiect)', weight: 5, status: STATUS.FREE_API, how: 'ramura de stare a repo-ului, un punct per rulare per proiect', sources: [] },
+  { key: 'validity_gate', label: 'Verificarea proiectului înainte de listă (scam, proiect real, listare pe burse)', weight: 5, status: STATUS.FREE_API, how: 'poarta de validitate: GoPlus (EVM și Solana), agregatori, burse spot și perpetue, Binance Alpha, DexScreener — cinci verificări obligatorii', sources: ['goplus', 'coingecko', 'dexscreener'] },
+  { key: 'predictive', label: 'Prognoză probabilistică (≥100× / ≥20× în 12 luni), învățată din câștigătorii anului', weight: 4, status: STATUS.FREE_DERIVED, how: 'rată de bază + raport de verosimilitate pe amprenta de la minim; istoric zilnic CoinGecko (gratuit), marcat ca estimare', sources: ['coingecko'] },
+  { key: 'quality_monitoring', label: 'Monitorizarea calității datelor și a rulărilor (agent AI)', weight: 3, status: STATUS.FREE_API, how: 'agent separat pe GitHub Actions: API GitHub cu tokenul automat + model deschis rulat local (Ollama), fără cont', sources: [] },
 ];
 
 const TOTAL_WEIGHT = CAPABILITIES.reduce((s, c) => s + c.weight, 0);

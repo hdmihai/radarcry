@@ -146,6 +146,15 @@ jobs:
           git push -q --force "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:refs/heads/cri-state
           echo "Stare salvată: $(du -sh . | cut -f1)"
 
+      - name: Include the AI agent's report (cri-agent branch), when there is one
+        run: |
+          if git fetch --no-tags --depth=1 origin cri-agent 2>/dev/null && git show FETCH_HEAD:report/agent.json > data/agent.json 2>/dev/null; then
+            echo "Raportul agentului AI inclus în site."
+          else
+            rm -f data/agent.json
+            echo "Agentul AI nu a publicat încă un raport; ecranul „Agent AI” afișează instrucțiunile."
+          fi
+
       - name: Build static site
         run: node scripts/build-site.js
 

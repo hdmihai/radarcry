@@ -6,6 +6,7 @@
  * violates its contract.
  *
  *   node scripts/validate-snapshot.js data/latest.json
+ *   node scripts/validate-snapshot.js --agent data/agent.json     (the AI agent's report)
  */
 import { readFile, stat } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
@@ -13,6 +14,29 @@ import { fileURLToPath } from 'node:url';
 import { validateSchema } from '../src/adapters/outbound/publishing/schema-validator.js';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+
+// `--agent <file>`: validate the AI agent's report (data/agent.json) against schema/agent.schema.json.
+if (process.argv[2] === '--agent') {
+  const aFile = resolve(process.cwd(), process.argv[3] ?? 'data/agent.json');
+  try {
+    const schema = JSON.parse(await readFile(resolve(root, 'schema/agent.schema.json'), 'utf8'));
+    const report = JSON.parse(await readFile(aFile, 'utf8'));
+    const errors = validateSchema(report, schema);
+    if (errors.length) {
+      console.error(`INVALID ${aFile}: ${errors.length} erori`);
+      for (const e of errors.slice(0, 25)) console.error(`  - ${e}`);
+      process.exit(1);
+    }
+    const c = report.summary.counts;
+    console.log(`OK ${aFile}`);
+    console.log(`  agent ${report.schemaVersion}, mod ${report.mode}, stare ${report.overall}: ${c.PASS} trecute, ${c.WARN} atenționări, ${c.FAIL} eșecuri, ${c.UNKNOWN + c.LEARNING} fără date sau în învățare`);
+    process.exit(0);
+  } catch (err) {
+    console.error(`INVALID ${aFile}: ${err.message}`);
+    process.exit(1);
+  }
+}
+
 const file = resolve(process.cwd(), process.argv[2] ?? 'data/latest.json');
 
 try {

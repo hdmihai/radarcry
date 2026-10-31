@@ -1,0 +1,121 @@
+{
+  "description": "Lista de învățare a prognozei ≥100×: proiectele care în ultimele 12 luni au urcat de la un minim la un vârf de cel puțin 15× (clasa LAB / BTW / IRYS). Valorile documentate vin din surse publice (ATL/ATH ale agregatorilor) și sunt doar punctul de plecare: la fiecare scanare, istoricul zilnic CoinGecko confirmă sau infirmă fiecare intrare (mediană pe 3 zile, prag de capitalizare și volum la minim) și măsoară amprenta proiectului la minim, strict înainte de mișcare. Lista se completează automat din ATL/ATH-urile întregii piețe.",
+  "asOf": "2026-10-31",
+  "items": [
+    {
+      "symbol": "AKE",
+      "name": "AKEDO",
+      "coingeckoId": "akedo",
+      "chain": "bsc",
+      "documented": { "low": { "price": 0.000174, "at": "2026-07" }, "peak": { "price": 0.140097, "at": "2026-09-20" }, "multiple": 805, "drawdownNowPct": -82.4 },
+      "note": "Minimul de $0.000174 (iulie 2026) este raportat de agregator; dacă a fost un tick izolat, mediana pe închideri zilnice îl infirmă și multiplul scade.",
+      "sources": [{ "title": "CoinLore — AKEDO: ATH $0.1401 (20 sep 2026), ATL $0.000174 (iul 2026), $0.0246 acum", "url": "https://www.coinlore.com/coin/akedo" }]
+    },
+    {
+      "symbol": "BTW",
+      "name": "Bitway",
+      "coingeckoId": "bitway",
+      "chain": "bsc",
+      "static": { "floatRatio": 0.15, "top10Pct": 97, "perpVenues": 3, "alphaListed": true },
+      "documented": { "low": { "price": 0.007687, "at": "2026-03-02" }, "peak": { "price": 2.75, "at": "2026-10-14" }, "multiple": 357.7, "days": 226, "drawdownNowPct": -54.2 },
+      "sources": [{ "title": "CryptoSlate — Bitway: ATL $0.007687 (2 mar 2026), ATH $2.75 (14 oct 2026), $1.26 pe 30 oct 2026", "url": "https://cryptoslate.com/coins/bitway/" }]
+    },
+    {
+      "symbol": "PIPPIN",
+      "name": "pippin",
+      "coingeckoId": "pippin",
+      "chain": "solana",
+      "documented": { "low": { "price": 0.00257, "at": "2025-10" }, "peak": { "price": 0.897279, "at": "2026-02-26" }, "multiple": 349, "drawdownNowPct": -98.3 },
+      "note": "Minimul este din octombrie 2025, la marginea ferestrei de 12 luni; istoricul zilnic decide ce parte a mișcării cade în fereastră.",
+      "sources": [{ "title": "CoinLore — pippin: ATH $0.8973 (26 feb 2026), ATL $0.00257 (oct 2025), $0.0152 acum", "url": "https://www.coinlore.com/coin/pippin" }]
+    },
+    {
+      "symbol": "LAB",
+      "name": "LAB",
+      "coingeckoId": "lab",
+      "chain": "bsc",
+      "listedAt": "2025-10-15",
+      "static": { "floatRatio": 0.08, "top10Pct": 85, "perpVenues": 2, "alphaListed": true },
+      "documented": { "low": { "price": 0.1, "at": "2025-12" }, "peak": { "price": 27.48, "at": "2026-06" }, "multiple": 274.8, "drawdownNowPct": -99.8 },
+      "note": "Sub $0.10 la final de 2025, ATH $27.48–27.96 în iunie 2026, astăzi $0.044 — un ciclu complet de pump și prăbușire.",
+      "sources": [
+        { "title": "CoinGecko — LAB: ATH $27.48, preț $0.0443, −99.8% de la vârf", "url": "https://coingecko.com/coins/lab" },
+        { "title": "Phemex Academy — What is LAB token (float ~7.7%, +364% pe 3 mai 2026)", "url": "https://phemex.com/academy/what-is-lab-token-and-why-it-surged" },
+        { "title": "BeInCrypto — LAB rally parabolic, ATH $27.96", "url": "https://beincrypto.com/lab-price-rally-whale-long-positions/" }
+      ]
+    },
+    {
+      "symbol": "AGT",
+      "name": "Alaya Governance Token",
+      "coingeckoId": "alaya-ai",
+      "chain": "bsc",
+      "listedAt": "2025-05-21",
+      "static": { "floatRatio": 0.65, "top10Pct": 80, "perpVenues": 2, "alphaListed": true },
+      "documented": { "low": { "price": 0.00161, "at": "2025-10" }, "peak": { "price": 0.109937, "at": "2026-10-18" }, "multiple": 68.3, "drawdownNowPct": -31.9 },
+      "sources": [{ "title": "CoinLore — Alaya Governance Token: ATH $0.1099 (18 oct 2026), ATL $0.00161 (oct 2025)", "url": "https://www.coinlore.com/coin/alaya-ai" }]
+    },
+    {
+      "symbol": "VVV",
+      "name": "Venice Token",
+      "coingeckoId": "venice-token",
+      "chain": "base",
+      "documented": { "low": { "price": 0.9172, "at": "2025-11" }, "peak": { "price": 34.47, "at": "2026-09-21" }, "multiple": 37.6, "drawdownNowPct": -38.4 },
+      "sources": [{ "title": "CoinLore — Venice Token: ATH $34.47 (sep 2026), ATL $0.9172 (nov 2025), $21.22 acum", "url": "https://www.coinlore.com/coin/venice-token" }]
+    },
+    {
+      "symbol": "IRYS",
+      "name": "Irys",
+      "coingeckoId": "irys",
+      "chain": null,
+      "listedAt": "2025-11-25",
+      "documented": { "low": { "price": 0.0118, "at": "2026-10" }, "peak": { "price": 0.264837, "at": "2026-10-23" }, "multiple": 22.4, "drawdownNowPct": -91.5 },
+      "note": "Layer 1 propriu (compatibil EVM), tranzacționat din 25 nov 2025; urcarea și căderea din octombrie 2026 au durat câteva zile.",
+      "sources": [
+        { "title": "CoinLore — Irys: ATH $0.2648 (23 oct 2026), ATL $0.0118 (oct 2026), tranzacționat din 25 nov 2025", "url": "https://www.coinlore.com/coin/irys" },
+        { "title": "CoinGecko — Irys: ATH $0.2959, ATL $0.01172, preț $0.0224", "url": "https://www.coingecko.com/en/coins/irys/usd" },
+        { "title": "KuCoin News — IRYS +99% după lansarea mainnet (nov 2025)", "url": "https://www.kucoin.com/news/flash/irys-irys-token-surges-99-after-mainnet-launch" }
+      ]
+    },
+    {
+      "symbol": "RIVER",
+      "name": "River",
+      "coingeckoId": "river",
+      "chain": "bsc",
+      "documented": { "low": { "price": 5, "at": "2025-12" }, "peak": { "price": 87.54, "at": "2026-01-26" }, "multiple": 17.5, "days": 30, "drawdownNowPct": -98.9 },
+      "note": "Multiplu minim (de la ~$5 la final de decembrie 2025); minimul anual se citește din istoric.",
+      "sources": [
+        { "title": "Decrypt — RIVER +1.900% într-o lună, ~$82, capitalizare ~$1,6 mld (26 ian 2026)", "url": "https://decrypt.co/355906/river-crypto-token-up-1900-last-month-whats-deal" },
+        { "title": "CoinLore — River: ATH $87.54 (26 ian 2026), $0.93 acum", "url": "https://www.coinlore.com/coin/river" }
+      ]
+    },
+    {
+      "symbol": "BEAT",
+      "name": "Audiera",
+      "coingeckoId": "audiera",
+      "chain": "bsc",
+      "documented": { "low": { "price": 0.59, "at": "2026-05" }, "peak": { "price": 11.1, "at": "2026-06-12" }, "multiple": 18.8, "drawdownNowPct": -99.1 },
+      "note": "Multiplu minim: +1.454% într-o lună până la $9.17 (11 iun 2026), ATH $11.10 a doua zi; minimul anual se citește din istoric.",
+      "sources": [
+        { "title": "KuCoin News — BEAT +1.454% într-o lună, ATH $9.17 (11 iun 2026)", "url": "https://www.kucoin.com/news/flash/beat-surges-1-454-as-ai-music-platform-audiera-defies-crypto-market-slump" },
+        { "title": "CryptoSlate — Audiera: ATH $11.10 (12 iun 2026), $0.098 pe 31 oct 2026", "url": "https://cryptoslate.com/coins/audiera/" }
+      ]
+    },
+    {
+      "symbol": "AIA",
+      "name": "DeAgentAI",
+      "coingeckoId": "deagentai",
+      "chain": "bsc",
+      "documented": { "peak": { "price": 25.52, "at": "2025-11-07" } },
+      "note": "Tranzacționat din mijlocul lui septembrie 2025, +730% într-o singură zi pe 7 nov 2025; minimul dinaintea mișcării nu e publicat — se citește din istoric.",
+      "sources": [
+        { "title": "Crypto News Navigator — AIA +730% într-o zi (7 nov 2025)", "url": "https://www.cryptonewsnavigator.com/news/market/deagentai-aia-skyrockets-by-730-in-a-day-whats-going-on-TLbSBIZTx3rbZtjVmoEeGz" },
+        { "title": "CryptoSlate — DeAgentAI: ATH $25.52 (7 nov 2025), $0.07 acum", "url": "https://cryptoslate.com/?p=502701" }
+      ]
+    }
+  ],
+  "excluded": [
+    { "symbol": "YZY", "name": "YZY MONEY", "reason": "Minimul raportat ($0.000279, feb 2026) urmează unui ATH de $0.85 și pare un tick izolat; dacă e real, istoricul zilnic îl confirmă și proiectul intră automat în listă.", "url": "https://www.coinlore.com/coin/yzy" },
+    { "symbol": "DOYR", "name": "DOYR", "reason": "+5.891% într-o săptămână (dec 2025), dar de la o capitalizare de ~80 mii $, sub pragul de 1 M$ al universului: radarul nu poate vedea un asemenea proiect înainte de mișcare.", "url": "https://coinmarketcap.com/academy/article/binance-alpha-news-doyrs-5891percent-surge-defies-market-wide-fear" },
+    { "symbol": "MYX, COAI, 币安人生", "name": "MYX Finance, ChainOpera AI, Binance Life", "reason": "Mișcările principale s-au încheiat înainte de fereastra ultimelor 12 luni (august–octombrie 2025).", "url": "https://www.coinlore.com/top-crypto-coins/2026" }
+  ]
+}

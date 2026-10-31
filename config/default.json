@@ -18,6 +18,22 @@
     "turnoverWarn": 3,
     "acceptGateAlphaOnly": false
   },
+  "forecast": {
+    "targets": [100, 20],
+    "horizonDays": 365,
+    "windowDays": 365,
+    "minMultiple": 15,
+    "minLowVolumeUsd": 25000,
+    "chartsPerRun": 8,
+    "refreshDays": 30,
+    "priorRate": 0.005,
+    "priorWeight": 200,
+    "sigma": 22,
+    "minCoverage": 0.35,
+    "shrinkK": 5,
+    "lrClamp": 25,
+    "topRows": 40
+  },
   "deep": {
     "limit": 60,
     "keepWatchlist": 24,

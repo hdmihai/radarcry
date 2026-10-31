@@ -157,7 +157,20 @@ export function createHttpClient({
       return { kind: 'stop', result: { ok: false, status: STATUS.GEO_BLOCKED, data: null, message: `HTTP ${res.status} (restricționat geografic)` } };
     }
     if (res.status >= 500) return { kind: 'retry', result: { ok: false, status: STATUS.HTTP_ERROR, data: null, message: `HTTP ${res.status}` } };
+    /*
+     * 404 / 410 are answers about *that* resource (a repository deleted or made private, a coin id
+     * the aggregator dropped), not signs that the provider is failing: they stop this call but never
+     * count towards the circuit breaker. Counting them used to open GitHub's circuit after two
+     * projects with stale repository links, so development activity went dark for the rest of every run.
+     */
+    if (res.status === 404 || res.status === 410) return { kind: 'stop', notFound: true, result: { ok: false, status: STATUS.HTTP_ERROR, data: null, message: `HTTP ${res.status}: resursa nu există` } };
     if (res.status >= 400) return { kind: 'stop', result: { ok: false, status: STATUS.HTTP_ERROR, data: null, message: `HTTP ${res.status}: ${text.slice(0, 400).replace(/\s+/g, ' ').trim().slice(0, 160)}` } };
+
+    // "Accepted, still computing" (GitHub statistics answer 202 with an empty body) is a valid answer
+    // when the adapter says what an empty answer means; otherwise an empty body is an invalid payload.
+    if ((res.status === 202 || res.status === 204) && !text.trim() && o.emptyAs !== undefined) {
+      return { kind: 'ok', result: { ok: true, status: STATUS.OK, data: o.emptyAs, message: `HTTP ${res.status}: răspuns gol (în curs de calcul la furnizor)` } };
+    }
 
     let data;
     try {
@@ -192,7 +205,7 @@ export function createHttpClient({
    *          rateLimitCooldownMs?:number, rateLimitStrikes?:number, maxSlowMs?:number,
    *          validate?:(data:any)=>boolean, classify?:(data:any)=>({status:string, message?:string}|null),
    *          redact?:(message:string)=>string,
-   *          parse?: 'json'|'text', hash?: boolean, units?: number,
+   *          parse?: 'json'|'text', hash?: boolean, units?: number, emptyAs?: any,
    *          method?: 'GET'|'POST', body?: string, contentType?: string}} o
    */
   async function request(url, o) {
@@ -215,6 +228,7 @@ export function createHttpClient({
 
     const retries = o.retries ?? 2;
     let last = null;
+    let notFound = false;
     for (let attempt = 0; attempt <= retries; attempt += 1) {
       const release = await pace(st, (o.minIntervalMs ?? 0) + st.slowMs);
       // The wait in the queue (or a cooldown) may have outlived the run.
@@ -242,6 +256,7 @@ export function createHttpClient({
         return done(out.result);
       }
       last = out.result;
+      notFound = out.notFound === true;
       if (out.kind === 'stop' || attempt >= retries) break;
       if (out.kind === 'rate') {
         // pace() waits the cooldown out — unless it would end after the run does.
@@ -255,7 +270,7 @@ export function createHttpClient({
     if (last?.status === STATUS.RATE_LIMITED) {
       st.limited += 1;
       if (st.limited >= (o.rateLimitStrikes ?? 4)) st.open = true;
-    } else if (last && BREAKER.has(last.status)) {
+    } else if (last && BREAKER.has(last.status) && !notFound) {
       st.failures += 1;
       if (st.failures >= (o.breakerThreshold ?? 4) || last.status === STATUS.GEO_BLOCKED) st.open = true;
     }

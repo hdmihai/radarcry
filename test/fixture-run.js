@@ -22,7 +22,7 @@ export async function runFixtureDays({ days = 1, endMs = END_MS, configPatch = n
   const dir = await mkdtemp(join(tmpdir(), 'cri-test-'));
   const stateDir = join(dir, 'state');
   const outDir = join(dir, 'out');
-  const { config, references, catalysts } = await loadConfig({ root: ROOT, env: {} });
+  const { config, references, catalysts, winners } = await loadConfig({ root: ROOT, env: {} });
   configPatch?.(config);
   const market = createDemoMarket({ endMs });
   const stateRepo = createFsStateRepository({ dir: stateDir });
@@ -31,7 +31,7 @@ export async function runFixtureDays({ days = 1, endMs = END_MS, configPatch = n
   for (let d = days - 1; d >= 0; d -= 1) {
     const clock = fixedClock(endMs - d * 86_400_000);
     const providers = createFixtureProviders({ market, clock });
-    const r = await runScan({ clock, logger: silentLogger, telemetry: createTelemetry(), providers, stateRepo, publisher, referencesConfig: references, manualCatalysts: catalysts, mode: 'fixture' }, config);
+    const r = await runScan({ clock, logger: silentLogger, telemetry: createTelemetry(), providers, stateRepo, publisher, referencesConfig: references, manualCatalysts: catalysts, winnersSeed: winners, mode: 'fixture' }, config);
     snapshots.push(r.snapshot);
   }
   return { snapshots, dir, stateDir, outDir, config, cleanup: () => rm(dir, { recursive: true, force: true }) };

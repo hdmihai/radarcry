@@ -91,6 +91,14 @@ function pathFor(arch, rnd, nDays, endIdx, opts = {}) {
         const pts = [[-400, 0.08], [-300, 0.06], [-120, 0.05], [-75, 0.052], [-72, 0.09], [-50, 0.6], [-30, 1.3], [-3, 2.75], [-2, 2.45], [0, 1.9]];
         return interp(pts, nDays, endIdx, rnd, opts, [-72, -3, 4.5]);
       }
+      case 'WINNER': {
+        // decline → quiet base at the low → explosive run (gain×) → crash → drift: the shape of the
+        // last year's LAB / BTW / IRYS-class runs, planted so the forecast has winners to learn from.
+        const { lowAt, peakAt, gain, crash } = sched;
+        const mid = Math.round(lowAt + (peakAt - lowAt) * 0.6);
+        const pts = [[-430, 3], [lowAt - 90, 1.4], [lowAt - 40, 1.05], [lowAt, 1], [mid, Math.sqrt(gain) * 0.9], [peakAt, gain], [peakAt + 25, gain * (1 - crash)], [0, gain * (1 - crash) * 0.85]];
+        return interp(pts, nDays, endIdx, rnd, opts, [lowAt + 1, peakAt, 1.2]);
+      }
       case 'REF_AGT': {
         const pts = [[-400, 0.05], [-320, 0.03], [-150, 0.016], [-75, 0.0144], [-70, 0.0145], [-58, 0.03], [-40, 0.028], [-15, 0.04], [-4, 0.062], [0, 0.058]];
         return interp(pts, nDays, endIdx, rnd, opts, [-70, -4, 3.5]);
@@ -145,7 +153,7 @@ export function createDemoMarket({ endMs, days = 430, size = 1260, seed = 202610
   const rnd = mulberry32(seed);
   const startMs = endMs - (days - 1) * DAY;
   const endIdx = days - 1;
-  const used = new Set(ANCHORS.map((a) => a[1]).concat(['LAB', 'BTW', 'AGT']));
+  const used = new Set(ANCHORS.map((a) => a[1]).concat(['LAB', 'BTW', 'AGT'], DEMO_WINNERS.map((w) => w.symbol)));
   const assets = [];
 
   for (const [id, symbol, name, mcap, chain, tag] of ANCHORS) {
@@ -227,8 +235,32 @@ export function createDemoMarket({ endMs, days = 430, size = 1260, seed = 202610
     a.watch0 = Math.round(10 ** (3 + r() * 2));
     assets.push(a);
   }
+  // The last year's big winners (fictional): planted after the synthetic projects so the rest of the
+  // simulated universe is unchanged by their presence.
+  for (const w of DEMO_WINNERS) {
+    const r = mulberry32(hashSeed(w.id));
+    const p = pathFor('WINNER', r, days, endIdx, { turnover: 0.1, sched: w });
+    const scale = w.mcapNow / w.circ / p.c[endIdx];
+    const a = baseAsset({ id: w.id, symbol: w.symbol, name: w.name, chain: w.chain, tags: [], circ: w.circ, total: w.total, max: w.total, path: { c: p.c.map((x) => x * scale), turnover: p.turnover }, listedAt: endMs - 520 * DAY, rnd: r, archetype: 'WINNER' });
+    a.venues = { mexc: true, perps: ['mexc', 'gate', 'bitget'], upbit: false, bithumb: false, alpha: w.chain === 'bsc', alphaCex: false };
+    a.top10 = 82 + r() * 14;
+    a.categories = ['AI Agents', ...(w.chain === 'bsc' ? ['BNB Chain Ecosystem'] : [])];
+    a.holders0 = Math.round(10 ** (3.6 + r()));
+    a.watch0 = Math.round(10 ** (3 + r() * 2));
+    assets.push(a);
+  }
   return { assets, startMs, endMs, days };
 }
+
+/** Fictional winners of the simulated last year: day of the low and of the peak relative to "now". */
+const DEMO_WINNERS = [
+  { id: 'demo-winnara', symbol: 'WNRA', name: 'Winnara Protocol', chain: 'bsc', lowAt: -300, peakAt: -215, gain: 180, crash: 0.92, circ: 4e8, total: 2.5e9, mcapNow: 24e6 },
+  { id: 'demo-velobyte', symbol: 'VLBT', name: 'Velobyte AI', chain: 'bsc', lowAt: -250, peakAt: -170, gain: 120, crash: 0.95, circ: 6e8, total: 4e9, mcapNow: 31e6 },
+  { id: 'demo-pyxel', symbol: 'PYXL', name: 'Pyxel AI', chain: 'solana', lowAt: -140, peakAt: -70, gain: 230, crash: 0.85, circ: 9e8, total: 1e9, mcapNow: 62e6 },
+  { id: 'demo-quorix', symbol: 'QRXN', name: 'Quorix Network', chain: 'bsc', lowAt: -200, peakAt: -95, gain: 48, crash: 0.55, circ: 2e8, total: 1e9, mcapNow: 410e6 },
+  { id: 'demo-lumora', symbol: 'LMRA', name: 'Lumora', chain: 'base', lowAt: -160, peakAt: -60, gain: 27, crash: 0.5, circ: 3e8, total: 1e9, mcapNow: 150e6 },
+  { id: 'demo-strakon', symbol: 'STKN', name: 'Strakon', chain: 'bsc', lowAt: -120, peakAt: -45, gain: 17, crash: 0.7, circ: 5e8, total: 2e9, mcapNow: 38e6 },
+];
 
 function baseAsset({ id, symbol, name, chain, tags, circ, total, max, path, listedAt, rnd, archetype }) {
   return {
@@ -255,7 +287,13 @@ export function stateAt(m, a, tMs) {
   const back = (d) => a.path.c[Math.max(firstIdx, idx - d)];
   const ch = (d) => (idx - d >= firstIdx ? (p / back(d) - 1) * 100 : null);
   let ath = 0;
-  for (let i = firstIdx; i <= idx; i += 1) ath = Math.max(ath, a.path.c[i]);
+  let athIdx = firstIdx;
+  let atl = Infinity;
+  let atlIdx = firstIdx;
+  for (let i = firstIdx; i <= idx; i += 1) {
+    if (a.path.c[i] > ath) { ath = a.path.c[i]; athIdx = i; }
+    if (a.path.c[i] < atl) { atl = a.path.c[i]; atlIdx = i; }
+  }
   const circ = a.circ;
   const mcap = p * circ;
   return {
@@ -265,6 +303,9 @@ export function stateAt(m, a, tMs) {
     change: { h1: (a.path.c[idx] / a.path.c[Math.max(0, idx - 1)] - 1) * 100 / 24, h24: ch(1), d7: ch(7), d14: ch(14), d30: ch(30), d200: ch(200), y1: ch(365) },
     ath,
     athChangePct: (p / ath - 1) * 100,
+    athMs: m.startMs + athIdx * DAY,
+    atl,
+    atlMs: m.startMs + atlIdx * DAY,
     idx,
   };
 }
