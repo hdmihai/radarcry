@@ -7,6 +7,8 @@
  *   POST  /actions/workflows/{file}/dispatches   start a workflow the scheduler skipped
  *   POST/PATCH /issues                            one rolling findings issue
  * There is no delete, no cancel, no re-run, no content write — the architecture test checks it.
+ * (The chat's pull requests and comments are written by the shell steps of agent-chat.yml with the
+ * `gh` CLI, in a job that never runs the proposed code; this adapter only reads them back.)
  */
 const API = 'https://api.github.com';
 
@@ -78,6 +80,10 @@ export function createGitHub({ token = null, repo, fetchImpl = fetch, timeoutMs 
     lastCommit: async (branch) => map(await call('GET', `${base}/commits?sha=${encodeURIComponent(branch)}&per_page=1`), (d) => ({ sha: d[0]?.sha ?? null, message: String(d[0]?.commit?.message ?? '').split('\n')[0], at: d[0]?.commit?.committer?.date ?? null })),
     workflows: async () => map(await call('GET', `${base}/actions/workflows?per_page=100`), (d) => (d.workflows ?? []).map((w) => ({ id: w.id, name: w.name, path: w.path, state: w.state, createdAt: w.created_at }))),
     runs: async (file, perPage = 100) => map(await call('GET', `${base}/actions/workflows/${encodeURIComponent(file)}/runs?per_page=${perPage}`), (d) => (d.workflow_runs ?? []).map(normRun)),
+    /** One run by id (the chat's diagnosis of a run the owner names). */
+    run: async (runId) => map(await call('GET', `${base}/actions/runs/${Number(runId)}`), (d) => ({ ...normRun(d), file: String(d.path ?? '').split('/').pop() || null, name: d.name ?? null })),
+    /** The pull requests the agent opened (branches agent/…): its code proposals and their fate. Read only. */
+    agentPulls: async () => map(await call('GET', `${base}/pulls?state=all&per_page=50&sort=created&direction=desc`), (d) => (d ?? []).filter((p) => String(p.head?.ref ?? '').startsWith('agent/')).map((p) => ({ number: p.number, title: p.title, state: p.state, merged: Boolean(p.merged_at), draft: Boolean(p.draft), createdAt: p.created_at, closedAt: p.closed_at ?? null, branch: p.head.ref, url: p.html_url }))),
     jobs: async (runId) => map(await call('GET', `${base}/actions/runs/${runId}/jobs?per_page=50`), (d) => (d.jobs ?? []).map((j) => ({ id: j.id, name: j.name, status: j.status, conclusion: j.conclusion, startedAt: j.started_at, completedAt: j.completed_at, steps: (j.steps ?? []).map((s) => ({ name: s.name, conclusion: s.conclusion, number: s.number })) }))),
     annotations: async (jobId) => map(await call('GET', `${base}/check-runs/${jobId}/annotations?per_page=50`), (d) => (d ?? []).map((a) => ({ level: a.annotation_level, title: a.title ?? null, message: a.message ?? '', path: a.path ?? null }))),
     /** The latest GitHub Pages deployment and its state — the site check when the site itself cannot be read. */

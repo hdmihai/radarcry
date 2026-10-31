@@ -51,5 +51,6 @@ jobs:
           git add config/labels/
           git commit -q -m "etichete: reconstruire din eth-labels ($(date -u +%Y-%m-%d))"
           git push -q --force origin "$BRANCH"
+          # shellcheck disable=SC2016 # the backticks are a Markdown code fence, not a command
           gh pr create --fill --head "$BRANCH" --title "Etichete on-chain: reconstruire $(date -u +%Y-%m)" \
             --body "$(printf 'Reconstruire automată a setului de etichete din [eth-labels](https://github.com/dawsbot/eth-labels) (MIT).\n\n```\n%s\n```\n' "$(cat labels.log)")" || true

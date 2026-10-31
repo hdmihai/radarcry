@@ -1,11 +1,16 @@
 /**
- * File adapters of the agent: the research state the scanner published (StatePort) and the agent's
- * own memory and report (MemoryPort). Local files only — in Actions the workflow checks the
+ * File adapters of the agent: the research state the scanner published (StatePort), the agent's
+ * own memory and report (MemoryPort) and its written knowledge — the fundamental rules and the
+ * project's documentation (KnowledgePort). Local files only — in Actions the workflow checks the
  * `cri-state` and `cri-agent` branches out into directories before the agent runs.
  */
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+/** The repository root, from this file's place in it (agent/adapters/files.js). */
+export const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 async function readJson(path) {
   if (!existsSync(path)) return { ok: false, status: 'NOT_FOUND', data: null, message: `${path} lipsește` };
@@ -33,6 +38,8 @@ export function createStateDir({ dir, dataDir = null }) {
     universe: () => readJson(universe()),
     meta: () => readJson(join(dir, 'meta.json')),
     telemetry: () => readJson(join(dir, 'telemetry.json')),
+    // Every full scan with the price and the verdict it published: the radar's own track record.
+    discovery: () => readJson(join(dir, 'discovery.json')),
     async published() {
       const files = [];
       for (const [name, path] of [['latest.json', latest()], ['summary.json', summary()], ['universe.json', universe()]]) {
@@ -73,6 +80,26 @@ export function createMemoryFs({ dir, reportDir = join(dir, 'report') }) {
     async lastReport() {
       const r = await readJson(reportPath);
       return r.ok ? r.data : null;
+    },
+  };
+}
+
+/** The documents the agent answers from (business requirements, architecture, its own manual). */
+export const KNOWLEDGE_DOCS = Object.freeze(['README.md', 'docs/ARCHITECTURE.md', 'agent/README.md']);
+
+/**
+ * KnowledgePort over the repository: the rulebook (agent/knowledge/rules.json) and the documents.
+ */
+export function createKnowledgeFs({ root = REPO_ROOT } = {}) {
+  return {
+    rules: () => readJson(join(root, 'agent', 'knowledge', 'rules.json')),
+    async docs() {
+      const files = [];
+      for (const name of KNOWLEDGE_DOCS) {
+        const p = join(root, name);
+        if (existsSync(p)) files.push({ name, text: await readFile(p, 'utf8') });
+      }
+      return files.length ? { ok: true, status: 'OK', data: files } : { ok: false, status: 'NOT_FOUND', data: null, message: 'nicio documentație găsită' };
     },
   };
 }

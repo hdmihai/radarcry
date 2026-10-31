@@ -9,7 +9,7 @@
  * and the memory are real files (the demo scan's output), read through the live file adapters.
  */
 import { fireTimes } from '../domain/cron.js';
-import { createMemoryFs, createStateDir } from './files.js';
+import { createKnowledgeFs, createMemoryFs, createStateDir } from './files.js';
 
 const DAY = 86_400_000;
 const MIN = 60_000;
@@ -37,7 +37,7 @@ export const FIXTURE_WORKFLOWS = Object.freeze([
 
 const CI_STEPS = ['Set up job', 'Run actions/checkout@v7', 'Run actions/setup-node@v7', 'Syntax + tests (architecture rules, domain engines, contract, end to end)', 'Quality gates summary (read by the AI agent)', 'Offline DEMO scan, contract validation and site build', 'The pulse runs on top of the published snapshot without breaking the contract', 'Run summary', 'The committed label dataset is present and classifies'];
 const SCAN_STEPS = ['Set up job', 'Run actions/checkout@v7', 'Syntax check + tests (zero dependencies, no install step, no network)', 'Restore research state from the cri-state branch', 'Full scan (live)', 'Scan (demo, simulated market)', 'Validate the published contract', 'Save research state (single-commit orphan branch)', 'Build static site', 'Run summary', 'Check that GitHub Pages publishes from Actions'];
-const GATE_COUNTS = { syntax: [181, 181], 'arch.layers': [4, 4], 'arch.free': [2, 2], 'arch.research': [1, 1], 'arch.deterministic': [1, 1], 'arch.parity': [1, 1], 'arch.workflows': [1, 1], domain: [143, 143], application: [62, 62], adapters: [50, 50], scripts: [9, 9], web: [18, 18], agent: [30, 30] };
+const GATE_COUNTS = { syntax: [193, 193], 'arch.layers': [4, 4], 'arch.free': [2, 2], 'arch.research': [1, 1], 'arch.deterministic': [1, 1], 'arch.parity': [1, 1], 'arch.workflows': [1, 1], domain: [146, 146], application: [63, 63], adapters: [50, 50], scripts: [9, 9], web: [18, 18], agent: [51, 51] };
 
 /** The commits of the simulated three weeks (days relative to the anchor), with the two incidents. */
 const COMMITS = [
@@ -50,6 +50,12 @@ const COMMITS = [
   { d: -5.5, msg: 'Aplică probe fix: verdicturi ok/benign/limited/broken' },
   { d: -2.1, msg: 'Aplică validity gate: domeniu validity cu 5 checks' },
   { d: -0.4, msg: 'Aplică prognoza ≥100× și agentul AI' },
+];
+
+/** Two simulated code proposals of the agent: one accepted, one still open. */
+const DEMO_PULLS = [
+  { number: 41, title: 'agent: testul de regresie pentru pragul de lichiditate', state: 'closed', merged: true, draft: false, d: -6.2, closedD: -5.9, branch: 'agent/40-test-prag-lichiditate', url: 'https://github.com/demo/cri-radar/pull/41' },
+  { number: 44, title: 'agent: mesaj mai clar când lipsește cheia CoinGecko Demo', state: 'open', merged: false, draft: false, d: -1.3, branch: 'agent/43-mesaj-cheie-coingecko', url: 'https://github.com/demo/cri-radar/pull/44' },
 ];
 
 /**
@@ -143,6 +149,12 @@ export function createFixturePorts({ anchorMs, clock, stateDir, dataDir = null, 
       const now = clock.now();
       return ok((runs.get(file) ?? []).filter((r) => r.createdAt <= now).slice(0, perPage).map((r) => view(file, r, now)));
     },
+    run: async (runId) => {
+      const f = findRun(Number(runId));
+      if (!f || f.r.createdAt > clock.now()) return { ok: false, status: 'HTTP_ERROR', data: null, message: 'HTTP 404' };
+      return ok({ ...view(f.file, f.r, clock.now()), name: FIXTURE_WORKFLOWS.find((w) => w.file === f.file)?.name ?? f.file });
+    },
+    agentPulls: async () => ok((scenario.pulls ?? DEMO_PULLS).map((p) => ({ ...p, createdAt: iso(anchorMs + p.d * DAY), closedAt: p.closedD === undefined ? null : iso(anchorMs + p.closedD * DAY) })).filter((p) => Date.parse(p.createdAt) <= clock.now())),
     jobs: async (runId) => {
       const f = findRun(runId);
       if (!f) return { ok: false, status: 'HTTP_ERROR', data: null, message: 'HTTP 404' };
@@ -243,6 +255,8 @@ export function createFixturePorts({ anchorMs, clock, stateDir, dataDir = null, 
     prices,
     notifier,
     memory: createMemoryFs({ dir: memoryDir, reportDir }),
+    // The rulebook and the documentation are the repository's own (real files, read-only).
+    knowledge: createKnowledgeFs(),
     narrator: null,
     // For tests and the demo: what the simulator did.
     inspect: { dispatched, issues, runs: (file) => runs.get(file) ?? [], commits },

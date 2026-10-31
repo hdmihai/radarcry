@@ -1,0 +1,210 @@
+# CRI Radar — talk to the AI agent, free: a comment that starts with `/agent` on any issue or pull
+# request (or a new issue whose text starts with `/agent`). Only the owner and the collaborators get
+# an answer; anyone else is ignored.
+#
+#   /agent stare · porți · diagnoză [poartă | run <id> | scan] · eficiență · prognoză SIMBOL
+#   /agent reguli [ID] · învățare · întreabă <întrebare> · cod <sarcina> · ajutor
+#
+# Two jobs, because the code command runs code a language model wrote:
+#   think  (read-only token) reads the agent's memory and the research state and answers. For
+#          `/agent cod …` it runs a local open coder model (Ollama), applies its edits under the patch
+#          policy and runs the test suite. Its token cannot write anything, so the proposal never runs
+#          next to a write token.
+#   reply  (write token) never runs the repository's code: it posts the answer and, when there is a
+#          patch, checks it again in the shell (paths, size, modes — no workflow, no architecture test),
+#          applies it on a branch agent/<issue>-<slug>, pushes it, opens a pull request (or links the
+#          comparison when Actions may not open pull requests) and starts CI on the branch.
+#
+# Cost: public-repository runners, the workflow token, open models from the Ollama library. No secret
+# is read. The agent never merges and never writes to main.
+name: Agent AI — chat
+
+on:
+  issue_comment:
+    types: [created]
+  issues:
+    types: [opened]
+
+permissions: {}
+
+concurrency:
+  # One conversation at a time per issue; a second question waits for the first answer.
+  group: agent-chat-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  think:
+    if: >-
+      startsWith(github.event.comment.body || github.event.issue.body, '/agent') &&
+      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association || github.event.issue.author_association)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60 # a code task: model pull, two generations on CPU, two test runs
+    permissions:
+      contents: read
+      actions: read
+      checks: read
+      issues: read
+      pull-requests: read
+    outputs:
+      cmd: ${{ steps.cmd.outputs.cmd }}
+      reply: ${{ steps.answer.outputs.reply }}
+      patch: ${{ steps.answer.outputs.patch }}
+      pr: ${{ steps.answer.outputs.pr }}
+      prbody: ${{ steps.answer.outputs.prbody }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false # nothing in this job can push
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+
+      - name: Read the command (the comment arrives through the environment, never the script)
+        id: cmd
+        env:
+          BODY: ${{ github.event.comment.body || github.event.issue.body }}
+        run: node agent/main.js chat-parse --text-env BODY
+
+      - name: Restore the agent memory (cri-agent) and the research state (cri-state), read-only
+        env:
+          TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p .agent .state
+          auth="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$TOKEN" | base64 -w0)"
+          if git -c http.extraheader="$auth" fetch --no-tags --depth=1 origin cri-agent 2>/dev/null; then
+            git archive --format=tar FETCH_HEAD | tar -x -C .agent
+          else
+            echo 'Memoria agentului nu există încă: rulați o dată workflow-ul „Agent AI”.'
+          fi
+          if git -c http.extraheader="$auth" fetch --no-tags --depth=1 origin cri-state 2>/dev/null; then
+            git archive --format=tar FETCH_HEAD | tar -x -C .state
+          fi
+
+      - name: Local open model (only for "întreabă" and "cod" — Ollama, free, no account, in this runner)
+        id: llm
+        if: steps.cmd.outputs.llm == 'true' && vars.CRI_AGENT_LLM != 'off'
+        continue-on-error: true # without a model the answer is the documentation's passages
+        timeout-minutes: 15
+        env:
+          MODEL: ${{ steps.cmd.outputs.coder == 'true' && (vars.CRI_AGENT_CODE_MODEL || 'qwen2.5-coder:7b') || (vars.CRI_AGENT_MODEL || 'qwen2.5:3b') }}
+        shell: bash
+        run: |
+          set -eo pipefail
+          # The installer unpacks a zstd archive; install the tool if the runner image lacks it.
+          command -v zstd > /dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq zstd; }
+          curl -fsSL https://ollama.com/install.sh | sh
+          # The installer starts a system service only where it can; otherwise the server is started
+          # here, in the background — it lives until the end of the job, so the next steps reach it.
+          if ! curl -sf http://127.0.0.1:11434/api/version > /dev/null; then
+            nohup ollama serve > "$RUNNER_TEMP/ollama.log" 2>&1 &
+          fi
+          for _ in $(seq 1 60); do curl -sf http://127.0.0.1:11434/api/version > /dev/null && break; sleep 1; done
+          if ! curl -sf http://127.0.0.1:11434/api/version > /dev/null; then
+            echo "::warning title=Ollama::serverul local nu a pornit; rezumatul vine din șablonul determinist"
+            tail -n 20 "$RUNNER_TEMP/ollama.log" 2> /dev/null || true
+            exit 1
+          fi
+          ollama pull "$MODEL"
+          echo "model=$MODEL" >> "$GITHUB_OUTPUT"
+
+      - name: Answer (a code proposal is applied and tested here, in the job that cannot write)
+        id: answer
+        env:
+          BODY: ${{ github.event.comment.body || github.event.issue.body }}
+          # Read-only, and only for the commands that read GitHub (a diagnosis); never next to proposed code.
+          GITHUB_TOKEN: ${{ steps.cmd.outputs.coder != 'true' && github.token || '' }}
+          CRI_AGENT_ISSUE: ${{ github.event.issue.number }}
+          CRI_AGENT_AUTHOR: ${{ github.event.comment.user.login || github.event.issue.user.login }}
+          CRI_AGENT_MODEL: ${{ steps.cmd.outputs.coder != 'true' && steps.llm.outputs.model || '' }}
+          CRI_AGENT_CODE_MODEL: ${{ steps.cmd.outputs.coder == 'true' && steps.llm.outputs.model || '' }}
+          CRI_AGENT_LLM: ${{ vars.CRI_AGENT_LLM || 'on' }}
+          WRITE: ${{ steps.cmd.outputs.coder == 'true' && '--write' || '' }}
+        run: |
+          # shellcheck disable=SC2086 # WRITE is empty or exactly "--write"
+          node agent/main.js chat --text-env BODY --memory .agent --state .state --reply-dir .chat $WRITE
+          {
+            echo "reply=$(base64 -w0 .chat/reply.md)"
+            if [ -f .chat/patch.diff ]; then
+              echo "patch=$(base64 -w0 .chat/patch.diff)"
+              echo "pr=$(base64 -w0 .chat/pr.json)"
+              echo "prbody=$(base64 -w0 .chat/pr.md)"
+            fi
+          } >> "$GITHUB_OUTPUT"
+
+  reply:
+    needs: think
+    if: always() && needs.think.result != 'skipped'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write # push the agent/… branch of a code proposal
+      pull-requests: write # open its pull request
+      issues: write # the answer
+      actions: write # start CI on the branch (workflow_dispatch: pushes by this token start no workflow)
+    steps:
+      - uses: actions/checkout@v7 # the default branch; nothing from it is executed in this job
+
+      - name: Post the answer; a code proposal becomes a branch and a pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE: ${{ github.event.issue.number }}
+          REPLY_B64: ${{ needs.think.outputs.reply }}
+          PATCH_B64: ${{ needs.think.outputs.patch }}
+          PR_B64: ${{ needs.think.outputs.pr }}
+          PRBODY_B64: ${{ needs.think.outputs.prbody }}
+          THINK: ${{ needs.think.result }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          if [ -n "$REPLY_B64" ]; then
+            printf '%s' "$REPLY_B64" | base64 -d > reply.md
+          else
+            printf '<!-- cri-agent-chat -->\n### Agentul AI nu a putut răspunde\n\nJobul de răspuns s-a încheiat cu „%s”; detaliile sunt în %s\n' "$THINK" "$run_url" > reply.md
+          fi
+          if [ -n "$PATCH_B64" ]; then
+            printf '%s' "$PATCH_B64" | base64 -d > "$RUNNER_TEMP/agent.patch"
+            printf '%s' "$PR_B64" | base64 -d > "$RUNNER_TEMP/pr.json"
+            printf '%s' "$PRBODY_B64" | base64 -d > "$RUNNER_TEMP/pr.md"
+            # The final check, in the shell, of the diff itself: what the job that ran the proposal says
+            # about it is not trusted.
+            if ! git apply --check --numstat "$RUNNER_TEMP/agent.patch" > "$RUNNER_TEMP/numstat" 2> "$RUNNER_TEMP/apply.err"; then
+              { echo; echo "**Propunerea nu se mai aplică pe \`${DEFAULT_BRANCH}\`** (ramura s-a mișcat între timp): $(head -c 300 "$RUNNER_TEMP/apply.err")"; } >> reply.md
+            else
+              files=$(cut -f3 "$RUNNER_TEMP/numstat")
+              nfiles=$(printf '%s\n' "$files" | grep -c . || true)
+              nlines=$(awk -F'\t' '{ s += $1 + $2 } END { print s + 0 }' "$RUNNER_TEMP/numstat")
+              protected=$(printf '%s\n' "$files" | grep -E '^\.github/|^\.git/|(^|/)node_modules/|^test/architecture\.test\.js$|^test/agent/architecture\.test\.js$|(^|/)\.\.(/|$)' || true)
+              binary=$(awk -F'\t' '$1 == "-" { print $3 }' "$RUNNER_TEMP/numstat")
+              modes=$(grep -cE '^(old mode|new mode|deleted file mode|new file mode 120000)' "$RUNNER_TEMP/agent.patch" || true)
+              if [ -n "$protected" ] || [ -n "$binary" ] || [ "$nfiles" -gt 8 ] || [ "$nlines" -gt 400 ] || [ "$modes" -gt 0 ]; then
+                { echo; echo "**Propunerea a fost refuzată de verificarea finală:** ${nfiles} fișiere, ${nlines} linii; protejate: ${protected:-—}; binare: ${binary:-—}; schimbări de mod sau ștergeri: ${modes}."; } >> reply.md
+              else
+                slug=$(jq -r '.branch // ""' "$RUNNER_TEMP/pr.json" | sed 's|^agent/||' | tr -cd 'a-z0-9-' | cut -c1-50)
+                branch="agent/${slug:-${ISSUE}-propunere}"
+                title=$(jq -r '.title // "agent: propunere"' "$RUNNER_TEMP/pr.json" | tr -d '\r\n' | cut -c1-120)
+                draft=$(jq -r '.draft // false' "$RUNNER_TEMP/pr.json")
+                git config user.name "cri-radar[bot]"
+                git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+                git switch -q -c "$branch"
+                git apply --index "$RUNNER_TEMP/agent.patch"
+                git commit -q -m "$title" -m "Propunere a agentului AI pentru #${ISSUE}; revizuire umană înainte de merge."
+                git push -q --force origin "HEAD:refs/heads/${branch}"
+                draft_flag=()
+                if [ "$draft" = "true" ]; then draft_flag=(--draft); fi
+                if url=$(gh pr create --base "$DEFAULT_BRANCH" --head "$branch" --title "$title" --body-file "$RUNNER_TEMP/pr.md" "${draft_flag[@]}" 2> "$RUNNER_TEMP/pr.err"); then
+                  { echo; echo "**Pull request:** ${url} — revizuiți și decideți voi; agentul nu face merge."; } >> reply.md
+                elif url=$(gh pr list --head "$branch" --json url --jq '.[0].url' 2>/dev/null) && [ -n "$url" ]; then
+                  { echo; echo "**Pull request actualizat:** ${url}"; } >> reply.md
+                else
+                  { echo; echo "**Ramura \`${branch}\` este publicată**, dar GitHub Actions nu are voie să deschidă pull requesturi aici (Settings → Actions → General → 'Allow GitHub Actions to create and approve pull requests'). Cu un clic: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/compare/${DEFAULT_BRANCH}...${branch}?expand=1"; } >> reply.md
+                fi
+                if gh workflow run ci.yml --ref "$branch" > /dev/null 2>&1; then
+                  { echo; echo "CI rulează acum pe ramură: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/workflows/ci.yml"; } >> reply.md
+                fi
+              fi
+            fi
+          fi
+          gh issue comment "$ISSUE" --body-file reply.md

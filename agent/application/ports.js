@@ -32,7 +32,34 @@
  * @property {() => Promise<Result>} universe   the parsed data/universe.json
  * @property {() => Promise<Result>} meta       the state's meta.json
  * @property {() => Promise<Result>} published  [{name, text}] the files the site publishes (secret scan)
+ * @property {() => Promise<Result>} [discovery]  the parsed discovery.json: every full scan's price and published verdict per project
  */
+
+/**
+ * KnowledgePort — the agent's written knowledge.
+ * @typedef {Object} KnowledgePort
+ * @property {() => Promise<Result>} rules   the fundamental rules (agent/knowledge/rules.json)
+ * @property {() => Promise<Result>} docs    [{name, text}] README, ARCHITECTURE, the agent's manual
+ */
+
+/**
+ * WorkspacePort — the repository as files, for the chat's code-writing command. Optional; only the
+ * read-only chat job of agent-chat.yml has one.
+ * @typedef {Object} WorkspacePort
+ * @property {() => Promise<string[]>} list                  tracked text files (repository-relative)
+ * @property {(path:string) => Promise<string|null>} read
+ * @property {(path:string, text:string) => Promise<void>} write
+ * @property {() => Promise<{ok:boolean, output:string}>} test   the test suite
+ * @property {() => Promise<string>} diff                    unified diff of the working tree
+ * @property {() => Promise<void>} reset                     discard every change
+ */
+
+/**
+ * CoderPort — a language model that writes code (a local open coder model). Optional.
+ * @typedef {Object} CoderPort
+ * @property {string|null} model
+ * @property {() => Promise<boolean>} available
+ * @property {(prompt:{system:string, prompt:string}) => Promise<Result>} generate   data: text
 
 /**
  * SitePort — the deployed dashboard.

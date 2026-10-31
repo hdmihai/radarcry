@@ -177,7 +177,7 @@ export function validityBadge(v, { compact = false } = {}) {
 /* ── forecast (≥100× / ≥20× in twelve months) ───────────────────────────────────────────────── */
 
 const FC_TONE = { HIGH: 'good', ABOVE: 'good', BASE: 'muted', BELOW: 'muted', UNKNOWN: 'muted' };
-const pctText = (x) => (Number.isFinite(x) ? `${x < 1 ? x.toFixed(2) : x < 10 ? x.toFixed(1) : x.toFixed(0)}%` : '—');
+const pctText = (x) => (Number.isFinite(x) ? `${x < 0.1 ? x.toFixed(3) : x < 1 ? x.toFixed(2) : x < 10 ? x.toFixed(1) : x.toFixed(0)}%` : '—');
 const liftText = (x) => (Number.isFinite(x) ? `×${x.toFixed(x < 10 ? 1 : 0)}` : '');
 
 /** One target of a forecast as text: "0.86% (0.37–1.65%)". */
@@ -195,7 +195,7 @@ export function forecastPill(fc, { target = '100', compact = false } = {}) {
   if (!t || !Number.isFinite(t.pct)) return '';
   const t20 = fc.targets?.['20'];
   const near = (fc.nearest ?? []).map((n) => `${n.symbol} ${n.multiple}× (${n.similarity}%)`).join(', ');
-  const body = html`<b>Probabilitate ≥${target}× în 12 luni: ${forecastText(t)}</b><br>${t.basis === 'model' ? `${liftText(t.lift)} față de rata de bază` : 'egală cu rata de bază: nicio amprentă de câștigător comparabilă'}${t20 ? html`<br>≥20×: ${forecastText(t20)}` : ''}${near ? html`<br>Cei mai apropiați câștigători la minimul lor: ${near}` : ''}${fc.pastRun ? html`<br>A făcut deja ${fc.pastRun.multiple}× (vârf ${fc.pastRun.peakAt}), acum ${fc.pastRun.drawdownNowPct}% de la vârf.` : ''}<br><span class="muted">Estimare statistică a unui eveniment rar, nu predicție și nu sfat financiar.</span>`;
+  const body = html`<b>Probabilitatea ca prețul să atingă ≥${target}× prețul de azi în 12 luni: ${forecastText(t)}</b><br>${t.basis === 'model' ? `${liftText(t.lift)} față de rata de bază` : 'egală cu rata de bază: nicio amprentă de câștigător comparabilă'}${t20 ? html`<br>≥20×: ${forecastText(t20)}` : ''}${near ? html`<br>Cei mai apropiați câștigători la minimul lor: ${near}` : ''}${fc.pastRun ? html`<br>A făcut deja ${fc.pastRun.multiple}× (vârf ${fc.pastRun.peakAt}), acum ${fc.pastRun.drawdownNowPct}% de la vârf.` : ''}<br><span class="muted">Estimare statistică a unui eveniment rar, nu predicție și nu sfat financiar.</span>`;
   return html`<span class="pill fcpill" data-tone="${FC_TONE[t.band] ?? 'muted'}" data-tip="${tip(body)}">${icon('target', 11)} ≥${target}×: ${pctText(t.pct)}${!compact && t.basis === 'model' && Number.isFinite(t.lift) && t.lift !== 1 ? ` ${liftText(t.lift)}` : ''}</span>`;
 }
 

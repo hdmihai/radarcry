@@ -14,17 +14,18 @@ export const forecastState = { show: 'top' };
 
 const STATUS_TONE = { CONFIRMED: 'good', DOCUMENTED: 'muted', PENDING: 'muted', BELOW: 'serious' };
 const CHAIN = { bsc: 'BNB Chain', solana: 'Solana', base: 'Base', ethereum: 'Ethereum', arbitrum: 'Arbitrum' };
-const pctText = (x, d = 2) => (Number.isFinite(x) ? `${x.toFixed(d)}%` : '—');
+const pctText = (x, d = null) => (Number.isFinite(x) ? `${x.toFixed(d ?? (x < 0.1 ? 3 : 2))}%` : '—');
 const when = (s) => (typeof s === 'string' && s.length > 7 ? date(s) : s ?? '—');
 
 function rateTile(r) {
-  return html`<div class="qstat"><b class="num">${pctText(r.pct)}</b><span>rata de bază ≥${r.multiple}×</span>
-    <small class="muted">${num(r.events)} câștigători din ${num(r.population)} proiecte urmărite · interval 90%: ${pctText(r.lo)}–${pctText(r.hi)}</small></div>`;
+  const annual = Number.isFinite(r.annualPct) ? html` · anual ${pctText(r.annualPct)} din proiecte au făcut mișcarea, accesibilă ~${num(r.qualifyingDaysMean ?? 0)} zile din an` : '';
+  return html`<div class="qstat"><b class="num">${pctText(r.pct)}</b><span>bază ≥${r.multiple}× de la prețul zilei</span>
+    <small class="muted">${num(r.events)} câștigători din ${num(r.population)} proiecte urmărite${annual} · interval 90%: ${pctText(r.lo)}–${pctText(r.hi)}</small></div>`;
 }
 
 function winnerRow(w) {
   return html`<tr>
-    <td><span class="tok"><span>${w.symbol}</span><span class="tok-sub">${w.name}${w.chain ? `, ${CHAIN[w.chain] ?? w.chain}` : ''}</span></span></td>
+    <td><span class="tok"><span>${w.symbol || w.name}</span><span class="tok-sub">${w.symbol ? w.name : ''}${w.chain ? `${w.symbol ? ', ' : ''}${CHAIN[w.chain] ?? w.chain}` : ''}</span></span></td>
     <td class="n"><span class="tok"><span>${Number.isFinite(w.multiple) ? `${num(w.multiple, w.multiple < 100 ? 1 : 0)}×` : '—'}</span><span class="tok-sub">${Number.isFinite(w.days) ? `${w.days} zile` : ''}</span></span></td>
     <td class="n"><span class="tok"><span>$${price(w.low?.price)}</span><span class="tok-sub">${when(w.low?.at)}</span></span></td>
     <td class="n"><span class="tok"><span>$${price(w.peak?.price)}</span><span class="tok-sub">${when(w.peak?.at)}</span></span></td>
@@ -37,12 +38,12 @@ function winnerRow(w) {
 function topRow(t) {
   const near = (t.nearest ?? [])[0];
   return html`<tr>
-    <td><span class="tok"><span><button class="tok-btn" type="button" data-open="${t.key}">${t.symbol}</button></span><span class="tok-sub">${t.name}</span></span></td>
+    <td><span class="tok"><span><button class="tok-btn" type="button" data-open="${t.key}">${t.symbol || t.name}</button></span><span class="tok-sub">${t.symbol ? t.name : ''}</span></span></td>
     <td class="n">${usd(t.marketCap)}</td>
     <td>${forecastPill(t)}</td>
     <td class="n xs">${forecastText(t.targets?.['100'])}</td>
     <td class="n">${forecastText(t.targets?.['20'])}</td>
-    <td class="xs">${near ? html`${near.symbol} ${near.multiple}× · ${near.similarity}%` : html`<span class="muted">—</span>`}${t.pastRun ? html`<br><span class="muted">a făcut deja ${t.pastRun.multiple}×</span>` : ''}</td>
+    <td class="xs">${near ? html`${near.symbol || near.name} ${near.multiple}× · ${near.similarity}%` : html`<span class="muted">—</span>`}${t.pastRun ? html`<br><span class="muted">a făcut deja ${t.pastRun.multiple}×</span>` : ''}</td>
   </tr>`;
 }
 
@@ -51,7 +52,7 @@ export function forecastMarkup(s) {
   const head = html`
     <div class="view-head"><div>
       <h2 class="view-title">Prognoză ≥100× în 12 luni</h2>
-      <p class="view-lede">Pentru fiecare proiect verificat: probabilitatea unei creșteri de cel puțin 100× (și de 20×, clasa LAB / BTW / IRYS) în următoarele 12 luni. Pornește de la rata de bază — câte proiecte mici au făcut asta în ultimul an — și o ajustează după cât de mult seamănă proiectul azi cu câștigătorii la minimul lor, măsurați strict înainte de mișcare. Este o estimare statistică a unui eveniment rar: chiar și cea mai mare probabilitate rămâne mică. Nu este o predicție și nu este un sfat financiar.</p>
+      <p class="view-lede">Pentru fiecare proiect verificat: probabilitatea ca prețul să atingă cel puțin 100× prețul de azi (și 20×, clasa LAB / BTW / IRYS) în următoarele 12 luni. Pornește de la rata de bază pe zi — câte proiecte mici au făcut o asemenea mișcare în ultimul an și din câte zile ale anului mai era accesibilă — și o ajustează după cât de mult seamănă proiectul azi cu câștigătorii în zilele lor de intrare, măsurați strict înainte de mișcare. Este o estimare statistică a unui eveniment rar: chiar și cea mai mare probabilitate rămâne mică. Nu este o predicție și nu este un sfat financiar.</p>
     </div></div>`;
   if (!f) return html`${head}<div class="empty"><strong>Acest snapshot nu are încă prognoza.</strong><p>Se publică de la prima scanare completă cu modulul de prognoză.</p></div>`;
   const confirmed = f.winners.filter((w) => w.status === 'CONFIRMED').length;
@@ -60,6 +61,14 @@ export function forecastMarkup(s) {
   const listed = f.winners.filter((w) => w.status !== 'BELOW');
   const below = f.winners.filter((w) => w.status === 'BELOW');
   const sep = f.model?.separation ?? {};
+  const loo = f.model?.identification ?? {};
+  const looText = (t) => {
+    const x = loo[t];
+    if (!x) return '—';
+    if (!x.ready) return `în așteptare (${num(x.n ?? 0)} câștigători comparabili; sunt necesari ${num(f.model?.minLooWinners ?? 8)})`;
+    return `${x.recallTop20}% dintre câștigători în top 20% (aleator: 20%), percentila mediană ${x.medianPercentile}`;
+  };
+  const off = f.model?.fingerprintOff ?? {};
   return html`${head}
     <div class="qbar">
       ${(f.baseRates ?? []).map(rateTile)}
@@ -92,9 +101,11 @@ export function forecastMarkup(s) {
     <section class="section">
       <h3 class="section-title">Cum se calculează</h3>
       <ul class="facts">
-        <li><span><b>Rata de bază.</b> Câștigătorii ≥N× ai ultimului an împărțiți la proiectele mici urmărite de radar, cu o estimare prudentă la pornire (${f.model?.prior?.pct ?? '—'}% pe an, cântărită ca ${num(f.model?.prior?.weight)} de proiecte), ca un istoric scurt să nu o umfle. Lista agregatorilor conține doar supraviețuitori, deci partea din date este o limită superioară.</span></li>
-        <li><span><b>Ajustarea.</b> Raportul dintre cât de dens stau câștigătorii la minimul lor în jurul proiectului și cât de dens stă întregul univers (${num(f.model?.background)} proiecte) — pe aceleași 15 trăsături ca analogii LAB/BTW/AGT, cu trăsăturile necunoscute omise, nu tratate ca rele. Cu puțini câștigători, ajustarea este trasă spre 1 (k = ${f.model?.shrinkK}) și limitată la ×${f.model?.lrClamp}.</span></li>
-        <li><span><b>Puterea de separare</b> (pe datele de învățare, deci optimistă): câștigătorii primesc la minimul lor în medie ${sep['100'] ? `×${sep['100'].medianLift}` : '—'} pentru ≥100× și ${sep['20'] ? `×${sep['20'].medianLift}` : '—'} pentru ≥20×. O valoare apropiată de 1 spune că trăsăturile disponibile nu deosebesc încă bine câștigătorii — și atunci prognoza rămâne aproape de rata de bază, ceea ce este răspunsul corect.</span></li>
+        <li><span><b>Evenimentul.</b> ${f.event ?? 'prețul atinge cel puțin N× prețul din ziua citirii, în următoarele 365 de zile'} — punctul de vedere al cuiva care citește prognoza azi, nu mișcarea ideală de la minim la vârf.</span></li>
+        <li><span><b>Rata de bază pe zi.</b> Câștigătorii ≥N× ai ultimului an împărțiți la proiectele mici urmărite de radar, cu o estimare prudentă la pornire (${f.model?.prior?.pct ?? '—'}% pe an, cântărită ca ${num(f.model?.prior?.weight)} de proiecte), apoi înmulțită cu partea din an din care mișcarea era încă accesibilă: zilele în care prețul era destul de jos încât vârful de după să fie de cel puțin N× (numărate din istoricul zilnic al fiecărui câștigător confirmat). Lista agregatorilor conține doar supraviețuitori, deci rata este o limită superioară.</span></li>
+        <li><span><b>Ajustarea.</b> Raportul dintre cât de dens stau câștigătorii în zilele lor de intrare în jurul proiectului și cât de dens stă întregul univers (${num(f.model?.background)} proiecte) — pe aceleași 15 trăsături ca analogii LAB/BTW/AGT, cu trăsăturile necunoscute omise, nu tratate ca rele. Cu puțini câștigători, ajustarea este trasă spre 1 (k = ${f.model?.shrinkK}) și limitată la ×${f.model?.lrClamp}.</span></li>
+        <li><span><b>Validarea în afara eșantionului.</b> Fiecare câștigător este scos pe rând din listă și clasat printre proiectele de azi de modelul învățat fără el. ≥100×: ${looText('100')}; ≥20×: ${looText('20')}. Dacă, cu destui câștigători, ei nu ies peste aleator, ajustarea se oprește singură și prognoza rămâne rata de bază${Object.keys(off).length ? html` — <b>acum oprită pentru ${Object.keys(off).map((t) => `≥${t}×`).join(', ')}</b>` : ''}.</span></li>
+        <li><span><b>Puterea de separare</b> (pe datele de învățare, deci optimistă): câștigătorii primesc la minimul lor în medie ${sep['100'] ? `×${sep['100'].medianLift}` : '—'} pentru ≥100× și ${sep['20'] ? `×${sep['20'].medianLift}` : '—'} pentru ≥20×.</span></li>
         <li><span><b>Ce urmează.</b> Agentul AI înregistrează prognozele și le compară cu ce s-a întâmplat efectiv, ca să măsoare calibrarea pe măsură ce trec lunile (ecranul <a href="#/agent">Agent AI</a>).</span></li>
       </ul>
       <p class="panel-note">${f.note}</p>

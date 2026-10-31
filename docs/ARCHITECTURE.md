@@ -541,8 +541,14 @@ dashboard-ul explică lipsa.
 ## 13. Prognoza ≥100× în 12 luni
 
 Întrebarea „care este probabilitatea ca acest proiect să ajungă la cel puțin 100×” are un răspuns
-onest doar ca probabilitate a unui eveniment rar, cu baza ei. Modelul (src/domain/forecast/) are trei
-piese, fiecare cu o regulă care o ține cinstită.
+onest doar ca probabilitate a unui eveniment rar, cu baza ei — și cu **evenimentul numit exact**:
+
+> prețul atinge cel puțin N× prețul din ziua citirii, în următoarele 365 de zile.
+
+Este evenimentul investitorului care citește radarul într-o zi oarecare. O rată numărată „de la minim
+la vârf” îl supraevaluează: în cele mai multe zile din anul unui câștigător, ce mai rămâne de la prețul
+acelei zile până la vârf este mult sub N×. Modelul (src/domain/forecast/) are cinci piese, fiecare cu o
+regulă care o ține cinstită.
 
 **Lista de învățare.** Câștigătorii ultimelor 365 de zile vin din semințe documentate cu surse
 (`config/winners.json`: AKEDO, BTW, pippin, LAB, AGT, VVV, IRYS, BEAT, RIVER, AIA) și din candidații
@@ -554,20 +560,35 @@ câteva pe rulare, în bugetul gratuit; reîmprospătat la 30 de zile): mediană
 doar unde capitalizarea ≥ 1 M$ și volumul ≥ 25 000 $, vârf după minim, în fereastră. Stări: confirmat,
 documentat (doar surse), în verificare, infirmat.
 
-**Amprenta la minim, fără look-ahead.** Amprenta unui câștigător se calculează doar din lumânările de
-până la minimul lui (inclusiv), în unitățile motorului de similaritate. Ce s-a întâmplat după este
-eticheta. Faptele pe care istoricul nu le poate da (float, concentrare, perpetue, Alpha la acel moment)
-rămân necunoscute dacă nu le declară sămânța — și sunt excluse din comparație, nu tratate ca rele.
+**Zilele calificate.** Pentru fiecare câștigător confirmat se numără zilele lichide (aceleași praguri)
+din care mișcarea de N× era încă accesibilă: maximul medianei de închidere în următoarele 365 de zile —
+cenzurat la azi — atinge cel puțin N× prețul acelei zile (`qualifyingDays` în `winners.js`). LAB, de
+exemplu, avea 175 de astfel de zile pentru ≥100×, BTW 305 pentru ≥20×.
 
-**Rata de bază și ajustarea.** `p₀` = posterior Beta cu o estimare prudentă la pornire (0,5 % pe an,
+**Rata de bază pe zi.** `p_an` = posterior Beta cu o estimare prudentă la pornire (0,5 % pe an,
 greutate 200) peste (câștigători confirmați + documentați) / (proiecte urmărite în fereastră), cu
-interval Wilson 90 %. `LR` = densitatea câștigătorilor la minim în jurul proiectului (nucleu gaussian,
-σ 22 pe scala 0–100, acoperire minimă 35 %) împărțită la densitatea universului de azi; tras spre 1 cu
-`exp(n/(n+5)·ln LR)` și limitat la [1/25, 25]. `p = p₀·LR / (p₀·LR + 1 − p₀)`. Intervalul publicat
-combină incertitudinea lui `p₀` cu împrăștierea lui `LR` când oricare câștigător lipsește
-(leave-one-out). Agregatorii păstrează mai ales supraviețuitorii, deci `p₀` este o limită superioară;
-separarea (ridicarea mediană a câștigătorilor la minimul lor) se publică, iar calibrarea reală se
-măsoară în timp de agent.
+interval Wilson 90 %. Probabilitatea pentru o zi oarecare este `p₀ = p_an × f`, unde `f` = media zilelor
+calificate / 365, măsurată pe câștigătorii confirmați (pentru cei doar documentați: mediana celor
+măsurați dacă există cel puțin trei, altfel `documentedDays` = 21). Pe datele demo: ≥100× anual 0,58 %
+× 131/365 ≈ 0,21 % pe zi.
+
+**Amprentele pozitive și ajustarea, fără look-ahead.** Fiecare câștigător contribuie cu până la patru
+amprente, din zile calificate eșantionate uniform (minimul inclus), fiecare calculată doar din
+lumânările de până în ziua ei, în unitățile motorului de similaritate. Faptele pe care istoricul nu le
+poate da (float, concentrare, perpetue, Alpha la acel moment) rămân necunoscute dacă nu le declară
+sămânța — și sunt excluse din comparație, nu tratate ca rele. `LR` = densitatea amprentelor pozitive
+în jurul proiectului (nucleu gaussian, σ 22 pe scala 0–100, acoperire minimă 35 %) împărțită la
+densitatea universului de azi; tras spre 1 cu `exp(n/(n+5)·ln LR)` și limitat la [1/25, 25].
+`p = p₀·LR / (p₀·LR + 1 − p₀)`. Intervalul publicat combină incertitudinea lui `p₀` cu împrăștierea lui
+`LR` când oricare câștigător lipsește.
+
+**Validarea în afara eșantionului.** Fiecare câștigător este scos pe rând din învățare și clasat printre
+proiectele de azi de modelul învățat fără el (`identification` în `model.js`): mediana percentilei,
+câți ies în top 10 % și în top 20 % (aleator: 10 % și 20 %), lift-ul top 20 %. Verdictul cere cel puțin
+8 câștigători (`minLooWinners`). Când amprenta nu-și câștigă locul — top 20 % ≤ 20 %, adică nu mai bine
+decât întâmplarea — motorul **oprește singur ajustarea** pentru acea țintă și publică rata de bază pe zi,
+cu motivul. Agregatorii păstrează mai ales supraviețuitorii, deci `p_an` este o limită superioară;
+calibrarea reală se măsoară în timp de agent (registrul săptămânal, regulile FC-5 și FC-6).
 
 ---
 
@@ -577,34 +598,103 @@ Un modul separat (agent/), cu propriul hexagon și propriile teste de arhitectur
 src/ sau web/, iar acestea nu îl importă. Contractul lui cu scannerul este doar ce publică scannerul
 (ramura `cri-state`) și ce înregistrează GitHub.
 
-- **domain/** — catalogul celor 36 de porți și evaluatorii lor; cron și cadență; norme robuste (mediană
+- **domain/** — catalogul celor 39 de porți și evaluatorii lor; cron și cadență; norme robuste (mediană
   + MAD, verdict „în învățare” sub 8 puncte, un punct nu este niciodată propria normă); incidente
   (deschise, escaladate, rezolvate cu commitul aterizat cât au fost deschise, sau „trecătoare”) și
   reluarea istoricului (secvențele de eșecuri din ultimele 100 de rulări devin incidente rezolvate,
   cu semnătura eșecului citită o dată din adnotări); calibrarea (cohorte săptămânale, maximul de
   24 h, observat/așteptat cu interval Poisson exact, Brier și skill la scadență, sumele cohortelor
   vechi păstrate); eficiența (paritate × prospețime × fiabilitate); auto-repararea (un plan pur);
-  narațiunea și garda ei. Fără ceas, fără aleatoriu, fără I/O — verificat mecanic.
-- **application/** — `analyze` (observă → învață → evaluează → incidente → registru → eficiență →
-  plan), `narrate` (model local → gardă → sau șablon, cu motivul), `act` (execută planul, ține
-  problema GitHub). Rulează ca pași separați: modelul se instalează doar când rezumatul trebuie rescris.
+  narațiunea și garda ei; **eficiența identificării** (`identification.js`), **regulile fundamentale**
+  (`rules.js`), **auto-evaluarea** (`selfeval.js`) și **chat-ul** (`commands.js`, `chat.js`,
+  `retrieval.js`, `patch.js`). Fără ceas, fără aleatoriu, fără I/O — verificat mecanic.
+- **application/** — `analyze` (observă → învață → evaluează porțile → regulile → porțile derivate →
+  incidente → registru → eficiență → plan), `narrate` (model local → gardă → sau șablon, cu motivul),
+  `act` (execută planul, ține problema GitHub), `chat` (comenzile proprietarului). Rulează ca pași
+  separați: modelul se instalează doar când rezumatul trebuie rescris.
 - **adapters/** — API GitHub (citiri + exact două scrieri: `workflow_dispatch` și problema agentului;
-  testul de arhitectură interzice delete, cancel, re-run, merge, conținut), fișierele de stare,
-  Pages (`*.github.io`, cu deploy-ul din API ca rezervă), prețuri publice CoinGecko fără cheie (agentul
-  nu folosește niciodată cheia operatorului, deci nu poate consuma cota scannerului), Ollama doar pe
-  127.0.0.1, simulatorul determinist al unui repository cu trei săptămâni de istoric.
+  testul de arhitectură interzice delete, cancel, re-run, merge, conținut; pull requesturile agentului
+  sunt doar citite înapoi), fișierele de stare, cunoașterea scrisă (regulile și documentația), Pages
+  (`*.github.io`, cu deploy-ul din API ca rezervă), prețuri publice CoinGecko fără cheie (agentul nu
+  folosește niciodată cheia operatorului, deci nu poate consuma cota scannerului), Ollama doar pe
+  127.0.0.1, spațiul de lucru git al comenzii de cod și simulatorul determinist al unui repository cu
+  trei săptămâni de istoric.
 
 **De ce un model local.** GitHub Models a fost retras; orice API de model găzduit ar cere cont sau
-abonament. Un model deschis rulat în runner (Ollama, `qwen2.5:3b` implicit) este gratuit, fără cont și
-fără ca vreo dată să părăsească runner-ul. Un model mic poate inventa un număr, deci garda cere ca
-fiecare cifră din text să apară în fapte (forme rotunjite permise), respinge limbajul de
-tranzacționare și linkurile; un text respins nu se publică.
+abonament. Un model deschis rulat în runner (Ollama: `qwen2.5:3b` pentru text, `qwen2.5-coder:7b`
+pentru cod) este gratuit, fără cont și fără ca vreo dată să părăsească runner-ul. Un model mic poate
+inventa un număr, deci garda cere ca fiecare cifră din text să apară în fapte (forme rotunjite permise),
+respinge limbajul de tranzacționare și linkurile; un text respins nu se publică.
 
 **Porțile de cod din CI.** `scripts/gate-reporter.js` (reporter node:test) atribuie fiecare test unei
 porți — după fișier sau, pentru testele de arhitectură, după regula verificată — iar
 `scripts/gates-annotate.js` publică numărătorile ca o adnotare `cri-gates` și fiecare test eșuat ca
 adnotare `gate:<grup>`. Agentul le citește prin Checks API, deci știe ce poartă a picat fără să
 descarce loguri.
+
+### Eficiența identificării, măsurată înainte
+
+Fiecare scanare completă salvează pe `cri-state` (`discovery.json`), pentru fiecare proiect, prețul și
+verdictul publicat atunci (stadiu, oportunitate, risc, familii). O **observație** este un proiect la o
+scanare al cărei orizont s-a încheiat; **reușita** este „maximul prețurilor din scanările următoare, în
+orizont, atinge (1 + prag) × prețul de la scanare”. Fereastra începe strict după scanare, deci nimic
+din ce verdictul nu știa nu intră în ea. Pentru fiecare **nivel** (benzile de oportunitate, stadiile,
+verdictul de business și o variantă măsurată a lui):
+
+```
+lift   = P(reușită | nivel) / P(reușită | univers, aceleași scanări)    interval Wilson 90 %
+recall = mișcări semnalate de nivel / toate mișcările
+```
+
+plus rata pe **episod** (prima observație a fiecărui proiect, fiindcă scanări consecutive ale
+aceluiași proiect nu sunt independente) și rezultatul median la final. Un nivel se judecă doar cu cel
+puțin 30 de observații din 10 proiecte; recall-ul, după cel puțin 20 de mișcări. Două ferestre:
++20 % în 72 h și +30 % în 7 zile. Recomandarea de prag (`bestTier`) alege nivelul cu cel mai mare
+recall × lift dintre cele cu limita inferioară a lift-ului peste 1 — niciodată stadiul târziu sau banda
+ignorată — și rămâne recomandare: pragurile verdictului sunt cerințe de business.
+
+### Regulile fundamentale, în memoria agentului
+
+`agent/knowledge/rules.json` scrie, în cuvintele proprietarului, ce înseamnă „radarul identifică
+proiectele corecte” și „prognoza spune adevărul”: 6 principii, 5 reguli de identificare, 7 de prognoză,
+3 de monitorizare, fiecare cu o verificare tipizată (`tierLift`, `monotone`, `lateIsLate`,
+`recallAtLeast`, `forecastEvent`, `noLookAhead`, `annualPlausible`, `looSkill`, `calibrationInterim`,
+`calibrationMature`, `learningList`, `selfSkill`, `normMaturity`, `gate`, `principle`). La fiecare rulare
+agentul le încarcă prin `KnowledgePort` — versiunea și amprenta lor intră în memorie, iar orice
+schimbare a regulilor este ea însăși un eveniment înregistrat —, le evaluează pe datele proiectului și
+păstrează verdictul fiecăreia pe rulare (`ruleHistory`). Trei porți derivă din ele (`model.identification`,
+`agent.rules`, `agent.learning`) și se evaluează într-o a doua trecere; o regulă nu poate depinde de o
+poartă derivată, deci nu există cicluri.
+
+### Auto-evaluarea capacității de învățare
+
+O afirmație de tipul „agentul învață” se măsoară, nu se declară. La fiecare rulare agentul prezice,
+pentru fiecare poartă, probabilitatea ca ea să fie în atenționare sau eșec la rularea următoare, dintr-un
+lanț cu două stări învățat pe poartă, al cărui prior este același lanț adunat peste toate porțile
+(o poartă cu istoric scurt împrumută comportamentul proiectului), pornit de la „stările sunt lipicioase”.
+La rularea următoare predicțiile se notează (scor Brier), *prequential*: fiecare a fost făcută înainte
+să se știe rezultatul. Două reguli naive pun ștacheta: „ca data trecută” (persistența) și frecvența
+simplă a porții. `skill = (Brier_naiv − Brier_agent) / max(Brier_naiv, 0,01)`. Cât timp nu se schimbă
+nimic, persistența este perfectă și nicio predicție nu o poate bate; comparația cu ea se face doar după
+cel puțin 5 schimbări de stare, iar până atunci agentul este judecat față de frecvența simplă. Curba de
+învățare este Brier-ul agentului pe ferestre de 24 de rulări. O a doua verificare, independentă, notează
+normele: o valoare nouă trebuie să cadă în banda p10–p90 a seriei de dinainte în jur de 80 % din timp.
+Pentru capacitatea de a scrie cod, singura măsură care nu poate fi trucată de un test: câte dintre
+pull requesturile agentului au fost acceptate de proprietar.
+
+### Chat-ul și comanda de cod, cu două joburi
+
+`/agent …` într-un comentariu pornește `agent-chat.yml` (doar pentru OWNER, MEMBER, COLLABORATOR;
+comentariul ajunge la scripturi doar prin mediu, niciodată interpolat). Jobul `think` are un token care
+doar citește și un checkout fără credențiale; pentru `/agent cod …` el rulează modelul de cod, aplică
+blocurile SEARCH/REPLACE sub politica de patch (cel mult 8 fișiere și 400 de linii; niciodată
+`.github/`, `.git/`, testele de arhitectură, datele sau licențele; niciun tipar de cheie), rulează
+`npm test` cu mediul curățat de tokenuri, îi dă modelului o rundă de reparare și scoate un diff. Jobul
+`reply` are drepturi de scriere și **nu rulează niciun cod din repository**: verifică diff-ul din nou, în
+shell, îl aplică pe o ramură `agent/<issue>-<slug>`, deschide pull requestul (draft dacă testele nu trec;
+un link de comparație dacă Actions nu are voie să deschidă pull requesturi) și pornește CI pe ramură
+prin `workflow_dispatch` — un push făcut cu tokenul workflow-ului nu pornește singur niciun workflow.
+Agentul nu face merge și nu scrie niciodată în main.
 
 ---
 

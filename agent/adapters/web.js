@@ -7,7 +7,8 @@
  *              operator's key, so it cannot eat the scanner's monthly quota), for the 24-hour highs
  *              the calibration ledger needs
  *   Narrator   a local Ollama server (127.0.0.1 / localhost only): an open model running inside the
- *              runner, free, no account, nothing leaves the machine
+ *              runner, free, no account, nothing leaves the machine — the same adapter, with a
+ *              coder model and a longer context, writes the chat's code edits
  */
 
 async function getJson(fetchImpl, url, { timeoutMs = 20_000, headers = {} } = {}) {
@@ -74,25 +75,33 @@ export function createPublicPrices({ fetchImpl = fetch, chunk = 200, sleep = (ms
   };
 }
 
-/** NarratorPort over a local Ollama server. */
-export function createOllama({ baseUrl = 'http://127.0.0.1:11434', model, fetchImpl = fetch, timeoutMs = 240_000, numPredict = 420 }) {
+/** NarratorPort (and CoderPort) over a local Ollama server. */
+export function createOllama({ baseUrl = 'http://127.0.0.1:11434', model, fetchImpl = fetch, timeoutMs = 240_000, numPredict = 420, numCtx = 4096, temperature = 0.2 }) {
   const u = new URL(baseUrl);
   if (!['127.0.0.1', 'localhost', '[::1]'].includes(u.hostname)) throw new Error(`agent: modelul trebuie să ruleze local (127.0.0.1), nu pe ${u.hostname}`);
   const root = baseUrl.replace(/\/$/, '');
+  /** Why the model can or cannot be used: the server, then the model itself. */
+  async function status() {
+    if (!model) return { ok: false, reason: 'niciun model configurat' };
+    const v = await getJson(fetchImpl, `${root}/api/version`, { timeoutMs: 5_000 });
+    if (!v.ok) return { ok: false, reason: `serverul Ollama nu răspunde pe ${u.host} (${v.status})` };
+    const r = await getJson(fetchImpl, `${root}/api/tags`, { timeoutMs: 5_000 });
+    const has = r.ok && (r.data?.models ?? []).some((m) => m.name === model || m.name?.startsWith(`${model}:`) || m.model === model);
+    return has ? { ok: true, reason: null } : { ok: false, reason: `modelul ${model} nu este descărcat în Ollama` };
+  }
   return {
     id: 'ollama',
     model,
+    status,
     async available() {
-      if (!model) return false;
-      const r = await getJson(fetchImpl, `${root}/api/tags`, { timeoutMs: 5_000 });
-      return r.ok && (r.data?.models ?? []).some((m) => m.name === model || m.name?.startsWith(`${model}:`) || m.model === model);
+      return (await status()).ok;
     },
     async generate({ system, prompt }) {
       try {
         const res = await fetchImpl(`${root}/api/generate`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ model, system, prompt, stream: false, options: { temperature: 0.2, num_predict: numPredict, num_ctx: 4096 } }),
+          body: JSON.stringify({ model, system, prompt, stream: false, options: { temperature, num_predict: numPredict, num_ctx: numCtx } }),
           signal: AbortSignal.timeout(timeoutMs),
         });
         const text = await res.text();

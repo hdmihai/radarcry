@@ -392,7 +392,7 @@ export async function runScan(deps, config) {
   const fc = runForecast({ winners: winnersState.items, projects: fProjects, population, policy: fPolicy });
   const pastRuns = pastRunsByKey(winnersState.items);
   const fcOf = (key) => (validity.get(key)?.status === VALIDITY.REJECTED ? null : forecastView(fc.byKey.get(key), fc.rates, pastRuns.get(key) ?? null));
-  logger.info(`prognoză: ${winnersState.stats.confirmed} câștigători confirmați din istoric · ${winnersState.stats.documented} documentați · ${winnersState.stats.pending} în verificare (${winnersState.stats.charts} istorice citite) · rata de bază ≥${fPolicy.targets[0]}×: ${(fc.rates[fPolicy.targets[0]].p * 100).toFixed(2)}% din ${population} proiecte`);
+  logger.info(`prognoză: ${winnersState.stats.confirmed} câștigători confirmați din istoric · ${winnersState.stats.documented} documentați · ${winnersState.stats.pending} în verificare (${winnersState.stats.charts} istorice citite) · ≥${fPolicy.targets[0]}× de la prețul zilei: ${(fc.rates[fPolicy.targets[0]].p * 100).toFixed(3)}% (anual ${(fc.rates[fPolicy.targets[0]].annual.p * 100).toFixed(2)}% din ${population} proiecte, accesibil ~${fc.rates[fPolicy.targets[0]].meanDays} zile/an) · validare LOO: ${fc.identification[fPolicy.targets[0]]?.ready ? `${fc.identification[fPolicy.targets[0]].recallTop20}% în top 20%` : 'prea puțini câștigători'}`);
 
   // How far the per-project norms have got. On the first runs the honest answer to the project's
   // question is usually "nothing yet", and this block is what lets the dashboard say *why*: a change
@@ -649,6 +649,8 @@ export async function runScan(deps, config) {
         winners: winnersState.items,
         rates: fc.rates,
         separation: fc.separation,
+        identification: fc.identification,
+        lrOff: fc.lrOff,
         byKey: fc.byKey,
         ranked,
         isValid,

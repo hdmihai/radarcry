@@ -76,7 +76,7 @@ jobs:
           mkdir -p .state
           if git fetch --no-tags --depth=1 origin cri-state 2>/dev/null; then
             git archive --format=tar FETCH_HEAD | tar -x -C .state
-            echo "Stare restaurată: $(ls .state | tr '\n' ' ')"
+            echo "Stare restaurată: $(find .state -mindepth 1 -maxdepth 1 -printf '%f ')"
           else
             echo "Prima rulare: nu există încă ramura cri-state. Normele proprii se construiesc de la"
             echo "aceasta rulare înainte; primele scanări vor raporta încredere scăzută, ceea ce este corect."
@@ -152,7 +152,7 @@ jobs:
             echo "Raportul agentului AI inclus în site."
           else
             rm -f data/agent.json
-            echo "Agentul AI nu a publicat încă un raport; ecranul „Agent AI” afișează instrucțiunile."
+            echo 'Agentul AI nu a publicat încă un raport; ecranul „Agent AI” afișează instrucțiunile.'
           fi
 
       - name: Build static site
@@ -168,11 +168,11 @@ jobs:
           # The research state is already saved at this point, so a failure here loses nothing —
           # but it must say exactly which setting to change, in the dashboard's language.
           if ! build_type=$(gh api "repos/${GITHUB_REPOSITORY}/pages" --jq '.build_type' 2>/dev/null); then
-            echo "::error title=GitHub Pages nu este activat::Settings → Pages → Build and deployment → Source: GitHub Actions. Starea cercetării este deja salvată pe ramura cri-state; după activare, rulează din nou „Scan & deploy”."
+            echo '::error title=GitHub Pages nu este activat::Settings → Pages → Build and deployment → Source: GitHub Actions. Starea cercetării este deja salvată pe ramura cri-state; după activare, rulează din nou „Scan & deploy”.'
             exit 1
           fi
           if [ "$build_type" != "workflow" ]; then
-            echo "::error title=GitHub Pages publică dintr-o ramură::Settings → Pages → Source trebuie să fie „GitHub Actions” (acum: ${build_type})."
+            echo '::error title=GitHub Pages publică dintr-o ramură::Settings → Pages → Source trebuie să fie „GitHub Actions” (acum: '"${build_type}"').'
             exit 1
           fi
           echo "GitHub Pages publică din Actions."

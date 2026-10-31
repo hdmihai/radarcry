@@ -45,8 +45,20 @@ export function buildFacts(report) {
     eficienta: { permanent: e.capability?.permanent ?? null, cuChei: e.capability?.withKeys ?? null, realizat: e.capability?.achieved ?? null, prospetime: e.freshness?.observed ?? null, prospetimePromisa: e.freshness?.promised ?? null, fiabilitate: e.reliability ?? null, efectiva: e.effective ?? null, design: e.design ?? null, parghii: (e.levers ?? []).map((l) => ({ ce: l.label, puncte: l.points })) },
     calibrare: { cohorte: c.cohorts ?? 0, prognoze: c.predictions ?? 0, atinse20x: c.interim?.['20']?.observed ?? 0, atinse100x: c.interim?.['100']?.observed ?? 0 },
     invatare: report.learning ? { rulari: report.learning.runs, normeInvatate: report.learning.normsLearned, incidenteDeschise: report.learning.incidents?.open ?? 0, incidenteRezolvate: report.learning.incidents?.resolved ?? 0, remedieri: report.learning.fixes ?? 0 } : null,
+    identificare: identificationFacts(report),
+    reguli: report.rules?.counts ? { trecute: report.rules.counts.PASS, atentionari: report.rules.counts.WARN, esuate: report.rules.counts.FAIL, inInvatare: report.rules.counts.LEARNING, total: report.rules.total, recomandari: (report.rules.recommendations ?? []).slice(0, 2).map((r) => cut(r.text, 220)) } : null,
+    autoevaluare: report.selfEval ? { rulariNotate: report.selfEval.runsScored, necesare: report.selfEval.minRuns, brier: report.selfEval.brier, brierNaiv: report.selfEval.brierPersistence, schimbari: report.selfEval.changes, skill: report.selfEval.comparable ? report.selfEval.skill : report.selfEval.skillVsClimatology, fata: report.selfEval.comparable ? 'regula naivă' : 'frecvența simplă' } : null,
     actiuni: (report.actions ?? []).filter((a) => a.ok !== false).map((a) => ({ workflow: a.workflow, motiv: cut(a.reason, 120) })),
   };
+}
+
+/** The identification efficiency in a few numbers: the universe's rate, the early band, the verdict's recall. */
+function identificationFacts(report) {
+  const e = report.identification?.short;
+  if (!e?.observations) return null;
+  const t = (id) => e.tiers?.find((x) => x.id === id) ?? null;
+  const pick = (x) => (x ? { observatii: x.n, rata: x.ratePct, lift: x.lift, recall: x.recallPct, suficient: x.ready } : null);
+  return { fereastra: `+${e.thresholdPct}% în ${e.horizonH} h`, observatii: e.observations, scanari: e.scans, miscari: e.movers, rataUnivers: e.baseRatePct, timpuriu: pick(t('EARLY')), stage2: pick(t('STAGE2')), verdict: pick(t('ERC')) };
 }
 
 /** The deterministic summary: always available, always true. */
@@ -71,6 +83,10 @@ export function templateNarrative(report) {
   }
   const l = report.learning;
   if (l) lines.push(`Învățare: ${nr(l.runs, l.runs === 1 ? 'rulare a agentului' : 'rulări ale agentului')}, ${nr(l.normsLearned, 'norme învățate')}, ${nr(l.incidents?.open ?? 0, 'incidente deschise')} și ${l.incidents?.resolved ?? 0} rezolvate${l.learnedThisRun?.incidentsFromHistory ? ` (${l.learnedThisRun.incidentsFromHistory} reconstruite acum din istoricul rulărilor)` : ''}, ${nr(l.fixes ?? 0, 'remedieri reținute')}; ${nr(report.calibration?.predictions ?? 0, 'prognoze')} în registrul de calibrare.`);
+  const id = identificationFacts(report);
+  if (id?.timpuriu?.suficient) lines.push(`Identificare (${id.fereastra}, ${nr(id.observatii, 'observații')}): banda TIMPURIU ${id.timpuriu.rata}% față de ${id.rataUnivers}% în univers (lift ${id.timpuriu.lift}); verdictul de research timpuriu a prins ${id.verdict?.recall ?? 0}% din ${nr(id.miscari, 'mișcări')}.`);
+  const se = report.selfEval;
+  if (se?.runsScored) lines.push(`Auto-evaluare: ${nr(se.runsScored, 'rulări notate')}, Brier ${se.brier ?? '—'} față de ${se.brierPersistence ?? '—'} pentru regula naivă „ca data trecută”${se.ready ? `; skill ${se.comparable ? `${se.skill} pe ${nr(se.changes, 'schimbări de stare')}` : `${se.skillVsClimatology} față de frecvența simplă (prea puține schimbări de stare pentru regula naivă)`}` : ` (verdict după ${se.minRuns})`}.`);
   const acts = (report.actions ?? []).filter((a) => a.ok !== false);
   if (acts.length) lines.push(`Acțiuni: ${acts.map((a) => `a pornit ${a.workflow} (${cut(a.reason, 100)})`).join('; ')}.`);
   return lines.join('\n');
@@ -80,7 +96,7 @@ export function templateNarrative(report) {
 export function buildPrompt(facts) {
   return {
     system: 'Ești agentul de calitate al proiectului CRI Radar (cercetare crypto pe surse gratuite, fără tranzacționare). Scrii în limba română corectă, cu diacritice, concis, pentru operatorul proiectului. Reguli stricte: folosești DOAR cifrele din FAPTE, copiate exact; nu inventezi cauze, cifre sau date; nu dai sfaturi de investiții; nu scrii linkuri; fără introducere și fără formule de politețe.',
-    prompt: `FAPTE (JSON):\n${JSON.stringify(facts)}\n\nScrie între 4 și 6 rânduri, fiecare începând cu „- ”:\n1) starea generală și câte porți sunt în fiecare stare;\n2) cea mai importantă problemă, cu dovada și remediul ei;\n3) celelalte probleme, pe scurt;\n4) eficiența față de un desk profesional: paritate, prospețime, eficiență efectivă și cea mai mare pârghie;\n5) ce a învățat agentul și ce acțiuni a luat.\nMaximum 150 de cuvinte.`,
+    prompt: `FAPTE (JSON):\n${JSON.stringify(facts)}\n\nScrie între 4 și 6 rânduri, fiecare începând cu „- ”:\n1) starea generală și câte porți sunt în fiecare stare;\n2) cea mai importantă problemă, cu dovada și remediul ei;\n3) celelalte probleme, pe scurt;\n4) eficiența față de un desk profesional: paritate, prospețime, eficiență efectivă și cea mai mare pârghie;\n5) cât de bine identifică radarul (banda TIMPURIU față de univers, câte mișcări prinde verdictul) și ce a învățat agentul (inclusiv auto-evaluarea), plus acțiunile luate.\nMaximum 170 de cuvinte.`,
   };
 }
 

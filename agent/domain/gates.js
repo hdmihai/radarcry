@@ -9,8 +9,9 @@
  *               duration, universe, state, deployed site, freshness, secrets)
  *   cadenta   — the schedule GitHub actually delivered, workflows enabled, repository activity
  *   periodic  — the weekly source probe and the monthly label refresh
- *   model     — calibration of the ≥100× forecast and the signal track record, learned over time
- *   agent     — the agent's own memory and narrator
+ *   model     — calibration of the ≥100× forecast, the signal track record and the identification
+ *               efficiency, measured on the radar's own history
+ *   agent     — the agent's own memory, narrator, fundamental rules and self-evaluation
  *
  * Status vocabulary: PASS · WARN · FAIL · UNKNOWN (nothing observed — never read as bad) · LEARNING
  * (observed, but the norm it is judged against still has too few points).
@@ -76,9 +77,12 @@ export const GATES = Object.freeze([
 
   { id: 'model.calibration', group: 'model', severity: 'warning', title: 'Calibrarea prognozei ≥100× / ≥20×', what: 'Câștigători observați față de câți au fost prognozați, pe cohorte săptămânale; Brier la scadență.' },
   { id: 'model.trackrecord', group: 'model', severity: 'warning', title: 'Track record-ul semnalelor', what: 'Rezultatul semnalelor la scadențele de 7/14/30 de zile.' },
+  { id: 'model.identification', group: 'model', severity: 'warning', title: 'Eficiența identificării: radarul indică proiectele corecte', what: 'Pe istoricul propriu al radarului (fiecare scanare, cu verdictul publicat atunci): proiectele semnalate ating +20% în 72 h mai des decât universul? Ordinea nivelurilor, stadiul târziu și câte mișcări prinde verdictul — regulile ID-1…ID-5.' },
 
   { id: 'agent.memory', group: 'agent', severity: 'warning', title: 'Memoria agentului', what: 'Istoricul învățat: norme, incidente, remedieri, registrul prognozelor.' },
   { id: 'agent.narrator', group: 'agent', severity: 'warning', title: 'Narațiunea AI (model deschis local)', what: 'Rezumatul scris de un model deschis rulat local în runner, verificat cifră cu cifră; altfel șablonul determinist.' },
+  { id: 'agent.rules', group: 'agent', severity: 'warning', title: 'Regulile fundamentale în memoria agentului', what: 'Criteriile de evaluare și de monitorizare a prognozei și a identificării (agent/knowledge/rules.json): încărcate cu versiune și amprentă, evaluate toate la fiecare rulare, cu istoricul verdictelor.' },
+  { id: 'agent.learning', group: 'agent', severity: 'warning', title: 'Auto-evaluarea capacității de învățare', what: 'Agentul prezice starea fiecărei porți la rularea următoare și își notează predicțiile (scor Brier) față de regula naivă „ca data trecută”; normele învățate sunt verificate pe valorile noi.' },
 ]);
 
 const OK_PROVIDER = new Set(['OK', 'NOT_CONFIGURED', 'DISABLED', 'SKIPPED', 'BENIGN']);
@@ -249,11 +253,18 @@ function evalForecast(g, obs) {
   const confirmed = winners.filter((w) => w.status === 'CONFIRMED');
   const r100 = (f.baseRates ?? []).find((r) => r.multiple === 100);
   const lookAhead = confirmed.filter((w) => w.anchorAt && w.low?.at && w.anchorAt > w.low.at);
-  const value = `${confirmed.length} confirmați`;
-  if (lookAhead.length) return result(g, STATUS.FAIL, { value, evidence: `Amprentă măsurată după minim la ${lookAhead.map((w) => w.symbol).join(', ')} — date din viitor.`, remedy: 'regula point-in-time este încălcată; testele de domeniu ale prognozei trebuie să o prindă.', at: obs.snapshot.generatedAt });
-  if (r100 && !(r100.pct > 0 && r100.pct <= 5)) return result(g, STATUS.WARN, { value, evidence: `Rata de bază ≥100× = ${r100.pct}% — în afara intervalului plauzibil (0–5% pe an).`, remedy: 'verificați populația urmărită și lista de învățare.', at: obs.snapshot.generatedAt });
-  if (confirmed.length < 3) return result(g, STATUS.WARN, { value, evidence: `Doar ${confirmed.length} câștigători confirmați din istoric; restul așteaptă bugetul de istoric (câteva pe rulare).`, remedy: 'normal în primele rulări: lista se confirmă treptat, în bugetul gratuit CoinGecko.', at: obs.snapshot.generatedAt });
-  return result(g, STATUS.PASS, { value, evidence: `${confirmed.length} câștigători confirmați din istoricul zilnic; rata de bază ≥100×: ${r100 ? `${r100.pct}% (${r100.lo}–${r100.hi}%)` : '—'}.`, at: obs.snapshot.generatedAt });
+  const value = count(confirmed.length, 'câștigător confirmat', 'câștigători confirmați');
+  const at = obs.snapshot.generatedAt;
+  if (lookAhead.length) return result(g, STATUS.FAIL, { value, evidence: `Amprentă măsurată după minim la ${lookAhead.map((w) => w.symbol).join(', ')} — date din viitor.`, remedy: 'regula point-in-time este încălcată; testele de domeniu ale prognozei trebuie să o prindă.', at });
+  if (!f.event) return result(g, STATUS.WARN, { value, evidence: 'Prognoza publicată nu declară evenimentul: o rată „de la minim la vârf” supraevaluează probabilitatea de la prețul zilei.', remedy: 'actualizați motorul: rata de bază trebuie să fie pe zi (zile din care mișcarea era accesibilă).', at });
+  const annual = r100?.annualPct;
+  if (Number.isFinite(annual) && !(annual > 0 && annual <= 5)) return result(g, STATUS.WARN, { value, evidence: `Frecvența anuală ≥100× = ${annual}% — în afara intervalului plauzibil (0–5% pe an).`, remedy: 'verificați populația urmărită și lista de învățare.', at });
+  const loo = Object.values(f.model?.identification ?? {});
+  const blind = loo.filter((x) => x?.ready && x.recallTop20 <= 20);
+  const looTxt = loo.filter((x) => x?.ready).map((x) => `≥${x.target}×: ${x.recallTop20}% în top 20%`).join(', ');
+  if (blind.length) return result(g, STATUS.WARN, { value, evidence: `Validarea în afara eșantionului nu arată putere de separare (${blind.map((x) => `≥${x.target}×: ${x.recallTop20}%`).join(', ')}; aleator 20%) — ajustarea pe amprentă este oprită, prognoza este rata de bază.`, remedy: 'normal cât timp lista de învățare este mică; dacă persistă, trăsăturile amprentei nu deosebesc câștigătorii și trebuie revizuite.', at });
+  if (confirmed.length < 3) return result(g, STATUS.WARN, { value, evidence: `Doar ${confirmed.length} câștigători confirmați din istoric; restul așteaptă bugetul de istoric (câteva pe rulare).`, remedy: 'normal în primele rulări: lista se confirmă treptat, în bugetul gratuit CoinGecko.', at });
+  return result(g, STATUS.PASS, { value, evidence: `${value} din istoricul zilnic; bază ≥100× de la prețul zilei ${r100 ? `${r100.pct}% (anual ${r100.annualPct ?? '—'}%, accesibil ~${r100.qualifyingDaysMean ?? '—'} zile/an)` : '—'}${looTxt ? `; validare în afara eșantionului: ${looTxt}` : '; validarea în afara eșantionului așteaptă destui câștigători'}.`, at });
 }
 
 function evalDuration(g, obs, ctx) {
@@ -421,7 +432,58 @@ function evalTrackRecord(g, obs) {
   return result(g, good ? STATUS.PASS : STATUS.WARN, { value: `${h.horizonDays} zile`, evidence: `La ${h.horizonDays} zile: ${h.n} semnale, rata de câștig ${pctTxt((h.winRate ?? 0) * 100)}, alfa median ${pctTxt(h.medianAlphaPct, 1)}.`, remedy: good ? null : 'semnalele nu bat piața la această scadență; pragurile de semnal trebuie revăzute.', at: obs.snapshot.generatedAt });
 }
 
+const RULED = new Set(['PASS', 'WARN', 'FAIL']);
+
+function evalIdentification(g, obs, ctx) {
+  const rules = ctx.rules;
+  if (!rules) return result(g, STATUS.UNKNOWN, { evidence: 'Se evaluează după celelalte porți, din regulile fundamentale.' });
+  const id = ctx.identification?.short;
+  if (!id?.observations) return result(g, STATUS.LEARNING, { evidence: `Istoricul scanărilor nu are încă observații cu orizontul de ${id?.horizonH ?? 72} h încheiat${id ? ` (${count(id.scans, 'scanare evaluabilă', 'scanări evaluabile')})` : ''}; prima evaluare după trei zile de scanări salvate pe ramura de stare.`, at: obs.nowIso });
+  const rs = rules.results.filter((r) => r.area === 'identificare');
+  const early = id.tiers.find((t) => t.id === 'EARLY');
+  const value = early?.ready ? `TIMPURIU ×${early.lift}` : count(id.observations, 'observație', 'observații');
+  const head = `${count(id.observations, 'observație', 'observații')} din ${count(id.scans, 'scanare', 'scanări')} (${count(id.assets, 'proiect', 'proiecte')}), ${count(id.movers, 'mișcare', 'mișcări')} de +${id.thresholdPct}% în ${id.horizonH} h; rata universului ${pctTxt(id.baseRatePct, 1)}`;
+  const line = rs.map((r) => `${r.id} ${STATUS_RO[r.status]}${r.value ? ` (${r.value})` : ''}`).join(' · ');
+  const judged = rs.filter((r) => RULED.has(r.status));
+  if (!judged.length) return result(g, STATUS.LEARNING, { value, evidence: `${head}. Niciun nivel nu are încă eșantion suficient: ${line}.`, at: obs.nowIso });
+  const off = rs.filter((r) => r.status === STATUS.WARN || r.status === STATUS.FAIL);
+  if (off.length) return result(g, STATUS.WARN, { value, evidence: `${head}. ${line}. ${off.map((r) => `${r.id}: ${r.evidence}`).join(' ')}`, remedy: off.find((r) => r.recommendation)?.recommendation ?? 'detaliile sunt în „Reguli fundamentale”, în ecranul Agent AI.', at: obs.nowIso });
+  return result(g, STATUS.PASS, { value, evidence: `${head}. ${line}.`, at: obs.nowIso });
+}
+
 /* ───────────────────────────── agent ───────────────────────────── */
+
+function evalRules(g, obs, ctx) {
+  const r = ctx.rules;
+  if (!r) return result(g, STATUS.UNKNOWN, { evidence: 'Se evaluează după celelalte porți.' });
+  if (!r.total) return result(g, STATUS.WARN, { evidence: 'Regulile fundamentale lipsesc din memoria agentului.', remedy: 'fișierul agent/knowledge/rules.json trebuie să existe în repository; agentul îl încarcă la fiecare rulare.', at: obs.nowIso });
+  if (r.problems?.length) return result(g, STATUS.WARN, { value: `v${r.version}`, evidence: `Regulile au probleme de structură: ${r.problems.slice(0, 4).join('; ')}.`, remedy: 'corectați agent/knowledge/rules.json (fiecare regulă: id unic, zonă, text și o verificare cunoscută).', at: obs.nowIso });
+  const k = r.counts;
+  const kn = ctx.knowledge;
+  const changed = kn?.changes?.length > 1 ? `; ultima schimbare a regulilor ${String(kn.changes.at(-1).at).slice(0, 10)} (v${kn.changes.at(-1).from ?? '—'} → v${kn.changes.at(-1).to})` : kn?.since ? `; în memorie din ${String(kn.since).slice(0, 10)}` : '';
+  return result(g, STATUS.PASS, { value: `v${r.version} · ${r.total} reguli`, evidence: `Încărcate în memorie cu amprenta ${r.hash}${changed}: ${count(k.PASS, 'trecută', 'trecute')}, ${count(k.WARN, 'atenționare', 'atenționări')}, ${count(k.FAIL, 'eșuată', 'eșuate')}, ${k.LEARNING} în învățare, ${k.UNKNOWN} fără date.`, at: obs.nowIso });
+}
+
+function evalLearning(g, obs, ctx) {
+  const s = ctx.selfEval;
+  if (!s) return result(g, STATUS.UNKNOWN, { evidence: 'Auto-evaluarea nu a rulat.' });
+  const cov = s.coverage?.n ? `; normele: ${pctTxt(s.coverage.insidePct, 1)} din ${s.coverage.n} valori noi în banda p10–p90 (ținta ${s.coverage.targetPct}%)` : '';
+  const curve = isNum(s.brierTrend) ? `; curba de învățare: Brier ${s.brierTrend <= 0 ? 'scade' : 'crește'} cu ${Math.abs(s.brierTrend)} de la prima fereastră` : '';
+  if (!s.ready) return result(g, STATUS.LEARNING, { value: isNum(s.skillVsClimatology) ? `skill ${s.skillVsClimatology}` : null, evidence: `${count(s.runsScored, 'rulare notată', 'rulări notate')} din ${s.minRuns} necesare pentru un verdict; ${count(s.predictions, 'predicție notată', 'predicții notate')} până acum${cov}.`, at: obs.nowIso });
+  const base = `Pe ${count(s.runsScored, 'rulare', 'rulări')} (${count(s.predictions, 'predicție', 'predicții')}): Brier ${s.brier}, față de ${s.brierPersistence} pentru „ca data trecută” și ${s.brierClimatology} pentru frecvența simplă`;
+  if (!s.comparable) {
+    // Nothing changed enough for persistence to be beatable: the agent is judged against the frequency.
+    const v = s.skillVsClimatology;
+    const txt = `${base}. ${count(s.changes, 'schimbare de stare', 'schimbări de stare')} (sub ${s.minChanges}): regula naivă este încă imbatabilă, deci comparația se face cu frecvența simplă → skill ${v}${curve}${cov}.`;
+    if (isNum(v) && round(v, 2) < 0) return result(g, STATUS.WARN, { value: `skill ${v}`, evidence: txt, remedy: 'agentul anticipează mai prost decât frecvența simplă: lanțul de stări învățat este instabil.', at: obs.nowIso });
+    return result(g, STATUS.PASS, { value: isNum(v) ? `skill ${v}` : null, evidence: txt, at: obs.nowIso });
+  }
+  const txt = `${base} → skill ${s.skill} pe ${count(s.changes, 'schimbare de stare', 'schimbări de stare')}${curve}${cov}.`;
+  if (round(s.skill, 2) < 0) return result(g, STATUS.WARN, { value: `skill ${s.skill}`, evidence: txt, remedy: 'memoria nu anticipează mai bine decât regula naivă; agentul trebuie să învețe tranzițiile pe o fereastră mai lungă (priorul alpha).', at: obs.nowIso });
+  if (s.coverage?.n >= 100 && s.coverage.insidePct < 50) return result(g, STATUS.WARN, { value: `skill ${s.skill}`, evidence: `${txt} Normele acoperă prea puțin din valorile noi.`, remedy: 'seriile se mișcă mai repede decât norma lor (fereastra de 60 de puncte); verificați dacă s-a schimbat comportamentul proiectului.', at: obs.nowIso });
+  return result(g, STATUS.PASS, { value: `skill ${s.skill}`, evidence: txt, at: obs.nowIso });
+}
+
 
 function evalMemory(g, obs, ctx) {
   const m = ctx.memoryInfo;
@@ -466,17 +528,25 @@ const EVAL = {
   'model.trackrecord': evalTrackRecord,
   'agent.memory': evalMemory,
   'agent.narrator': evalNarrator,
+  'model.identification': evalIdentification,
+  'agent.rules': evalRules,
+  'agent.learning': evalLearning,
 };
+
+/** The gates computed from the rulebook and the self-evaluation (a second pass, after the rules). */
+export const DERIVED_GATES = Object.freeze(['model.identification', 'agent.rules', 'agent.learning']);
 
 /**
  * Evaluate the whole catalogue.
  * @param {any} obs  observations (see application/observe.js)
  * @param {{series?:Record<string,[number,number][]>, norms?:any, limits?:any, cadenceWindowDays?:number,
  *          expectedIntervalHours?:Record<string,number>, freshness?:any, inactivity?:any,
- *          calibration?:any, memoryInfo?:any, narrative?:any}} ctx
+ *          calibration?:any, memoryInfo?:any, narrative?:any, rules?:any, identification?:any,
+ *          knowledge?:any, selfEval?:any}} ctx
+ * @param {{only?:string[]|null}} [o]  evaluate only these gates (the derived ones, in the second pass)
  */
-export function evaluateGates(obs, ctx = {}) {
-  return GATES.map((g) => {
+export function evaluateGates(obs, ctx = {}, { only = null } = {}) {
+  return GATES.filter((g) => !only || only.includes(g.id)).map((g) => {
     try {
       if (EVAL[g.id]) return EVAL[g.id](g, obs, ctx);
       if (g.ci) return evalCiGroup(g, obs);

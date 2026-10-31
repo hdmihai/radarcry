@@ -78,6 +78,15 @@ test('the learning list is confirmed within the per-run budget, the rest waits, 
   assert.equal(next.stats.charts, 1);
   assert.equal(Object.fromEntries(next.items.map((w) => [w.symbol, w])).CCC.status, WINNER_STATUS.CONFIRMED);
   assert.deepEqual(history.calls.filter(([k]) => k === 'chart').map(([, id]) => id), ['aaa', 'bbb', 'ccc']);
+
+  // A confirmation from before the per-day event (no reachable days measured) is re-read first,
+  // even while fresh: its base rate would otherwise come from the fallback for a month.
+  const v1 = next.items.map((w) => (w.symbol === 'AAA' ? { ...w, qualifying: undefined, positives: undefined } : w));
+  const before = history.calls.length;
+  const upgraded = await refreshWinners({ cached: { items: v1 }, seeds, assets: [], history, nowMs: NOW + 2 * DAY, policy: { ...policy, chartsPerRun: 1 } });
+  assert.deepEqual(history.calls.slice(before).filter(([k]) => k === 'chart').map(([, id]) => id), ['aaa'], 'only the outdated one, first in line');
+  const aaa = upgraded.items.find((w) => w.symbol === 'AAA');
+  assert.ok(aaa.qualifying?.['100'] > 0, 'now with the days from which the run was reachable');
 });
 
 test('a seed id CoinGecko does not know is resolved only on a ticker-and-name match', async () => {
@@ -127,4 +136,21 @@ test('the snapshot block: base rates, the list, and the top forecasts of verifie
   const view = forecastView(fc.byKey.get('cg:x'), fc.rates, pastRunsByKey(items).get('cg:x') ?? null);
   assert.ok(view.targets['100'].pct > 0 && view.targets['100'].pct < 100, 'published in percent');
   assert.equal(view.pastRun, null);
+});
+
+test('no skill out of sample, no fingerprint: the forecast falls back to the base rate, and says why', () => {
+  const vec = (o) => ({ size: 50, float: 50, concentration: 50, perps: 50, bnbChain: 50, alpha: 50, reset: 50, age: 50, turnover: 50, volAccel: 50, trend30: 50, trendQuality: 50, rangePos: 50, compression: 50, change30: 50, ...o });
+  const bg = Array.from({ length: 150 }, (_, i) => ({ key: `cg:bg${i}`, vector: vec({ size: 30 + ((i * 7) % 60), float: 20 + ((i * 11) % 70), concentration: 10 + ((i * 13) % 80) }) }));
+  // Ten "winners" scattered with nothing in common: no fingerprint can single any of them out.
+  const winners = Array.from({ length: 10 }, (_, i) => ({ status: WINNER_STATUS.CONFIRMED, coverage: 1, key: `cg:x${i}`, symbol: `X${i}`, name: `X${i}`, multiple: 200, vector: vec({ size: 30 + ((i * 37) % 60), float: 20 + ((i * 53) % 70), concentration: 10 + ((i * 29) % 80) }), qualifying: { 100: 20, 20: 60 } }));
+  const fc = runForecast({ winners, projects: bg, population: 800, policy: { ...policy, minLooWinners: 8 } });
+  assert.equal(fc.identification[100].ready, true);
+  assert.ok(fc.identification[100].recallTop20 <= 20, `held-out winners at or below chance (${fc.identification[100].recallTop20}%)`);
+  assert.match(fc.lrOff[100], /validarea în afara eșantionului/);
+  for (const f of fc.byKey.values()) {
+    assert.equal(f.targets[100].basis, 'rata de bază');
+    assert.equal(f.targets[100].lift, 1);
+  }
+  // The published base is the probability for a random day, with its annual rate alongside.
+  assert.ok(Math.abs(fc.rates[100].p / fc.rates[100].annual.p - 20 / 365) < 1e-9, 'reachable on 20 days a year');
 });

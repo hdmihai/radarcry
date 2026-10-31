@@ -5,7 +5,8 @@
  *
  * Every number comes from the report: the gates and their evidence, the cadence GitHub delivered,
  * the measured efficiency against a professional desk, what the agent learned (norms, incidents and
- * the commits that fixed them, the forecast ledger) and what it did.
+ * the commits that fixed them, the forecast ledger), the identification efficiency on the radar's own
+ * history, the fundamental rules and their verdicts, the self-evaluation, and what it did.
  */
 import { html, tip } from '../core/dom.js';
 import { ago, dateTime, num } from '../core/format.js';
@@ -39,6 +40,10 @@ const ICON = { PASS: 'check', WARN: 'warn', FAIL: 'stop', UNKNOWN: 'dash', LEARN
 const SEV = { critical: 'critic', serious: 'serios', warning: 'atenționare', info: 'info' };
 const NORM = { NORMAL: { label: 'în normă', tone: 'good' }, ANOMALY: { label: 'anomalie', tone: 'warning' }, LEARNING: { label: 'în învățare', tone: 'muted' } };
 const fx = (x, d = 1) => (Number.isFinite(x) ? num(x, d) : '—');
+/** Romanian numerals take "de" from 20 on: „3 rulări”, „24 de rulări”. */
+const de = (n) => (n % 100 >= 20 || (n !== 0 && n % 100 === 0) ? 'de ' : '');
+/** A Brier score: small numbers keep their significant digits. */
+const brier = (x) => (Number.isFinite(x) ? (x !== 0 && Math.abs(x) < 0.001 ? x.toExponential(1) : num(x, 4)) : '—');
 const pc = (x, d = 1) => (Number.isFinite(x) ? `${num(x, d)}%` : '—');
 const hrs = (x) => (Number.isFinite(x) ? (x >= 48 ? `${num(x / 24, 1)} z` : `${num(x, 1)} h`) : '—');
 /** Counts without decimals, measurements with two. */
@@ -50,7 +55,7 @@ const pill = (status) => html`<span class="pill" data-tone="${TONE[status] ?? 'm
 function head(extra = '') {
   return html`<div class="view-head"><div>
     <h2 class="view-title">Agent AI — porțile de calitate</h2>
-    <p class="view-lede">Un modul separat de scanner care monitorizează gratuit toate verificările proiectului — CI pe fiecare push, fiecare scanare live, cadența reală a programărilor, sursele, cotele planurilor gratuite, site-ul publicat, calibrarea prognozei — și învață din istoricul proiectului: normele lui, incidentele trecute și commiturile care le-au rezolvat. Rezumatul este scris de un model deschis rulat local în runner (fără cont, fără cheie), verificat cifră cu cifră. Singurele acțiuni permise: pornirea unei scanări sau a unui puls sărit de GitHub și o problemă GitHub cu ce cere atenție.</p>
+    <p class="view-lede">Un modul separat de scanner care monitorizează gratuit toate verificările proiectului — CI pe fiecare push, fiecare scanare live, cadența reală a programărilor, sursele, cotele planurilor gratuite, site-ul publicat, calibrarea prognozei, eficiența cu care radarul identifică proiectele care cresc — și învață din istoricul proiectului: normele lui, incidentele trecute și commiturile care le-au rezolvat, după reguli fundamentale scrise, cu o auto-evaluare măsurată. Rezumatul este scris de un model deschis rulat local în runner (fără cont, fără cheie), verificat cifră cu cifră. Vorbiți cu el gratuit dintr-un comentariu <code>/agent …</code> sau din terminal.</p>
     ${extra}
   </div></div>`;
 }
@@ -143,6 +148,98 @@ function incidentCard(i) {
   return html`<div class="card-row agent-row"><span><b>${i.title}</b></span><span class="xs muted">${dateTime(i.firstSeen)}</span><div class="line"><span>${fix}</span>${Number.isFinite(i.durationHours) ? html`<span>după ${hrs(i.durationHours)}</span>` : ''}<span>${i.count} ${i.count === 1 ? 'rulare' : 'rulări'}</span></div></div>`;
 }
 
+/* ───────────── identification efficiency ───────────── */
+
+function tierRow(t) {
+  const tone = !t.ready ? 'muted' : t.liftLo > 1 ? 'good' : t.liftHi !== null && t.liftHi < 1 ? 'critical' : '';
+  return html`<tr>
+    <td style="white-space:normal;min-width:180px">${t.label}</td>
+    <td class="n">${num(t.n)}</td>
+    <td class="n">${num(t.assets)}</td>
+    <td class="n">${pc(t.ratePct)}</td>
+    <td class="n xs">${Number.isFinite(t.loPct) ? `${pc(t.loPct)}–${pc(t.hiPct)}` : '—'}</td>
+    <td class="n"><span class="pill" data-tone="${tone}">${Number.isFinite(t.lift) ? `×${fx(t.lift, 2)}` : '—'}</span></td>
+    <td class="n">${pc(t.recallPct)}</td>
+    <td class="n">${pc(t.medianEndPct)}</td>
+    <td class="xs">${t.ready ? 'suficient' : html`<span class="muted">mic</span>`}</td>
+  </tr>`;
+}
+
+function tierCard(t) {
+  return html`<div class="card-row agent-row"><span><b>${t.label}</b></span><span class="xs">${Number.isFinite(t.lift) ? `lift ×${fx(t.lift, 2)}` : '—'}</span>
+    <div class="line"><span>${pc(t.ratePct)} au atins pragul${Number.isFinite(t.loPct) ? ` (${pc(t.loPct)}–${pc(t.hiPct)})` : ''}</span><span>${num(t.n)} observații, ${num(t.assets)} proiecte</span><span>recall ${pc(t.recallPct)}</span><span>median ${pc(t.medianEndPct)}</span>${t.ready ? '' : html`<span class="muted">eșantion mic</span>`}</div></div>`;
+}
+
+function identificationBlock(ids, rules) {
+  if (!ids) return html`<p class="muted small">Eficiența identificării se măsoară pe istoricul scanărilor (<code>discovery.json</code> de pe ramura <code>cri-state</code>); agentul nu l-a găsit în această rulare.</p>`;
+  const recs = (rules?.recommendations ?? []).filter((x) => x.id.startsWith('ID-'));
+  return html`${Object.entries(ids)
+    .filter(([, e]) => e && Array.isArray(e.tiers))
+    .map(
+      ([w, e]) => html`<h4 class="section-title" style="margin-top:12px;font-size:var(--fs-sm)">${e.label ?? w} <span class="muted xs">${num(e.observations)} observații din ${num(e.scans)} scanări · ${num(e.assets)} proiecte · ${num(e.movers)} mișcări · universul ${pc(e.baseRatePct)}</span></h4>
+      ${e.observations
+        ? html`<div class="tbl-wrap responsive"><table class="tbl"><thead><tr><th>Nivel</th><th class="n">Obs.</th><th class="n">Proiecte</th><th class="n">Au atins</th><th class="n">Interval 90%</th><th class="n">Lift</th><th class="n">Recall</th><th class="n">Rezultat median</th><th>Eșantion</th></tr></thead><tbody>${e.tiers.map(tierRow)}</tbody></table></div>
+      <div class="cards">${e.tiers.map(tierCard)}</div>`
+        : html`<p class="muted small">Nicio observație cu orizontul încheiat încă.</p>`}`,
+    )}
+    ${recs.length ? html`<div class="panel agent-finding" style="margin-top:10px">${recs.map((x) => html`<p class="small" style="margin:0 0 6px">${icon('info', 12)} <b>${x.id}:</b> ${x.text}</p>`)}</div>` : ''}
+    <p class="panel-note">${ids.note ?? ''} Lift peste 1 = nivelul bate piața; un nivel este judecat doar cu cel puțin 30 de observații din 10 proiecte. Pragurile verdictului sunt cerințe de business: agentul le măsoară și recomandă, nu le schimbă.</p>`;
+}
+
+/* ───────────── fundamental rules ───────────── */
+
+function ruleItem(x) {
+  const t = x.trend;
+  const hist = t?.recent ? `ultimele ${t.recent} ${t.recent === 1 ? 'rulare' : `${de(t.recent)}rulări`}: ${Object.entries(t.by).filter(([, n]) => n).map(([st, n]) => `${LABEL[st] ?? st} ×${n}`).join(', ')}` : '';
+  return html`<li class="panel agent-finding">
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${pill(x.status)} <code>${x.id}</code> <b><span data-tip="${tip(x.rule)}">${x.title}</span></b>${x.value ? html` <span class="muted xs">${x.value}</span>` : ''}</div>
+    <p class="small ink2" style="margin:6px 0 0">${x.evidence}</p>
+    ${x.recommendation && x.status !== 'PASS' ? html`<p class="small" style="margin:6px 0 0"><b>Recomandare:</b> ${x.recommendation}</p>` : ''}
+    ${hist ? html`<p class="xs muted" style="margin:4px 0 0">${icon('clock', 11)} ${hist}${t.changedAt ? ` · ultima schimbare ${dateTime(t.changedAt)}` : ''}</p>` : ''}
+  </li>`;
+}
+
+function rulesBlock(r) {
+  if (!r?.results?.length) return html`<p class="muted small">Regulile fundamentale apar după prima rulare a agentului cu această versiune (fișierul <code>agent/knowledge/rules.json</code>).</p>`;
+  const AREA = { principiu: 'Principii', identificare: 'Eficiența identificării', prognoză: 'Prognoza ≥100× / ≥20×', monitorizare: 'Monitorizare și învățare' };
+  const areas = [...new Set(r.results.map((x) => x.area))];
+  return html`<p class="small muted" style="margin:0 0 8px">Versiunea ${r.version} · amprenta <code>${r.hash}</code>${r.knowledge?.since ? ` · în memoria agentului din ${dateTime(r.knowledge.since)}` : ''} · ${num(r.counts.PASS)} trecute, ${num(r.counts.WARN)} atenționări, ${num(r.counts.FAIL)} eșuate, ${num(r.counts.LEARNING)} în învățare.</p>
+    ${areas.map((a) => html`<h4 class="section-title" style="margin-top:12px;font-size:var(--fs-sm)">${AREA[a] ?? a}</h4><ul style="list-style:none;padding:0;margin:0;display:grid;gap:8px">${r.results.filter((x) => x.area === a).map(ruleItem)}</ul>`)}
+    <p class="panel-note">Fiecare regulă are o verificare pe care agentul o rulează pe datele proprii ale proiectului la fiecare rulare și un istoric al verdictelor. Regulile se schimbă doar printr-un commit al proprietarului; o schimbare de prag este ea însăși înregistrată în memorie.</p>`;
+}
+
+/* ───────────── self-evaluation ───────────── */
+
+function selfEvalBlock(se) {
+  if (!se) return '';
+  const skill = se.comparable ? se.skill : se.skillVsClimatology;
+  const maxB = Math.max(...(se.curve ?? []).map((c) => Math.max(c.brier ?? 0, c.brierPersistence ?? 0)), 1e-6);
+  const c = se.coder;
+  return html`<div class="qbar">
+      <div class="qstat" data-tone="${se.ready && Number.isFinite(skill) && skill < 0 ? 'warning' : ''}"><b class="num">${Number.isFinite(skill) ? fx(skill, 2) : '—'}</b><span>skill ${se.comparable ? 'față de „ca data trecută”' : 'față de frecvența simplă'}</span><small class="muted">${se.ready ? (se.comparable ? `pe ${num(se.changes)} schimbări de stare` : `doar ${num(se.changes)} schimbări de stare: regula naivă e încă imbatabilă`) : `verdict după ${num(se.minRuns)} rulări`}</small></div>
+      <div class="qstat"><b class="num">${brier(se.brier)}</b><span>Brier agent (mai mic = mai bine)</span><small class="muted">„ca data trecută” ${brier(se.brierPersistence)} · frecvența simplă ${brier(se.brierClimatology)}</small></div>
+      <div class="qstat"><b class="num">${num(se.runsScored)}</b><span>rulări notate</span><small class="muted">${num(se.predictions)} predicții</small></div>
+      <div class="qstat"><b class="num">${pc(se.coverage?.insidePct)}</b><span>norme: valori noi în bandă</span><small class="muted">ținta ${pc(se.coverage?.targetPct, 0)} · ${num(se.coverage?.n ?? 0)} valori</small></div>
+      ${c ? html`<div class="qstat"><b class="num">${num(c.merged)} / ${num(c.proposals)}</b><span>propuneri de cod acceptate</span><small class="muted">${c.acceptancePct === null ? 'niciuna decisă încă' : `rata ${pc(c.acceptancePct, 0)}`} · ${num(c.open)} deschise</small></div>` : ''}
+    </div>
+    ${(se.curve ?? []).length >= 2 ? html`<h4 class="section-title" style="margin-top:14px;font-size:var(--fs-sm)">Curba de învățare — Brier pe ferestre de ${num(se.curve[0].runs)} ${de(se.curve[0].runs)}rulări (mai mic = mai bine)</h4><div class="bars">${se.curve.map((w) => html`<div class="bar-row"><span class="lbl">${dateTime(w.to)}</span><span class="track"><b style="width:${((w.brier / maxB) * 100).toFixed(1)}%"></b></span><span class="val">${brier(w.brier)}</span></div>`)}</div>` : html`<p class="small muted" style="margin-top:10px">${icon('clock', 12)} Curba de învățare apare după două ferestre de rulări notate (${num((se.curve?.[0]?.runs ?? 24) * 2)}); acum: ${num(se.runsScored)}.</p>`}
+    ${(se.nextRun?.watch ?? []).length ? html`<p class="small" style="margin-top:10px">${icon('info', 12)} Porți care ar putea cere atenție la rularea următoare: ${se.nextRun.watch.map((w) => `${w.id} (${pc(w.pct, 0)})`).join(', ')}.</p>` : ''}
+    <p class="panel-note">La fiecare rulare agentul prezice, pentru fiecare poartă, probabilitatea ca ea să fie în atenționare sau eșec la rularea următoare, din lanțul de stări învățat (pe poartă și pe tot proiectul). La rularea următoare își notează predicțiile cu scorul Brier, față de regula naivă „ca data trecută” și față de frecvența simplă. Skill ≥ 0 înseamnă că memoria anticipează cel puțin la fel de bine ca regula naivă; o curbă care coboară arată că învață.</p>`;
+}
+
+/* ───────────── free chat ───────────── */
+
+function chatBlock(r) {
+  const live = r.mode === 'live' && r.repo;
+  const link = live ? `https://github.com/${r.repo}/issues/new?title=${encodeURIComponent('Agent AI — întrebare')}&body=${encodeURIComponent('/agent stare')}` : null;
+  return html`<ul class="facts">
+      <li><span><b>Din GitHub (telefon sau desktop):</b> un comentariu care începe cu <code>/agent</code> în orice problemă (issue) a repository-ului — de exemplu <code>/agent stare</code>, <code>/agent diagnoză scan.run</code>, <code>/agent eficiență</code>, <code>/agent prognoză LAB</code>, <code>/agent învățare</code>, <code>/agent întreabă cum se calculează prognoza?</code>, <code>/agent cod adaugă un test pentru …</code>. Răspunsul vine ca un comentariu în 1–3 minute (cu modelul local, câteva minute mai mult). Răspunde doar proprietarului și colaboratorilor.${link ? html` <a href="${link}" target="_blank" rel="noopener">Deschide o întrebare ${icon('external', 11)}</a>` : ''}</span></li>
+      <li><span><b>Din terminal (Termux inclus):</b> <code>npm run agent:sync</code> aduce memoria și starea, apoi <code>npm run agent:chat -- stare</code> sau doar <code>npm run agent:chat</code> pentru o sesiune interactivă.</span></li>
+      <li><span><b>Ca un copilot:</b> <code>/agent cod …</code> scrie codul cu un model deschis rulat local în runner, aplică schimbarea doar în fișierele permise, rulează testele într-un job fără drept de scriere, repară o dată dacă eșuează și deschide un pull request pe o ramură <code>agent/…</code>. Agentul nu face merge și nu scrie niciodată în main.</span></li>
+      <li><span><b>Gratuit:</b> GitHub Actions pe un repository public, tokenul automat al workflow-ului, Ollama cu modele deschise (fără cont, fără cheie). Nimic nu părăsește runnerul.</span></li>
+    </ul>`;
+}
+
 function calibrationBlock(c) {
   if (!c) return '';
   const i20 = c.interim?.['20'];
@@ -210,13 +307,21 @@ export function agentMarkup() {
 
     <section class="section"><h3 class="section-title">Calibrarea prognozei ≥100×</h3>${calibrationBlock(r.calibration)}</section>
 
+    <section class="section"><h3 class="section-title">Eficiența identificării — radarul indică proiectele corecte?</h3>${identificationBlock(r.identification, r.rules)}</section>
+
+    <section class="section"><h3 class="section-title">Reguli fundamentale de evaluare și monitorizare</h3>${rulesBlock(r.rules)}</section>
+
+    <section class="section"><h3 class="section-title">Auto-evaluarea capacității de învățare</h3>${selfEvalBlock(r.selfEval)}</section>
+
+    <section class="section"><h3 class="section-title">Vorbește cu agentul — gratuit</h3>${chatBlock(r)}</section>
+
     ${(r.recentActions ?? []).length ? html`<section class="section"><h3 class="section-title">Acțiuni recente</h3><ul class="facts">${r.recentActions.map((a) => html`<li><span><b>${dateTime(a.at)}</b> — ${a.ok ? 'a pornit' : 'nu a putut porni'} <code>${a.workflow}</code>: ${a.reason}</span></li>`)}</ul></section>` : ''}
 
-    <section class="section"><h3 class="section-title">Reguli</h3>
+    <section class="section"><h3 class="section-title">Politica agentului</h3>
       <ul class="facts">
         <li><span><b>Gratuit.</b> Tokenul automat al workflow-ului (API GitHub), câteva apeluri publice CoinGecko fără cheie și un model deschis rulat local în runner (Ollama); niciun abonament, niciun secret citit.</span></li>
-        <li><span><b>Exclusiv observare.</b> Acțiuni permise: ${(r.policy?.actionsAllowed ?? []).join('; ')}. Agentul nu poate anula, șterge, relua cu alți parametri sau modifica cod.</span></li>
-        <li><span><b>Configurare</b> (Settings → Secrets and variables → Actions → Variables): <code>CRI_AGENT_LLM=off</code> dezactivează modelul local, <code>CRI_AGENT_MODEL</code> alege alt model deschis, <code>CRI_AGENT_HEAL=off</code> oprește pornirile automate, <code>CRI_AGENT_ISSUES=off</code> oprește problema GitHub.</span></li>
+        <li><span><b>Exclusiv observare.</b> Acțiuni permise: ${(r.policy?.actionsAllowed ?? []).join('; ')}. Agentul nu poate anula, șterge, relua cu alți parametri sau face merge; codul îl propune doar ca pull request, la cererea proprietarului.</span></li>
+        <li><span><b>Configurare</b> (Settings → Secrets and variables → Actions → Variables): <code>CRI_AGENT_LLM=off</code> dezactivează modelul local, <code>CRI_AGENT_MODEL</code> alege alt model deschis, <code>CRI_AGENT_CODE_MODEL</code> alege modelul de cod (implicit qwen2.5-coder:7b), <code>CRI_AGENT_HEAL=off</code> oprește pornirile automate, <code>CRI_AGENT_ISSUES=off</code> oprește problema GitHub.</span></li>
       </ul>
     </section>`;
 }

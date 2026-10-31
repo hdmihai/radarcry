@@ -12,7 +12,14 @@ Rulează pe GitHub Actions și publică un dashboard static pe GitHub Pages.
 
 Pe lângă răspunsul la întrebare, fiecare proiect verificat primește o **prognoză ≥100× în 12 luni**,
 învățată din câștigătorii ultimului an (LAB, BTW, IRYS, AKEDO, pippin…), iar un **agent AI separat**
-monitorizează gratuit toate porțile de calitate ale proiectului și învață din istoricul lui.
+monitorizează gratuit toate porțile de calitate ale proiectului, măsoară cât de bine identifică radarul
+proiectele care cresc, judecă prognoza după **reguli fundamentale scrise în memoria lui**, își
+**notează singur predicțiile** (auto-evaluare) și răspunde gratuit proprietarului — dintr-un comentariu
+`/agent …` sau din terminal (Termux inclus) — cu diagnoze și, la cerere, cu **cod propus ca pull
+request**, testat înainte.
+
+Toate cerințele de business, cu criteriul de acceptare și locul în care fiecare este verificată, sunt
+în secțiunea [Cerințele de business](#cerințele-de-business).
 
 Este un proiect **exclusiv de cercetare**. Nicio componentă nu plasează și nu transmite ordine — un
 test de arhitectură respinge automat orice endpoint de execuție sau de retragere.
@@ -130,7 +137,10 @@ acest test **și** are schimbări simultane în cel puțin două familii.
 Fiecare proiect verificat primește probabilitatea unei creșteri de cel puțin **100×** (și de **20×**,
 clasa LAB / BTW / IRYS) în următoarele 12 luni: pe card, în dosar, în fișa proiectului, în Univers
 (coloana „≥100×”) și în ecranul **Prognoză ≥100×**. Este o estimare statistică a unui eveniment rar,
-nu o predicție: chiar și cea mai mare probabilitate rămâne de ordinul procentelor.
+nu o predicție: chiar și cea mai mare probabilitate rămâne de ordinul procentelor. Evenimentul este
+numit exact, fiindcă de el depinde cifra:
+
+> **prețul atinge cel puțin N× prețul din ziua citirii, în următoarele 365 de zile.**
 
 1. **Lista de învățare** — proiectele care au crescut de cel puțin 15× în ultimele 365 de zile, din
    două surse gratuite: semințe documentate cu surse publice (`config/winners.json`) și candidații
@@ -139,15 +149,23 @@ nu o predicție: chiar și cea mai mare probabilitate rămâne de ordinul procen
    se confirmă din istoricul zilnic CoinGecko (câteva pe rulare, în bugetul gratuit), pe mediana a
    trei zile, cu minimul acceptat doar unde capitalizarea ≥ 1 M$ și volumul ≥ 25 000 $ — un tick
    izolat pe o pereche goală nu poate inventa o mișcare de 1000×.
-2. **Amprenta la minim** — fiecare câștigător este măsurat *la minimul lui*, doar din lumânările de
-   până atunci, pe aceleași trăsături ca analogii LAB/BTW/AGT. Ce s-a întâmplat după minim este
-   eticheta, niciodată o trăsătură.
-3. **Rata de bază** — câștigătorii împărțiți la proiectele mici urmărite în fereastră, cu o estimare
-   prudentă la pornire (0,5 % pe an, cântărită ca 200 de proiecte) și interval Wilson de 90 %.
-4. **Ajustarea** — cât de dens stau câștigătorii (la minim) în jurul proiectului față de cât de dens stă
-   universul de azi (nucleu gaussian pe amprentă), trasă spre 1 cât timp câștigătorii sunt puțini și
-   limitată la ×25: `p = p₀·LR / (p₀·LR + 1 − p₀)`. Intervalul publicat combină incertitudinea ratei
-   de bază cu cât se schimbă estimarea când oricare câștigător lipsește din listă.
+2. **Zilele din care mișcarea era accesibilă** — pentru fiecare câștigător confirmat se numără zilele
+   lichide din care prețul a mai atins N× prețul acelei zile (LAB: 175 de zile pentru ≥100×). O rată
+   numărată „de la minim la vârf” ar supraevalua probabilitatea pe care o vede cineva care citește
+   radarul într-o zi oarecare.
+3. **Rata de bază pe zi** — câștigătorii împărțiți la proiectele mici urmărite în fereastră (posterior
+   Beta cu o estimare prudentă la pornire: 0,5 % pe an, cântărită ca 200 de proiecte; interval Wilson
+   90 %), înmulțiți cu partea din an din care mișcarea era accesibilă. Pe datele demo: ≥100× anual
+   0,58 % × 131 de zile / 365 ≈ **0,21 % pentru o zi oarecare**.
+4. **Ajustarea după amprentă, fără date din viitor** — fiecare câștigător contribuie cu până la patru
+   amprente, din zilele lui accesibile (minimul inclus), fiecare măsurată doar din lumânările de până în
+   ziua ei. Cât de dens stau aceste amprente în jurul proiectului față de cât de dens stă universul de
+   azi (nucleu gaussian), tras spre 1 cât timp câștigătorii sunt puțini și limitat la ×25:
+   `p = p₀·LR / (p₀·LR + 1 − p₀)`.
+5. **Validarea în afara eșantionului** — fiecare câștigător este scos pe rând din învățare și clasat
+   printre proiectele de azi de modelul învățat fără el. Pe datele demo, 61,5 % dintre cei 13
+   câștigători ≥20× ies în top 20 % (aleator: 20 %). Când amprenta nu bate întâmplarea (sub 20 %, cu
+   cel puțin 8 câștigători), motorul **oprește singur ajustarea** și publică rata de bază pe zi.
 
 Semințele documentate (31 octombrie 2026, fiecare cu sursele ei în `config/winners.json`):
 
@@ -173,6 +191,123 @@ Ce spune lista, onest: **majoritatea câștigătorilor și-au pierdut aproape to
 (deci rata de bază este o limită superioară), iar puterea de separare a amprentei se măsoară pe datele
 de învățare (optimistă). De aceea agentul AI înregistrează săptămânal fiecare prognoză și o compară cu
 ce s-a întâmplat efectiv — calibrarea se măsoară în timp, nu se presupune.
+
+---
+
+## Cerințele de business
+
+Ce trebuie să facă proiectul și cum, în cuvintele proprietarului, fiecare cu **criteriul de acceptare**
+și **locul în care este verificată** — o poartă de calitate (vezi [Porțile de calitate](#porțile-de-calitate)),
+o regulă fundamentală a agentului (`agent/knowledge/rules.json`) sau un test. O cerință fără verificare
+nu este listată ca îndeplinită.
+
+### A. Produsul
+
+1. **Întrebarea, cuvânt cu cuvânt.** „Arată-mi proiectele mici unde se schimbă simultan mai multe
+   lucruri importante, înainte ca mișcarea să devină evidentă, și spune-mi ce riscuri pot invalida
+   această ipoteză.”
+   *Acceptare:* fiecare din cele patru părți are un motor dedicat (mic · simultan · înainte · riscuri),
+   iar Small-Cap Radar arată, pe fiecare card, testul în trei părți și partea care a picat.
+   *Verificat:* testele de domeniu și end-to-end (`ci.domain`, `ci.application`).
+2. **Universul.** Top 1000 CoinMarketCap și CoinGecko plus toate tokenurile Binance Alpha și Gate
+   Alpha; **fiecare** proiect eligibil cercetat în profunzime (până la 1000), nu o listă scurtă.
+   *Acceptare:* universul complet la fiecare scanare, fără prăbușiri față de normă; fiecare proiect
+   cercetat apare în Univers. *Verificat:* `scan.universe`, `scan.sources`.
+3. **„Proiecte mici”.** Capitalizare 1–300 M$, volum ≥ 500 000 $/zi; fuziune pe contract și nume, nu pe
+   simbol. *Verificat:* `config/default.json` și testele universului.
+4. **Verdictul.** `Early Research Candidate = Stage 1–2 ȘI oportunitate > 75 ȘI risc < 60`; un proiect
+   „răspunde la întrebare” când trece testul și are schimbări simultane în cel puțin două familii.
+   Benzile de oportunitate: IGNORĂ < 40 · DE URMĂRIT 40–60 · TIMPURIU 60–75 · CONFIRMAT 75–90 ·
+   POTENȚIAL RIDICAT ≥ 90. *Acceptare:* pragurile nu se schimbă automat — agentul le măsoară și
+   recomandă, cu dovezi, iar decizia este a proprietarului (regula P-5). *Verificat:* testele motorului
+   de stadiu și verdict; regula ID-5 măsoară câte mișcări prinde verdictul.
+5. **Riscurile ca invalidatori.** Fiecare ipoteză vine cu lista explicită a ce o poate invalida.
+   *Verificat:* motorul de invalidatori și testele lui; ecranul Deep Research.
+6. **Poarta de validitate.** În listele CRI ajung doar proiecte verificate (cinci verificări
+   obligatorii); un proiect respins apare în ecranul Validare cu motivul, nu ascuns.
+   *Verificat:* `scan.validity`.
+7. **Prognoza ≥100× / ≥20× în 12 luni**, pentru fiecare proiect verificat, învățată din câștigătorii
+   ultimului an (LAB, BTW, IRYS, AKEDO, pippin…), ca probabilitate cu interval și bază, pentru
+   evenimentul „prețul atinge N× prețul din ziua citirii”. *Acceptare:* eveniment declarat, rată pe zi,
+   fără date din viitor, rată anuală plauzibilă, validare în afara eșantionului, calibrare în timp.
+   *Verificat:* regulile FC-1…FC-7, porțile `scan.forecast` și `model.calibration`.
+8. **Identificarea corectă.** Proiectele semnalate trebuie să crească mai des decât piața — măsurat
+   înainte, pe istoricul propriu al radarului, nu presupus. *Acceptare:* banda TIMPURIU cu lift ≥ 1,5 la
+   +20 % în 72 h; Stage 2 cu lift ≥ 1,2; ratele cresc odată cu nivelul; stadiul „târziu” chiar este
+   târziu; verdictul prinde cel puțin 5 % din mișcări. *Verificat:* regulile ID-1…ID-5, poarta
+   `model.identification` (rezultatele live: [Eficiența identificării](#eficiența-identificării--măsurată-pe-istoricul-radarului)).
+9. **Futures Radar și Deep Research.** Cinci blocuri ponderate cu note A++…B și filtre dure afișate;
+   un proiect pe un singur ecran, cu deținătorii clasificați în actori și concentrarea pe supply-ul
+   efectiv. *Verificat:* testele de domeniu `futures/` și `onchain/`, testele de interfață.
+10. **Dashboard-ul.** Static, pe GitHub Pages, în limba română, mobile-first (fiecare ecran la 390 px
+    fără derulare orizontală), fiecare cifră cu proveniență. *Verificat:* `ci.web`, `scan.pages`.
+11. **Eficiența față de soluțiile profesionale**: „comparabilă, minimum 90 % din performanța lor” —
+    calculată, nu declarată: paritate pe 32 de capabilități ponderate × prospețime livrată ×
+    fiabilitate. *Acceptare:* cele trei cifre de paritate publicate la fiecare scanare, eficiența
+    efectivă măsurată de agent din rulări, cu pârghiile care o despart de ținta de design.
+    *Verificat:* `arch.parity`, raportul agentului (secțiunea [Eficiența](#eficiența-față-de-soluțiile-profesionale)).
+
+### B. Constrângeri
+
+12. **Doar surse publice și gratuite, sau care cer doar un cont — fără abonamente de niciun fel.**
+    Orice soluție care necesită abonament este exclusă din start. *Acceptare:* fiecare URL din adaptoare
+    este pe lista aprobată; hosturile cu abonament (CoinGlass API, Dune API, X API, CoinGecko Pro…)
+    sunt interzise; planurile gratuite sunt contorizate în unitățile lor și oprite preventiv la 95 %.
+    *Verificat:* `ci.free`, `scan.quota`.
+13. **Exclusiv research.** Niciun endpoint de ordine sau de retragere, nici măcar nefolosit.
+    *Verificat:* `ci.research`.
+14. **Cheile API doar în GitHub Secrets.** Niciodată în HTML, JS sau fișierele publicate; `SOLANA_RPC_URL`
+    (conține cheia) nu se tipărește, nu se loghează și nu se publică. *Verificat:* `scan.secrets` (și
+    raportul agentului, și orice propunere de cod a agentului trec aceeași scanare de chei).
+15. **Arhitectură hexagonală — regulă obligatorie.** Domeniu pur și determinist, aplicația doar spre
+    domeniu și porturi, I/O doar în adaptoare, simulatorul cu aceeași suprafață ca adaptoarele reale;
+    agentul are propriul hexagon. *Verificat:* `ci.arch`, `test/agent/architecture.test.js`.
+16. **Zero dependențe la rulare**, Node ≥ 22, totul pe GitHub Actions și GitHub Pages (repository
+    public). *Verificat:* `package.json` fără dependențe; CI pe Node 22 și 24.
+17. **Necunoscut nu înseamnă negativ.** Un factor nemăsurat iese din ponderare, nu penalizează; o
+    poartă fără date este „necunoscut”, nu „eșuat”. *Verificat:* regula P-2 și testele motoarelor.
+18. **Point-in-time.** Nicio normă, prognoză, intrare în track record sau măsurare a identificării nu
+    folosește date de după momentul ei. *Verificat:* regulile P-1, FC-2 și testele „no look-ahead”.
+19. **Un eșantion mic se raportează ca eșantion mic** — cu interval și cu verdictul „în învățare”.
+    *Verificat:* regula P-3.
+
+### C. Agentul AI
+
+20. **Modul separat** care monitorizează gratuit toate verificările proiectului și învață din istoricul
+    lui. *Acceptare:* nu importă nimic din `src/` sau `web/` (și invers); 39 de porți evaluate la
+    fiecare rulare; normele, incidentele și commiturile care le-au rezolvat reținute în memorie.
+    *Verificat:* testele de arhitectură ale agentului, `agent.memory`.
+21. **Criteriile și regulile fundamentale în memoria agentului** — de evaluare și de monitorizare a
+    prognozei și a eficienței de identificare. *Acceptare:* `agent/knowledge/rules.json` încărcat la
+    fiecare rulare, cu versiune și amprentă; fiecare regulă evaluată pe datele proiectului, cu istoricul
+    verdictelor; orice schimbare de prag înregistrată. *Verificat:* `agent.rules`.
+22. **Interacțiune gratuită cu agentul.** *Acceptare:* un comentariu `/agent …` pe GitHub (de pe
+    telefon sau desktop), terminalul (`npm run agent:chat`, Termux inclus) și linkul din dashboard;
+    răspunde doar proprietarului și colaboratorilor. *Verificat:* `test/agent/chat.test.js`, testul de
+    arhitectură al `agent-chat.yml`.
+23. **Capabilități de tip Copilot: scrie cod, diagnoză, auto-evaluare a capacității de învățare.**
+    *Acceptare:* `/agent cod …` produce un pull request pe o ramură `agent/…`, cu testele rulate într-un
+    job care nu poate scrie, fără să atingă workflow-urile sau testele de arhitectură, fără merge și
+    fără scriere în main; `/agent diagnoză …` dă pașii căzuți, adnotările, semnătura, commiturile
+    suspecte și remedierea care a funcționat data trecută; `/agent învățare` și poarta `agent.learning`
+    arată scorul Brier al predicțiilor agentului față de regulile naive, curba de învățare și câte
+    propuneri de cod a acceptat proprietarul. *Verificat:* `test/agent/chat.test.js`, regula MON-1.
+24. **Model de limbaj deschis, rulat local, gratuit** (Ollama în runner; niciun cont, nicio cheie,
+    niciun serviciu Google/Gemini) și **nicio cifră inventată**: orice text al modelului trece garda.
+    *Verificat:* `agent.narrator`, regula P-4.
+25. **Acțiuni strict limitate.** Pornește o scanare sau un puls sărit (în limite zilnice), ține o
+    problemă GitHub, deschide un pull request doar la cererea proprietarului; niciodată merge, ștergere,
+    anulare sau scriere în main. *Verificat:* regula P-6, testele de arhitectură.
+
+### D. Livrare și operare
+
+26. **Livrarea.** Fiecare schimbare vine ca arhivă (fișierele modificate, cu structura de directoare),
+    aplicată în clone și publicată de proprietar cu `git push` din Termux; nimic nu ajunge automat în
+    main. *Acceptare:* arhiva conține doar fișiere din repository, fără date, chei sau artefacte de
+    build; CI trece pe commitul publicat (`ci.run`).
+27. **Documentația ține pasul.** README-ul descrie porțile de calitate cu starea lor măsurată, eficiența
+    față de soluțiile profesionale, prognoza, eficiența identificării, regulile agentului și aceste
+    cerințe; ecranul **Agent AI** le regenerează din date la fiecare rulare.
 
 ---
 
@@ -203,7 +338,7 @@ npm run build && npm run serve
 | `npm run probe` | o cerere mică per furnizor (a doua trecere pentru ce nu a răspuns); stare, latență, chei lipsă, pașii de înscriere și ce nod Solana servește ce metodă |
 | `npm run labels` | reconstruiește setul de etichete on-chain din eth-labels (MIT) |
 | `npm run demo` | scanare simulată + agentul AI pe istoric simulat + build + server local |
-| `npm run ci` | verificare de sintaxă + 322 de teste (arhitectură, motoare, contract, end-to-end, agent) |
+| `npm run ci` | verificare de sintaxă (193 de fișiere) + 347 de teste (arhitectură, motoare, contract, end-to-end, agent) |
 | `npm run ci:gates` | aceeași suită, raportată pe porți de calitate (`.gates.json`, citit de agent în CI) |
 | `npm run agent` | agentul AI pe repository-ul real (`GITHUB_REPOSITORY=owner/nume`, doar citire fără token) |
 | `npm run agent:demo` | agentul AI pe istoricul simulat al demo-ului → `data/agent.json` |
@@ -282,22 +417,22 @@ cercetare scade cu timpul (timp de înjumătățire de 24 h pentru semnalele de 
 orizonturi de zile, și de 2 h pentru funding și open interest); o reîmprospătare la I ore păstrează în
 medie `F(I) = H / (I·ln 2) · (1 − 2^(−I/H))` din valoare.
 
-| Măsurat pe repository-ul live (31 oct 2026) | Promis de cron | Livrat |
+| Măsurat de agent pe repository-ul live (31 oct 2026, 20:39 UTC) | Promis de cron | Livrat |
 |---|---|---|
-| Scanări complete pe zi | 6 | 4,1 |
-| Pulsuri pe zi | 96 | 5,4 |
-| Prospețimea datelor | 94,6 % | 87,1 % |
-| Scanări reușite (14 zile) | — | 96,4 % |
+| Scanări complete pe zi | 6 | 4,3 |
+| Pulsuri pe zi | 96 | 5,5 |
+| Prospețimea datelor | 94,6 % | 87,5 % |
+| Scanări reușite (14 zile) | — | 96,7 % |
 
 ```
-eficiență efectivă = paritate atinsă × prospețime livrată × fiabilitate = 82,9 % × 87,1 % × 96,4 % ≈ 69,6 %
+eficiență efectivă = paritate atinsă × prospețime livrată × fiabilitate = 82,9 % × 87,5 % × 96,7 % ≈ 70,1 %
 ținta de design    = paritate cu chei gratuite × prospețime promisă       = 92,8 % × 94,6 %          ≈ 87,8 %
 ```
 
-Diferența se explică în trei pârghii, de la cea mai mare: **cheile gratuite neconfigurate** (~10 puncte
+Diferența se explică în trei pârghii, de la cea mai mare: **cheile gratuite neconfigurate** (~9,9 puncte
 — `NODEREAL_API_KEY`, `SOLANA_RPC_URL` de la Helius Free și `COINALYZE_API_KEY` readuc fluxurile pe
 portofele mari, open interest-ul agregat și harta de lichidări), **programările sărite de GitHub**
-(~6 puncte — agentul AI le completează acum cu `workflow_dispatch`) și **scanările eșuate** (~3 puncte).
+(~5,9 puncte — agentul AI le completează cu `workflow_dispatch`) și **scanările eșuate** (~2,4 puncte).
 
 **3. Costul** — prețurile publice ale soluțiilor comparate, octombrie 2026:
 
@@ -320,22 +455,23 @@ model (credit 85 %), la fel ca harta de lichidări.
 
 ## Porțile de calitate
 
-Toate verificările de care depinde proiectul, într-un singur catalog (`agent/domain/gates.js`),
-evaluate de agentul AI la fiecare rulare. Starea de mai jos este cea **măsurată pe repository-ul live**
-pe 31 octombrie 2026 (scanarea de la 14:35 UTC), înainte de publicarea acestei versiuni: 27 trecute,
-3 atenționări, 0 eșecuri; porțile marcate *nou* încep să fie măsurate după push.
+Toate verificările de care depinde proiectul — **39 de porți** — într-un singur catalog
+(`agent/domain/gates.js`), evaluate de agentul AI la fiecare rulare. Starea de mai jos este cea
+**măsurată de agent pe repository-ul live** pe 31 octombrie 2026, 20:39 UTC (versiunea anterioară,
+3e0bd0a): 29 trecute, 4 atenționări, 0 eșecuri, 1 necunoscută, 2 în învățare; porțile marcate *nou*
+încep să fie măsurate după push.
 
 **Cod — CI la fiecare push, pe Node 22 și 24**
 
 | Poartă | Ce verifică | Stare live |
 |---|---|---|
-| CI verde pe ultimul commit din main | suita completă, ambele versiuni de Node | ✅ 46495d6, ambele joburi |
+| CI verde pe ultimul commit din main | suita completă, ambele versiuni de Node | ✅ 3e0bd0a, ambele joburi |
 | Sintaxă validă | `node --check` pe src, web, scripts, test, agent | ✅ |
 | Arhitectură hexagonală | domeniu pur și determinist, aplicația doar spre domeniu, simulator = adaptoare reale, workflow-uri fără concurență comună | ✅ |
 | Doar surse gratuite | fiecare URL din adaptoare pe lista aprobată; CoinGlass API, Dune API, X API, Moralis, Etherscan, CryptoPanic, **CoinGecko Pro** interzise | ✅ |
 | Exclusiv research | niciun endpoint de ordine sau retragere | ✅ |
-| Teste de domeniu / aplicație / adaptoare / interfață | 143 / 62 / 59 / 18 teste | ✅ |
-| Testele agentului AI | 30 de teste | *nou* |
+| Teste de domeniu / aplicație / adaptoare / interfață | 146 / 63 / 59 / 18 teste | ✅ |
+| Testele agentului AI | porți, norme, cadență, calibrare, identificare, reguli, auto-evaluare, chat, cod | ✅ 30/30 pe 3e0bd0a; 51 în această versiune |
 | Scanare DEMO offline + contract + site | simulare de 10 zile, schemă validă, `dist/` complet | ✅ |
 | Pulsul păstrează contractul | pulsul nu încalcă schema | ✅ |
 | Etichetele on-chain clasifică | eth-labels (MIT) prezent și verificat | ✅ |
@@ -344,26 +480,26 @@ pe 31 octombrie 2026 (scanarea de la 14:35 UTC), înainte de publicarea acestei 
 
 | Poartă | Ce verifică | Stare live |
 |---|---|---|
-| Ultima scanare live a reușit | fără republicarea snapshot-ului vechi | ✅ 14:35 UTC, 14,9 min |
+| Ultima scanare live a reușit | fără republicarea snapshot-ului vechi | ✅ 20:01 UTC, 14,3 min |
 | Contractul publicat respectă schema | `data/latest.json` validat înainte de publicare | ✅ |
 | Sursele obligatorii au răspuns | universul CoinGecko, lumânările 1D/4H | ✅ 2/2 |
-| Furnizorii gratuiți răspund | eșecuri și rata de succes istorică | ⚠️ 16/20 — Solana RPC public limitat (24 %), GoPlus 72 %, GeckoTerminal 82 %, GitHub 79 % (cauza GitHub — circuit deschis de 404-uri — este corectată în această versiune) |
-| Bugetele planurilor gratuite | consum lunar proiectat < 80 % | ✅ max 14,7 % (CoinGecko) |
-| Poarta de validitate aplicată | fiecare proiect eligibil are verdict, niciun respins în liste | ✅ 426 verificate · 0 în verificare · 69 respinse |
-| Prognoza ≥100× | câștigători confirmați, rată de bază plauzibilă, fără date din viitor | *nou* |
-| Durata scanării în normă | sub `runtime.maxMinutes` și în norma învățată | ✅ 14 din 22 min |
-| Universul în normă | top 1000 complet, eligibile fără prăbușiri | ✅ 4 539 unificate, 495 eligibile |
-| Starea cercetării salvată | `cri-state` conține ultima scanare | ✅ 28 de rulări |
-| Site-ul publică ultimul snapshot | GitHub Pages servește aceeași rulare | ✅ deploy 14:53 UTC reușit |
-| Prospețimea datelor | vârsta snapshot-ului față de cadența promisă | ✅ 1,2 h (ultimul puls 14:52 UTC) |
-| Nicio cheie în fișierele publicate | snapshot, rezumat, univers, raportul agentului | ✅ 3 fișiere, 3,8 MB, curate |
+| Furnizorii gratuiți răspund | eșecuri și rata de succes istorică | ⚠️ 16/20 — Solana RPC public limitat (23 %), GoPlus 74 %, GeckoTerminal 83 %, GitHub 78 % (limite de rată pe IP-urile partajate ale GitHub; `SOLANA_RPC_URL` de la Helius Free le ridică) |
+| Bugetele planurilor gratuite | consum lunar proiectat < 80 % | ✅ max 15,7 % (CoinGecko Demo) |
+| Poarta de validitate aplicată | fiecare proiect eligibil are verdict, niciun respins în liste | ✅ 401 verificate · 0 în verificare · 81 respinse |
+| Prognoza ≥100× | eveniment declarat, câștigători confirmați, rată plauzibilă, fără date din viitor, validare în afara eșantionului | ✅ 8 confirmați, bază 0,45 %/an (versiunea anterioară: „de la minim la vârf”; aceasta publică rata pe zi și validarea) |
+| Durata scanării în normă | sub `runtime.maxMinutes` și în norma învățată | ✅ 12,9 din 22 min |
+| Universul în normă | top 1000 complet, eligibile fără prăbușiri | ✅ 4 537 unificate, 482 eligibile, toate cercetate |
+| Starea cercetării salvată | `cri-state` conține ultima scanare | ✅ 30 de rulări |
+| Site-ul publică ultimul snapshot | GitHub Pages servește aceeași rulare | ✅ sincron cu rularea de la 20:02 UTC |
+| Prospețimea datelor | vârsta snapshot-ului față de cadența promisă | ✅ 0,6 h |
+| Nicio cheie în fișierele publicate | snapshot, rezumat, univers, raportul agentului | ✅ 3 fișiere, 3,9 MB, curate |
 
 **Cadență și programare**
 
 | Poartă | Ce verifică | Stare live |
 |---|---|---|
-| Cadența scanării | rulări efective / promise, 7 zile | ⚠️ 4,1 / 6 pe zi (69 %), interval median 5,9 h, maxim 10,3 h |
-| Cadența pulsului | idem, „best effort” prin design | ⚠️ 5,4 / 96 pe zi (6 %) |
+| Cadența scanării | rulări efective / promise, 7 zile | ⚠️ 4,3 / 6 pe zi (72 %), interval median 5,9 h, maxim 10,3 h |
+| Cadența pulsului | idem, „best effort” prin design | ⚠️ 5,5 / 96 pe zi (6 %) |
 | Workflow-uri active | niciunul dezactivat | ✅ 5/5 |
 | Activitate în repository | programările se opresc după 60 de zile fără activitate | ✅ |
 
@@ -373,13 +509,64 @@ pe 31 octombrie 2026 (scanarea de la 14:35 UTC), înainte de publicarea acestei 
 |---|---|---|
 | Sonda săptămânală | un apel pe fiecare furnizor | ✅ 27 oct (eșecul din 26 oct a fost rezolvat de commitul 2c6def4 — reconstruit de agent) |
 | Actualizarea lunară a etichetelor | reconstruire eth-labels + PR | … prima rulare pe 1 noiembrie |
-| Calibrarea prognozei | observat față de prognozat, Brier la scadență | … în învățare (registrul începe cu prima cohortă) |
+| Calibrarea prognozei | observat față de prognozat, Brier la scadență | … în învățare: prima cohortă, 415 prognoze înregistrate |
 | Track record-ul semnalelor | rezultat la 7 / 14 / 30 de zile | … în învățare (1 semnal în cohortă, nicio scadență atinsă) |
-| Memoria agentului | norme, incidente, remedieri | *nou* — prima trecere a învățat 24 de norme din 71 de rulări și 27 de scanări |
-| Narațiunea AI | model deschis local, verificat cifră cu cifră | *nou* |
+| Eficiența identificării | proiectele semnalate ating +20 % în 72 h mai des decât universul? regulile ID-1…ID-5 | *nou* — calculat pe istoricul live: TIMPURIU ×1,97, Stage 2 ×1,25, ordinea respectată; verdictul a prins 0 % din 121 de mișcări (atenționare, cu recomandare) |
+| Memoria agentului | norme, incidente, remedieri | ✅ 4 rulări: 26 din 36 de norme învățate, 2 incidente rezolvate cu commitul care le-a încheiat, 3 remedieri reținute |
+| Narațiunea AI | model deschis local, verificat cifră cu cifră | ⚠️ șablon: pasul Ollama ieșea cu cod 1 (serverul local nu răspundea după instalare) — corectat în această versiune: serverul este pornit explicit, iar motivul exact apare în dovada porții |
+| Regulile fundamentale | 21 de reguli încărcate cu versiune și amprentă, evaluate la fiecare rulare | *nou* |
+| Auto-evaluarea | Brier-ul predicțiilor agentului față de „ca data trecută” și de frecvența simplă | *nou* — în învățare până la 24 de rulări notate |
 
 Fiecare rulare CI publică porțile de cod ca adnotări GitHub (`scripts/gate-reporter.js` +
 `scripts/gates-annotate.js`), iar tabelul de mai sus este regenerat de agent în ecranul **Agent AI**.
+
+---
+
+## Eficiența identificării — măsurată pe istoricul radarului
+
+Întrebarea „identifică radarul proiectele corecte?” are un răspuns doar dacă este măsurat **înainte**,
+pe ce a publicat radarul atunci. Fiecare scanare completă salvează pe `cri-state` prețul și verdictul
+fiecărui proiect; agentul ia fiecare observație al cărei orizont s-a încheiat și verifică dacă maximul
+prețurilor din scanările următoare a atins pragul, apoi compară fiecare nivel de semnal cu **universul
+acelorași scanări**: `lift = rata nivelului / rata universului`, cu interval Wilson 90 %, pe observații și
+pe episoade (prima semnalare a fiecărui proiect), plus recall-ul — câte din mișcări au fost semnalate
+înainte.
+
+Pe istoricul live (31 octombrie 2026, 20:02 UTC: o săptămână de scanări, din care 12 au orizontul de
+72 h încheiat — 2 362 de observații, 600 de proiecte, 121 de mișcări de +20 %; rata universului
+**5,1 %**):
+
+| Nivel | Observații | Au atins +20 % în 72 h | Interval 90 % | Lift | Recall | Rezultat median |
+|---|---:|---:|---|---:|---:|---:|
+| Bandă IGNORĂ (< 40) | 1 132 | 4,2 % | 3,3–5,2 % | 0,81 | 38,8 % | −1,2 % |
+| Bandă DE URMĂRIT (40–60) | 1 077 | 5,5 % | 4,4–6,7 % | 1,07 | 48,8 % | −2,0 % |
+| **Bandă TIMPURIU (60–75)** | 149 | **10,1 %** | 6,7–14,9 % | **1,97** | 12,4 % | −1,2 % |
+| Bandă CONFIRMAT și peste (≥ 75) | 4 | 0 % | 0–40 % | — | 0 % | eșantion mic |
+| Stage 0 | 1 256 | 3,8 % | 3,0–4,8 % | 0,75 | 39,7 % | −0,6 % |
+| Stage 1 (acumulare) | 931 | 6,7 % | 5,4–8,1 % | 1,30 | 51,2 % | −2,2 % |
+| Stage 2 (confirmare) | 140 | 6,4 % | 3,8–10,7 % | 1,25 | 7,4 % | −4,9 % |
+| Stage 3 (expansiune — târziu) | 25 | 0 % | 0–9,8 % | — | 0 % | **−11,4 %** |
+| Verdictul (Stage 1–2, opp > 75, risc < 60) | 4 | 0 % | 0–40 % | — | **0 %** | eșantion mic |
+| Variantă măsurată: Stage 1–2, opp ≥ 60, risc < 60 | 94 | 8,5 % | 4,9–14,5 % | 1,66 | 6,6 % | −1,9 % |
+
+Ce spun cifrele, onest:
+
+- **Scorul de oportunitate ierarhizează.** Banda TIMPURIU atinge +20 % în 72 h de 1,97 ori mai des
+  decât piața, iar limita inferioară a intervalului (×1,31) rămâne peste 1; ordinea IGNORĂ ≤ DE URMĂRIT ≤
+  TIMPURIU este respectată, iar Stage 0 < Stage 1 ≈ Stage 2 (6,7 % față de 6,4 %, în toleranța de 2 puncte)
+  — regulile ID-1, ID-2 și ID-3 trec. Stage 2 bate piața (×1,25), dar intervalul lui este încă larg.
+- **„Târziu” chiar este târziu.** Stage 3 nu a avut nicio mișcare și un rezultat median de −11 % —
+  exact ce trebuie să descurajeze eticheta (ID-4, încă în învățare: 25 de observații din 30).
+- **Verdictul este prea strict pentru piața de acum.** Cu oportunitate > 75 a apărut de patru ori în
+  cele 12 scanări evaluabile și nu a prins niciuna din cele 121 de mișcări (ID-5: atenționare). Agentul
+  **recomandă**, cu dovezi, nivelul cel mai precis care prinde măcar 5 % din mișcări: banda TIMPURIU
+  (oportunitate 60–75; lift 1,97, limita inferioară 1,31, 12,4 % din mișcări). Varianta Stage 1–2 cu
+  oportunitate ≥ 60 are lift 1,66, dar intervalul ei coboară încă sub 1. Pragul de 75 este o cerință de
+  business și **rămâne** până când proprietarul decide altfel (regula P-5); comanda `/agent eficiență`
+  arată tabelul actualizat oricând.
+- **Eșantionul este încă mic** (o săptămână de istoric) și piața acelor zile a fost în scădere
+  (rezultatul median al tuturor observațiilor: −1,6 %); agentul recalculează totul la fiecare rulare,
+  iar fereastra de 7 zile (+30 %) intră în calcul de la prima săptămână completă.
 
 ---
 
@@ -392,8 +579,9 @@ verifică) și citește doar ce publică scannerul, ce înregistrează GitHub ș
 La fiecare trecere:
 
 1. **observă** rulările fiecărui workflow, joburile și raportul porților din CI (adnotări, prin API),
-   snapshot-ul de pe `cri-state`, deploy-ul Pages, cotele planurilor gratuite, fișierele publicate;
-2. **evaluează** toate cele 36 de porți (PASS · WARN · FAIL · necunoscut · în învățare — „necunoscut”
+   snapshot-ul și istoricul scanărilor de pe `cri-state`, deploy-ul Pages, cotele planurilor gratuite,
+   fișierele publicate, propriile pull requesturi;
+2. **evaluează** toate cele 39 de porți (PASS · WARN · FAIL · necunoscut · în învățare — „necunoscut”
    nu este niciodată citit ca rău);
 3. **învață din istoric**: norme robuste (mediană + MAD) pentru durate, intervale, apeluri, rata de
    răspuns a fiecărui furnizor, ponderea respinșilor, paritate; **incidentele trecute și commiturile care
@@ -401,17 +589,23 @@ La fiecare trecere:
    octombrie (rezolvat de 2c6def4, „probe fix”) și scanarea anulată din 24 octombrie (rezolvată de
    c3d9c34, „separă concurrency pulse/scan”); data viitoare când apare același tip de eșec, citează
    remedierea care a funcționat;
-4. **ține registrul prognozelor**: în fiecare săptămână notează probabilitatea ≥100× / ≥20× publicată
+4. **măsoară eficiența identificării** pe istoricul radarului (secțiunea de mai sus) și **judecă după
+   regulile fundamentale** din memoria lui (mai jos), cu istoricul verdictului fiecărei reguli;
+5. **ține registrul prognozelor**: în fiecare săptămână notează probabilitatea ≥100× / ≥20× publicată
    pentru fiecare proiect verificat, apoi urmărește maximul de 24 h al prețului (CoinGecko public, fără
    cheie) — interimar: creșteri observate față de cele implicate; la 12 luni: scorul Brier față de rata
    de bază;
-5. **scrie rezumatul** cu un model deschis rulat local în runner (Ollama, implicit `qwen2.5:3b`; fără
+6. **se autoevaluează**: prezice, pentru fiecare poartă, probabilitatea ca ea să ceară atenție la
+   rularea următoare și își notează predicțiile cu scorul Brier față de regula naivă „ca data trecută”
+   și de frecvența simplă — o curbă care coboară arată că învață; verifică și dacă valorile noi cad în
+   normele învățate, și câte din propunerile lui de cod au fost acceptate;
+7. **scrie rezumatul** cu un model deschis rulat local în runner (Ollama, implicit `qwen2.5:3b`; fără
    cont, fără cheie, nimic nu iese din runner). O gardă verifică fiecare cifră din text față de fapte și
    respinge limbajul de tranzacționare; un text respins este înlocuit de șablonul determinist, cu motivul;
-6. **acționează, strict limitat**: pornește o scanare sau un puls pe care GitHub l-a sărit (doar când
+8. **acționează, strict limitat**: pornește o scanare sau un puls pe care GitHub l-a sărit (doar când
    nu rulează nimic, cel mult 4 scanări și 8 pulsuri pe 24 h, niciodată după două eșecuri la rând sau
    peste 85 % din cota unui plan gratuit) și ține o singură problemă GitHub deschisă cât timp există
-   porți serioase sau critice eșuate. Nu poate anula, șterge, relua cu alți parametri sau modifica cod.
+   porți serioase sau critice eșuate. Nu poate anula, șterge, relua cu alți parametri sau face merge.
 
 Memoria și raportul trăiesc pe ramura orfană `cri-agent` (un commit, force-push); scanarea și pulsul
 copiază `report/agent.json` în site. Costul: tokenul automat al workflow-ului (~20 de cereri din cele
@@ -419,7 +613,102 @@ copiază `report/agent.json` în site. Costul: tokenul automat al workflow-ului 
 
 Variabile opționale (Settings → Secrets and variables → Actions → **Variables**): `CRI_AGENT_LLM=off`
 (fără model, doar șablonul), `CRI_AGENT_MODEL` (alt model deschis din registrul Ollama),
-`CRI_AGENT_HEAL=off` (fără porniri automate), `CRI_AGENT_ISSUES=off` (fără problema GitHub).
+`CRI_AGENT_CODE_MODEL` (modelul de cod, implicit `qwen2.5-coder:7b`), `CRI_AGENT_HEAL=off` (fără porniri
+automate), `CRI_AGENT_ISSUES=off` (fără problema GitHub).
+
+### Regulile fundamentale (memoria agentului)
+
+Criteriile după care agentul judecă **prognoza** și **eficiența identificării** sunt scrise în
+`agent/knowledge/rules.json` — text în română, fiecare cu o verificare pe care agentul o rulează pe datele
+proiectului. La fiecare rulare regulile se încarcă în memorie cu versiunea și amprenta lor (o schimbare
+de prag este ea însăși un eveniment înregistrat), iar verdictul fiecăreia se păstrează pe rulare.
+
+| Regula | Ce cere | Verdict |
+|---|---|---|
+| **P-1** Point-in-time | orice evaluare folosește doar date disponibile la momentul semnalului | testele care o impun trec |
+| **P-2** Necunoscut ≠ negativ | o măsurătoare lipsă este „necunoscut”, niciodată „eșuat” | idem |
+| **P-3** Eșantion mic | sub pragurile de eșantion verdictul este „în învățare”, cu interval | idem |
+| **P-4** Proveniență | o cifră scrisă de model trebuie să existe în fapte, altfel textul se respinge | idem |
+| **P-5** Pragurile de business | verdictul, benzile și țintele se schimbă doar prin commitul proprietarului; agentul recomandă | idem |
+| **P-6** Acțiuni limitate | dispatch, o problemă GitHub, PR doar la cerere; niciodată merge sau main | idem |
+| **ID-1** TIMPURIU bate piața | lift ≥ 1,5 la +20 % în 72 h | eșuat doar dacă nici limita superioară nu bate piața |
+| **ID-2** Stage 2 bate piața | lift ≥ 1,2 | idem |
+| **ID-3** Ordinea nivelurilor | ratele cresc cu banda și cu stadiul (toleranță 2 p.p.) | eșuat la o inversiune semnificativă |
+| **ID-4** „Târziu” e târziu | Stage 3: median ≤ 0 și lift ≤ 1,2 în 7 zile | eșuat dacă stadiul 3 bate sigur piața |
+| **ID-5** Verdictul prinde mișcări | ≥ 5 % din mișcări, după cel puțin 20 | atenționare + recomandarea măsurată |
+| **FC-1** Evenimentul investitorului | rata de bază pe zi, de la prețul zilei | |
+| **FC-2** Fără look-ahead | amprenta fiecărui câștigător cel târziu în ziua minimului | eșuat la orice încălcare |
+| **FC-3** Rată plauzibilă | ≥100× anual între 0 și 5 % | |
+| **FC-4** Validare în afara eșantionului | ≥ 40 % din câștigătorii ≥20× în top 20 % (aleator: 20 %) | sub 20 %: ajustarea se oprește singură |
+| **FC-5** Calibrare interimară | observate / așteptate compatibile cu 1 (Poisson 90 %), după ≥ 3 așteptate | |
+| **FC-6** Calibrare la scadență | skill Brier ≥ 0 față de rata de bază, la 12 luni | |
+| **FC-7** Lista de învățare | ≥ 3 câștigători confirmați din istoric | |
+| **MON-1** Agentul învață măsurabil | după 24 de rulări notate, Brier-ul agentului ≤ al regulii naive | față de frecvența simplă cât timp nimic nu se schimbă |
+| **MON-2** Normele sunt învățate | ≥ 70 % din metrici au normă | |
+| **MON-3** Datele sunt proaspete | cadența scanării ≥ 75 % din programare | |
+
+`/agent reguli ID-5` arată regula, dovada de acum, recomandarea și istoricul ei.
+
+![Reguli fundamentale (demo)](docs/img/agent-rules.png)
+
+*Pe piața simulată a demo-ului, ID-2…ID-4 eșuează: simulatorul nu are revenire la medie, așa că
+stadiul 3 continuă să crească — exact genul de ierarhizare greșită pe care regulile o prind. Pe datele
+live, ID-1…ID-3 trec (secțiunea de mai sus).*
+
+---
+
+## Vorbește cu agentul AI — gratuit
+
+Cum interacționați gratuit cu agentul: trei căi, toate fără cont nou, fără cheie și fără abonament.
+
+**1. Un comentariu pe GitHub** (din aplicația GitHub de pe telefon sau din browser): în orice problemă
+(issue) sau pull request, un comentariu care începe cu `/agent`. Răspunsul vine ca un comentariu, de
+obicei în 1–3 minute (cu modelul local, câteva minute în plus). Răspunde doar proprietarului și
+colaboratorilor repository-ului; ceilalți sunt ignorați. Din dashboard, ecranul **Agent AI** are un link
+care deschide direct o întrebare.
+
+| Comandă | Ce face |
+|---|---|
+| `/agent stare` | starea generală, ce cere atenție, eficiența, identificarea, auto-evaluarea |
+| `/agent porți [grup \| id]` | porțile, întâi cele care nu trec (`cod`, `rulare`, `cadenta`, `periodic`, `model`, `agent`) |
+| `/agent diagnoză [id \| run <id> \| scan]` | **diagnoza**: pașii căzuți, adnotările, semnătura eșecului, commiturile de la ultima rulare reușită, remedierea care a mers data trecută |
+| `/agent eficiență` | tabelul identificării pe niveluri (lift, intervale, recall) și recomandările |
+| `/agent prognoză LAB` | probabilitatea ≥100× / ≥20× a unui proiect, baza ei și cele mai apropiate amprente |
+| `/agent reguli [ID]` | regulile fundamentale cu verdictul și istoricul lor |
+| `/agent învățare` | **auto-evaluarea**: Brier față de regulile naive, curba de învățare, normele, lecțiile, propunerile de cod acceptate |
+| `/agent întreabă <întrebare>` | răspuns din documentație (inclusiv aceste cerințe de business) și din raport, cu pasajele folosite |
+| `/agent cod <sarcina>` | **scrie cod**: pull request pe o ramură `agent/…`, cu testele rulate înainte |
+| `/agent ajutor` | lista comenzilor |
+
+Diacriticele sunt opționale (`/agent diagnoza` = `/agent diagnoză`), iar o propoziție fără cuvânt de
+comandă este tratată ca întrebare.
+
+**2. Terminalul, inclusiv Termux:**
+
+```bash
+npm run agent:sync                       # aduce memoria agentului (.agent) și starea cercetării (.state)
+npm run agent:chat -- stare              # o comandă
+npm run agent:chat                       # sesiune interactivă: agent> diagnoza scan
+npm run agent:chat:demo -- învățare      # pe istoricul simulat, fără rețea
+```
+
+**3. Ca un copilot — `/agent cod …`.** Agentul caută fișierele relevante (după cale și conținut,
+împreună cu testele lor), cere unui model de cod deschis rulat local (`qwen2.5-coder:7b`) blocuri de
+editare SEARCH/REPLACE, le aplică doar dacă fiecare bloc se potrivește exact o dată, rulează `npm test`,
+îi dă modelului o rundă de reparare dacă testele cad și deschide un pull request (draft dacă testele încă
+nu trec). Siguranța este în construcție, nu în promisiuni: jobul care rulează codul propus are un token
+care **doar citește**; jobul care scrie **nu rulează nimic** din repository și verifică diff-ul încă o
+dată, în shell; workflow-urile, testele de arhitectură, datele și licențele nu pot fi atinse; cel mult 8
+fișiere și 400 de linii; niciun tipar de cheie. Agentul **nu face merge și nu scrie niciodată în main** —
+revizuirea și decizia rămân ale proprietarului, iar rata de acceptare a propunerilor intră în
+auto-evaluarea lui. Local: `npm run agent:chat -- --write cod <sarcina>`, pe un clone curat, cu Ollama
+instalat.
+
+Pentru ca pull requestul să se deschidă singur: **Settings → Actions → General → Workflow permissions →
+„Allow GitHub Actions to create and approve pull requests”**. Fără această bifă, agentul publică ramura
+și răspunde cu linkul de comparație, din care pull requestul se deschide cu un clic.
+
+![Auto-evaluarea și chat-ul (demo)](docs/img/agent-learning.png)
 
 ---
 
@@ -459,7 +748,9 @@ Derivate · Narative · Track record · Paritate și bugete · **Agent AI** · D
 verificate, cu cel mai apropiat câștigător la minimul lui) și lista de învățare cu sursele fiecărei
 intrări. **Agent AI** arată rezumatul, ce cere atenție (cu remedierea care a funcționat data trecută),
 toate porțile pe grupe, cadența reală față de cron, eficiența față de soluțiile profesionale, normele
-învățate, incidentele cu commiturile care le-au rezolvat și registrul de calibrare.
+învățate, incidentele cu commiturile care le-au rezolvat, registrul de calibrare, eficiența
+identificării pe niveluri, regulile fundamentale cu verdictul și istoricul lor, auto-evaluarea (Brier,
+curba de învățare, propunerile de cod acceptate) și cum se vorbește cu agentul.
 
 ![Prognoză ≥100× (demo)](docs/img/forecast.png)
 
@@ -501,6 +792,14 @@ Dashboard-ul este mobile-first: fiecare ecran a fost verificat la 390 px fără 
   verifică în timp dacă probabilitățile publicate se adeveresc.
 - **Agentul nu poate inventa o cifră.** Rezumatul scris de model trece printr-o gardă care respinge
   orice număr absent din fapte; eficiența publicată este măsurată din rulări, nu declarată.
+- **Eficiența identificării se măsoară înainte, pe ce a publicat radarul atunci**, față de universul
+  acelorași scanări — nu pe exemple alese după fapt. Un verdict prea strict este arătat ca atare
+  (a prins 0 % din mișcări), cu varianta care ar fi mers, fără ca pragul să fie schimbat pe ascuns.
+- **Agentul se notează singur.** Fiecare predicție despre rularea următoare se notează când rularea
+  vine, față de două reguli naive; o memorie care nu anticipează mai bine decât „ca data trecută” este
+  raportată ca atare.
+- **Codul propus de agent nu are acces la nimic.** Rulează și se testează într-un job care doar citește;
+  jobul care scrie nu execută nimic din propunere, iar decizia de merge rămâne a proprietarului.
 
 ---
 
@@ -510,10 +809,11 @@ Dashboard-ul este mobile-first: fiecare ecran a fost verificat la 390 px fără 
 |---|---|---|
 | `Scan & deploy` | la 4 ore, la :17 | scanare completă, validare contract, salvare stare, deploy Pages |
 | `Pulse` | la 15 minute | preț, funding, open interest; nu atinge nicio cuotă lunară |
-| `CI` | la fiecare push | sintaxă, reguli de arhitectură, 322 de teste raportate pe porți, build DEMO offline cu agentul |
+| `CI` | la fiecare push | sintaxă, reguli de arhitectură, 347 de teste raportate pe porți, build DEMO offline cu agentul |
 | `Probe surse` | săptămânal | o cerere per furnizor, a doua trecere pentru ce nu a răspuns; limitele de rată sunt avertismente, eșuează doar pe o sursă stricată |
 | `Actualizare etichete` | lunar | reconstruiește setul eth-labels și deschide un pull request |
-| `Agent AI` | după CI, scanare, sondă și etichete; orar | porțile de calitate, învățarea din istoric, registrul prognozelor, rezumatul local, pornirea programărilor sărite |
+| `Agent AI` | după CI, scanare, sondă și etichete; orar | porțile de calitate, învățarea din istoric, eficiența identificării, regulile fundamentale, auto-evaluarea, registrul prognozelor, rezumatul local, pornirea programărilor sărite |
+| `Agent AI — chat` | la un comentariu `/agent …` | răspunsul agentului; pentru `/agent cod` un pull request testat pe o ramură `agent/…` |
 
 Starea de cercetare trăiește pe ramura orfană `cri-state`, iar memoria agentului pe `cri-agent`: câte
 un singur commit, force-push la fiecare rulare, deci nu cresc niciodată. Programările GitHub sunt
@@ -533,6 +833,9 @@ declară mereu propria vechime.
    **Agent AI** arată câte puncte de eficiență aduce fiecare.
 4. Agentul AI nu cere nimic: pornește singur după primul CI. Prima lui rulare creează ramura
    `cri-agent`; site-ul include raportul de la următoarea scanare sau următorul puls.
+5. Opțional, pentru `/agent cod`: **Settings → Actions → General → Workflow permissions → „Allow GitHub
+   Actions to create and approve pull requests”**. Restul comenzilor `/agent` funcționează fără nicio
+   setare.
 
 ### Primele rulări: normele proprii se construiesc
 Radarul măsoară o schimbare față de **norma fiecărui proiect** (mediana și dispersia lui din ultimele
@@ -568,14 +871,18 @@ src/
   config/          încărcarea configurației și citirea secretelor din mediu
 agent/             agentul AI de calitate — modul separat, nu importă nimic din src/
   domain/          porți, cron și cadență, norme robuste, incidente și remedieri, calibrare,
-                   eficiență, auto-reparare, narațiune și gardă — pur, determinist
-  application/     observă → învață → evaluează → narează → acționează; porturi
-  adapters/        API GitHub, fișierele de stare, Pages, prețuri publice, Ollama local, simulator
-  main.js          rădăcina de compoziție (analyze · narrate · act · run)
+                   eficiență, eficiența identificării, reguli, auto-evaluare, auto-reparare,
+                   narațiune și gardă, comenzi de chat, căutare în documentație, politica de patch
+                   — pur, determinist
+  application/     observă → învață → evaluează → reguli → narează → acționează; chat; porturi
+  adapters/        API GitHub, fișierele de stare și de cunoaștere, Pages, prețuri publice, Ollama
+                   local, spațiul de lucru git al comenzii de cod, simulator
+  knowledge/       rules.json — regulile fundamentale de evaluare și monitorizare
+  main.js          rădăcina de compoziție (analyze · narrate · act · run · chat)
 web/               dashboard static, ES module native, fără build step
 schema/            contractele: latest, universe, agent — validate la fiecare publicare
 config/            praguri, referințe LAB/BTW/AGT, câștigătorii documentați (winners.json), etichete
-test/              322 de teste, inclusiv cele de arhitectură ale scannerului și ale agentului
+test/              347 de teste, inclusiv cele de arhitectură ale scannerului și ale agentului
 ```
 
 Detalii de proiectare, inclusiv de ce fiecare prag este unde este: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).

@@ -17,6 +17,11 @@
  * Point-in-time: the fingerprint of a winner uses only the candles up to its low. What happened after
  * is the label, never a feature.
  *
+ * The event the forecast is about is an investor's: "within twelve months the price reaches N× the
+ * price of the day the forecast is read". A low-to-peak run is the best case of that event; the days
+ * from which it was actually reachable — the *qualifying days* — are counted for every confirmed
+ * winner, so the base rate is the probability for a random day, not for the one perfect entry.
+ *
  * Pure: no I/O, no clock — time arrives as `nowMs`.
  */
 import { isNum, mean, median, pctChange, round } from '../shared/math.js';
@@ -37,6 +42,12 @@ export const WINNER_DEFAULTS = Object.freeze({
   medianDays: 3,
   /** Days of history a winner needs before its low for the phase features to exist. */
   phaseHistoryDays: 35,
+  /** Forward horizon of the event, in days (the forecast's twelve months). */
+  horizonDays: 365,
+  /** Targets whose qualifying days are counted (the forecast's own targets). */
+  targets: [100, 20],
+  /** Fingerprints kept per winner and target: its low plus days spread over the qualifying set. */
+  maxPositiveDays: 4,
 });
 
 export const WINNER_STATUS = Object.freeze({
@@ -106,6 +117,41 @@ export function largestRun(candles, opts = {}) {
     lastAt: isoDay(last.t),
     drawdownNowPct: isNum(lastMedian) ? round(pctChange(m[best.peakIdx], lastMedian), 1) : null,
   };
+}
+
+/**
+ * The qualifying days of a target: the investable days (capitalisation and volume floors, as for the
+ * low) inside the window from which the highest later median close, within the horizon and up to
+ * `nowMs`, reached `target` times that day's median close. Censored at `nowMs`: a day whose run is
+ * still ahead does not count yet — the count can only be too low, never too high.
+ *
+ * @returns {{days:number, idx:number[]}}
+ */
+export function qualifyingDays(candles, opts = {}) {
+  const o = { ...WINNER_DEFAULTS, ...opts };
+  if (!Array.isArray(candles) || candles.length < 5 || !isNum(o.nowMs) || !(o.target > 1)) return { days: 0, idx: [] };
+  const from = o.nowMs - o.windowDays * DAY_MS;
+  const m = medianCloses(candles, o.medianDays);
+  const idx = [];
+  for (let i = 0; i < candles.length; i += 1) {
+    const k = candles[i];
+    if (k.t < from || k.t > o.nowMs || !isNum(m[i]) || m[i] <= 0) continue;
+    const liquid = (!isNum(k.mc) || k.mc >= o.minLowMcapUsd) && (!isNum(k.v) || k.v >= o.minLowVolumeUsd);
+    if (!liquid) continue;
+    const until = Math.min(k.t + o.horizonDays * DAY_MS, o.nowMs);
+    let best = 0;
+    for (let j = i + 1; j < candles.length && candles[j].t <= until; j += 1) if (isNum(m[j]) && m[j] > best) best = m[j];
+    if (best / m[i] >= o.target) idx.push(i);
+  }
+  return { days: idx.length, idx };
+}
+
+/** Up to `n` indices spread evenly over a sorted list, always including `must` when it is in it. */
+function spread(list, n, must = null) {
+  if (list.length <= n) return [...list];
+  const out = new Set(must !== null && list.includes(must) ? [must] : []);
+  for (let k = 0; out.size < n && k < n * 3; k += 1) out.add(list[Math.round((k * (list.length - 1)) / Math.max(1, n - 1)) % list.length]);
+  return [...out].sort((a, b) => a - b).slice(0, n);
 }
 
 /**
@@ -193,7 +239,20 @@ export function judgeWinner(entry, candles, opts = {}) {
   if (!run || run.multiple < o.minMultiple) {
     return { ...base, status: WINNER_STATUS.BELOW, multiple: run ? round(run.multiple, 1) : null, low: run?.low ?? null, peak: run?.peak ?? null, days: run?.days ?? null, drawdownNowPct: run?.drawdownNowPct ?? null, vector: null, coverage: 0 };
   }
-  const fp = fingerprintAt(candles, run.lowIdx, { listedMs: toMs(entry.listedAt), chain: entry.chain ?? null, staticRaw: entry.static ?? {} });
+  const ctx = { listedMs: toMs(entry.listedAt), chain: entry.chain ?? null, staticRaw: entry.static ?? {} };
+  const fp = fingerprintAt(candles, run.lowIdx, ctx);
+  // Per target: the qualifying days and the fingerprints of a few of them (the low among them), so
+  // the forecast learns what the whole entry window looked like, not only its best day.
+  const qualifying = {};
+  const positives = {};
+  for (const target of o.targets ?? []) {
+    const q = qualifyingDays(candles, { ...o, target });
+    qualifying[target] = q.days;
+    positives[target] = spread(q.idx, o.maxPositiveDays, run.lowIdx).map((i) => {
+      const f = i === run.lowIdx ? fp : fingerprintAt(candles, i, ctx);
+      return { at: f.at, vector: f.vector, coverage: f.coverage };
+    });
+  }
   return {
     ...base,
     status: WINNER_STATUS.CONFIRMED,
@@ -206,6 +265,8 @@ export function judgeWinner(entry, candles, opts = {}) {
     coverage: fp.coverage,
     anchorAt: fp.at,
     historyDaysBeforeLow: run.lowIdx,
+    qualifying,
+    positives,
   };
 }
 

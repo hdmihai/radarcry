@@ -12,6 +12,9 @@ on:
   push:
     branches-ignore: [cri-state, cri-agent]
   pull_request:
+  # The agent's code proposals: a push made with the workflow token starts no workflow, so the chat
+  # starts CI on its agent/… branch explicitly.
+  workflow_dispatch:
 
 permissions:
   contents: read

@@ -90,7 +90,7 @@ jobs:
             cp .state/snapshot/universe.json data/universe.json 2>/dev/null || true
             echo "have_snapshot=true" >> "$GITHUB_OUTPUT"
           else
-            echo "::notice::Nu există încă un snapshot publicat. Pulsul se oprește; rulează întâi „Scan & deploy”."
+            echo '::notice::Nu există încă un snapshot publicat. Pulsul se oprește; rulează întâi „Scan & deploy”.'
             echo "have_snapshot=false" >> "$GITHUB_OUTPUT"
           fi
 

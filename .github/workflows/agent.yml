@@ -40,6 +40,7 @@ permissions:
   actions: write # workflow_dispatch of a skipped scan or pulse (self-heal)
   issues: write # the rolling findings issue
   checks: read # the CI gate report (annotations)
+  pull-requests: read # the agent's own code proposals and whether they were merged (self-evaluation)
 
 concurrency:
   # Agents queue behind agents only; one agent never cancels another mid-save.
@@ -63,7 +64,7 @@ jobs:
           mkdir -p .agent .state
           if git fetch --no-tags --depth=1 origin cri-agent 2>/dev/null; then
             git archive --format=tar FETCH_HEAD | tar -x -C .agent
-            echo "Memorie restaurată: $(ls .agent | tr '\n' ' ')"
+            echo "Memorie restaurată: $(find .agent -mindepth 1 -maxdepth 1 -printf '%f ')"
           else
             echo "Prima rulare a agentului: memoria pornește de la zero; istoricul de rulări GitHub și telemetria scanărilor sunt importate acum."
           fi
@@ -87,9 +88,23 @@ jobs:
         timeout-minutes: 12
         env:
           MODEL: ${{ vars.CRI_AGENT_MODEL || 'qwen2.5:3b' }}
+        shell: bash
         run: |
+          set -eo pipefail
+          # The installer unpacks a zstd archive; install the tool if the runner image lacks it.
+          command -v zstd > /dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq zstd; }
           curl -fsSL https://ollama.com/install.sh | sh
-          for i in $(seq 1 30); do curl -sf http://127.0.0.1:11434/api/version >/dev/null && break; sleep 1; done
+          # The installer starts a system service only where it can; otherwise the server is started
+          # here, in the background — it lives until the end of the job, so the next steps reach it.
+          if ! curl -sf http://127.0.0.1:11434/api/version > /dev/null; then
+            nohup ollama serve > "$RUNNER_TEMP/ollama.log" 2>&1 &
+          fi
+          for _ in $(seq 1 60); do curl -sf http://127.0.0.1:11434/api/version > /dev/null && break; sleep 1; done
+          if ! curl -sf http://127.0.0.1:11434/api/version > /dev/null; then
+            echo "::warning title=Ollama::serverul local nu a pornit; rezumatul vine din șablonul determinist"
+            tail -n 20 "$RUNNER_TEMP/ollama.log" 2> /dev/null || true
+            exit 1
+          fi
           ollama pull "$MODEL"
           echo "model=$MODEL" >> "$GITHUB_OUTPUT"
 

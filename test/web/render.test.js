@@ -25,6 +25,7 @@ import { drawerMarkup } from '../../web/assets/js/views/drawer.js';
 import { validityMarkup, validityState } from '../../web/assets/js/views/validity.js';
 import { forecastMarkup } from '../../web/assets/js/views/forecast.js';
 import { agentMarkup, agentState } from '../../web/assets/js/views/agent.js';
+import { identificationEfficiency } from '../../agent/domain/identification.js';
 import { createFixturePorts } from '../../agent/adapters/fixtures.js';
 import { runAll } from '../../agent/application/monitor.js';
 import { loadAgentConfig } from '../../agent/main.js';
@@ -375,7 +376,8 @@ test('the forecast is on every screen that lists a project, and its own screen s
   const page = clean('prognoza', forecastMarkup(snap));
   assert.ok(page.includes('Lista de învățare'), 'the learning list is shown');
   for (const w of f.winners.filter((x) => x.status === 'CONFIRMED').slice(0, 3)) assert.ok(page.includes(`>${w.symbol}<`), `${w.symbol} listed`);
-  assert.ok(page.includes('rata de bază ≥100×'), 'the base rate is stated');
+  assert.ok(page.includes('bază ≥100× de la prețul zilei'), 'the base rate is stated, for the event the forecast is about');
+  assert.ok(page.includes('Validarea în afara eșantionului'), 'and its out-of-sample check');
   assert.ok(page.includes('nu este un sfat financiar'), 'and what the number is not');
   assert.ok(!/NaN|undefined/.test(page));
   assert.ok(String(forecastMarkup({ ...snap, forecast: undefined })).includes('nu are încă'), 'an older snapshot explains the missing forecast');
@@ -401,7 +403,7 @@ test('the forecast is on every screen that lists a project, and its own screen s
   }
 });
 
-test('the Agent AI screen renders while loading, without a report, and with one — every gate, cadence, efficiency, learning', async () => {
+test('the Agent AI screen renders while loading, without a report, and with one — every gate, cadence, efficiency, learning, identification, rules, self-evaluation, chat', async () => {
   const saved = { ...agentState };
   const dir = await mkdtemp(join(tmpdir(), 'cri-agent-view-'));
   try {
@@ -427,6 +429,30 @@ test('the Agent AI screen renders while loading, without a report, and with one 
     assert.ok(page.includes('permisiuni contents: write'), 'the fix learned from the history is shown');
     assert.ok(page.includes('Calibrarea prognozei'));
     assert.ok(page.includes('Rezumat'));
+    assert.ok(page.includes('Eficiența identificării — radarul indică proiectele corecte?'));
+    assert.ok(page.includes('Nicio observație cu orizontul încheiat încă'), 'three days of scans: no 72-hour horizon has passed yet');
+    // With a history whose horizons have passed, the tier table appears.
+    const T0 = Date.parse('2026-10-01T00:00:00Z');
+    const series = new Map(Array.from({ length: 12 }, (_, a) => [`cg:x${a}`, Array.from({ length: 40 }, (_, i) => ({ t: T0 + i * 6 * 3_600_000, price: a < 4 ? 1.25 ** Math.floor(i / 12) : 1, v: { stage: a < 4 ? 2 : 1, opp: a < 4 ? 65 : 30, risk: 40, families: 2 } }))]));
+    const withHistory = JSON.parse(JSON.stringify(report));
+    withHistory.identification = { short: { ...identificationEfficiency(series, { nowMs: T0 + 40 * 6 * 3_600_000, horizonH: 72, threshold: 0.2 }), label: '+20% în 72 de ore' }, note: 'Notă.' };
+    agentState.data = withHistory;
+    const tiersPage = clean('agent-tiers', agentMarkup());
+    assert.ok(tiersPage.includes('Bandă TIMPURIU (60–75)'), 'the tiers of the identification table');
+    agentState.data = JSON.parse(JSON.stringify(report));
+    assert.ok(page.includes('Reguli fundamentale de evaluare și monitorizare'));
+    for (const id of ['P-1', 'ID-1', 'FC-4', 'MON-1']) assert.ok(page.includes(`<code>${id}</code>`), `rule ${id} listed`);
+    assert.ok(page.includes('Auto-evaluarea capacității de învățare'));
+    assert.ok(page.includes('Vorbește cu agentul — gratuit'));
+    assert.ok(page.includes('/agent cod'), 'how to ask for code');
+    // A report published before these sections existed still renders.
+    const older = JSON.parse(JSON.stringify(report));
+    delete older.identification;
+    delete older.rules;
+    delete older.selfEval;
+    agentState.data = older;
+    const olderPage = clean('agent-older', agentMarkup());
+    assert.ok(olderPage.includes('Regulile fundamentale apar după prima rulare'));
   } finally {
     Object.assign(agentState, saved);
     await rm(dir, { recursive: true, force: true });

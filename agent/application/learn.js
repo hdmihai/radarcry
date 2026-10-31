@@ -8,6 +8,7 @@
  */
 import { failureStreaks, knownStreak } from '../domain/incidents.js';
 import { appendPoint } from '../domain/norms.js';
+import { emptySelfEval } from '../domain/selfeval.js';
 import { classify } from '../domain/signatures.js';
 
 const KEEP_IDS = 400;
@@ -26,6 +27,13 @@ export function emptyMemory(nowIso) {
     actions: [],
     reports: [],
     narrative: null,
+    // The fundamental rules as loaded (version, fingerprint, changes) and each rule's verdict history.
+    knowledge: null,
+    ruleHistory: {},
+    // Predictions of the next run's gates and their scores: the agent's self-evaluation.
+    selfEval: emptySelfEval(),
+    // Questions answered through the chat (command, time, outcome) — never the text of a secret.
+    chat: [],
   };
 }
 

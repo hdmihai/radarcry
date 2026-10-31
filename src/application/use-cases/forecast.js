@@ -13,7 +13,7 @@ import { DAY_MS, toMs } from '../../domain/shared/time.js';
 import { chartToDaily } from '../../domain/similarity/references.js';
 import { namesMatch, normSymbol } from '../../domain/shared/symbols.js';
 import { judgeWinner, marketCandidate, roundTrip, WINNER_DEFAULTS, WINNER_STATUS, WINNER_STATUS_RO } from '../../domain/forecast/winners.js';
-import { baseRate, eventsFor, FORECAST_DEFAULTS, forecastBand, forecastUniverse, positivesFor, separation } from '../../domain/forecast/model.js';
+import { baseRate, entryRate, eventsFor, FORECAST_DEFAULTS, forecastBand, forecastUniverse, identification, positivesFor, qualifyingFraction, separation } from '../../domain/forecast/model.js';
 
 /** Statuses of a provider answer after which no further history is requested this run. */
 const STOP = new Set(['RATE_LIMITED', 'QUOTA_EXHAUSTED', 'BUDGET_EXHAUSTED', 'CIRCUIT_OPEN', 'TIMEOUT', 'NETWORK_ERROR']);
@@ -86,18 +86,24 @@ export async function refreshWinners({ cached, seeds, assets, history, nowMs, po
   const prev = new Map((cached?.items ?? []).map((w) => [w.uid, w]));
   const cands = winnerCandidates({ seeds, assets, nowMs, policy });
   const fresh = (w) => isNum(toMs(w?.checkedAt)) && nowMs - toMs(w.checkedAt) < policy.refreshDays * DAY_MS;
+  // A confirmation measured before the per-day event (no days from which the run was still reachable,
+  // no sampled fingerprints) is re-read first: carrying it for a month would publish a base rate
+  // built on the fallback instead of the measurement.
+  const current = (w) => w.status !== WINNER_STATUS.CONFIRMED || w.qualifying !== undefined;
   const measured = (w) => w && (w.status === WINNER_STATUS.CONFIRMED || w.status === WINNER_STATUS.BELOW);
 
   const items = [];
   const todo = [];
   for (const [uid, c] of cands) {
     const old = prev.get(uid);
-    if (measured(old) && fresh(old)) items.push({ ...old, sources: c.sources?.length ? c.sources : old.sources, note: c.note ?? old.note ?? null });
+    if (measured(old) && fresh(old) && current(old)) items.push({ ...old, sources: c.sources?.length ? c.sources : old.sources, note: c.note ?? old.note ?? null });
     else todo.push({ uid, c, old });
   }
-  // Seeds first (documented, with sources), then the largest claimed runs.
+  // Outdated confirmations first (they carry the base rate), then seeds (documented, with sources),
+  // then the largest claimed runs.
   const claim = (t) => t.c.claimed?.multiple ?? t.c.documented?.multiple ?? 0;
-  todo.sort((a, b) => (a.c.origin === 'seed' ? 0 : 1) - (b.c.origin === 'seed' ? 0 : 1) || claim(b) - claim(a));
+  const stale = (t) => (t.old && measured(t.old) && !current(t.old) ? 0 : 1);
+  todo.sort((a, b) => stale(a) - stale(b) || (a.c.origin === 'seed' ? 0 : 1) - (b.c.origin === 'seed' ? 0 : 1) || claim(b) - claim(a));
 
   let charts = 0;
   let calls = 0;
@@ -180,12 +186,20 @@ export function trackedPopulation({ eligible, history, nowMs, windowDays }) {
  */
 export function runForecast({ winners, projects, population, policy }) {
   const rates = {};
+  const ident = {};
+  const lrOff = {};
   for (const t of policy.targets) {
-    rates[t] = baseRate({ events: eventsFor(winners, t), population, priorRate: policy.priorRate, priorWeight: policy.priorWeight });
+    // The annual rate of ≥t runs, converted into the probability for a random day (the event the
+    // forecast is about: ≥t× from the price of the day it is read).
+    const annual = baseRate({ events: eventsFor(winners, t), population, priorRate: policy.priorRate, priorWeight: policy.priorWeight });
+    rates[t] = entryRate(annual, qualifyingFraction(winners, t, policy));
+    // Out of sample: the fingerprint is used only while held-out winners rank above chance.
+    ident[t] = identification(winners, projects, t, policy);
+    if (ident[t].ready && ident[t].recallTop20 <= 20) lrOff[t] = `validarea în afara eșantionului nu arată putere de separare (${ident[t].recallTop20}% din câștigători în top 20%, aleator 20%)`;
   }
-  const byKey = forecastUniverse(projects, winners, { rates }, policy);
+  const byKey = forecastUniverse(projects, winners, { rates, lrOff }, policy);
   const sep = Object.fromEntries(policy.targets.map((t) => [t, separation(winners, projects, t, policy)]));
-  return { rates, byKey, separation: sep };
+  return { rates, byKey, separation: sep, identification: ident, lrOff };
 }
 
 const pct = (x, d = 2) => (isNum(x) ? round(x * 100, d) : null);
@@ -221,7 +235,7 @@ export function pastRunsByKey(winners) {
  * The snapshot's forecast block: the base rates, the model, the learning list and the top forecasts
  * among the projects that passed the validity gate.
  */
-export function forecastReport({ winners, rates, separation: sep, byKey, ranked, isValid, policy, excluded = [], projects = 0 }) {
+export function forecastReport({ winners, rates, separation: sep, identification: ident = {}, lrOff = {}, byKey, ranked, isValid, policy, excluded = [], projects = 0 }) {
   const past = pastRunsByKey(winners);
   const top = (ranked ?? [])
     .filter((r) => isValid(r.asset.key) && byKey.has(r.asset.key))
@@ -240,9 +254,25 @@ export function forecastReport({ winners, rates, separation: sep, byKey, ranked,
     targets: policy.targets,
     horizonDays: policy.horizonDays,
     windowDays: policy.windowDays,
-    baseRates: policy.targets.map((t) => ({ multiple: t, pct: pct(rates[t].p, 3), lo: pct(rates[t].lo, 3), hi: pct(rates[t].hi, 3), events: rates[t].events, population: rates[t].population, observedPct: pct(rates[t].observed, 3) })),
+    baseRates: policy.targets.map((t) => ({
+      multiple: t,
+      // The probability for a random day (the published forecast's base) …
+      pct: pct(rates[t].p, 4),
+      lo: pct(rates[t].lo, 4),
+      hi: pct(rates[t].hi, 4),
+      // … and what it is made of: the annual rate of runs and the share of the year they were reachable from.
+      annualPct: pct(rates[t].annual?.p ?? rates[t].p, 3),
+      annualLo: pct(rates[t].annual?.lo ?? rates[t].lo, 3),
+      annualHi: pct(rates[t].annual?.hi ?? rates[t].hi, 3),
+      qualifyingDaysMean: rates[t].meanDays ?? null,
+      qualifyingMeasured: rates[t].measured ?? 0,
+      events: rates[t].events,
+      population: rates[t].population,
+      observedPct: pct(rates[t].observed, 3),
+    })),
+    event: 'prețul atinge cel puțin N× prețul din ziua citirii, în următoarele 365 de zile',
     model: {
-      method: 'rata de bază × raport de verosimilitate (densitate kernel pe amprenta de la minim)',
+      method: 'rata de bază pe zi × raport de verosimilitate (densitate kernel pe amprentele zilelor din care mișcarea era accesibilă)',
       sigma: policy.sigma,
       minCoverage: policy.minCoverage,
       shrinkK: policy.shrinkK,
@@ -251,6 +281,10 @@ export function forecastReport({ winners, rates, separation: sep, byKey, ranked,
       positives: Object.fromEntries(policy.targets.map((t) => [t, positivesFor(winners, t, policy).length])),
       background: projects,
       separation: sep,
+      identification: ident,
+      fingerprintOff: lrOff,
+      minLooWinners: policy.minLooWinners,
+      documentedDays: policy.documentedDays,
     },
     winners: winners.map((w) => ({
       symbol: w.symbol,
@@ -264,6 +298,8 @@ export function forecastReport({ winners, rates, separation: sep, byKey, ranked,
       days: w.days ?? null,
       drawdownNowPct: w.drawdownNowPct ?? null,
       coverage: w.coverage ?? 0,
+      anchorAt: w.anchorAt ?? null,
+      qualifyingDays: w.qualifying ?? null,
       origin: w.origin ?? null,
       checkedAt: w.checkedAt ?? null,
       note: w.note ?? null,
@@ -272,6 +308,6 @@ export function forecastReport({ winners, rates, separation: sep, byKey, ranked,
     roundTrip: roundTrip(winners.filter((w) => w.status === WINNER_STATUS.CONFIRMED || w.status === WINNER_STATUS.DOCUMENTED)),
     excluded,
     top,
-    note: 'Probabilitatea unei creșteri de cel puțin N× în 12 luni, dată de rata de bază a universului și de cât de mult seamănă proiectul azi cu câștigătorii ultimului an la minimul lor. Este o descriere statistică a unui eveniment rar, nu o predicție și nu un sfat financiar; majoritatea câștigătorilor ≥100× au pierdut ulterior peste 90% din vârf.',
+    note: 'Probabilitatea ca prețul să atingă cel puțin N× prețul de azi în următoarele 12 luni: rata de bază pe zi a universului (câte proiecte au făcut mișcarea într-un an × din câte zile ale anului era accesibilă) ajustată după cât seamănă proiectul azi cu câștigătorii ultimului an în zilele lor de intrare. Este o descriere statistică a unui eveniment rar, nu o predicție și nu un sfat financiar; majoritatea câștigătorilor ≥100× au pierdut ulterior peste 90% din vârf.',
   };
 }

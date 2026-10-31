@@ -67,6 +67,15 @@ test('first pass: every gate evaluated, the contract holds, and the visible hist
   assert.equal(should, true, 'a first report is narrated');
   assert.equal(report.narrative.by, 'template');
   assert.ok(report.calibration.created?.rows > 0, 'the first weekly cohort of forecasts is recorded');
+  // The written knowledge: loaded, evaluated, and the derived gates in their place.
+  assert.ok(report.rules.total >= 20 && report.rules.problems.length === 0, 'the rulebook is loaded whole');
+  assert.equal(report.rules.knowledge.version, report.rules.version);
+  assert.equal(by['agent.rules'].status, 'PASS', by['agent.rules'].evidence);
+  assert.equal(by['model.identification'].status, 'LEARNING', 'two days of scans: no 72-hour horizon has passed yet');
+  assert.equal(report.identification.short.observations, 0);
+  assert.equal(by['agent.learning'].status, 'LEARNING', 'nothing scored on the first run');
+  assert.equal(report.selfEval.runsScored, 0);
+  assert.ok(report.rules.results.filter((r) => r.area === 'principiu').every((r) => r.status === 'PASS'), 'the principles are enforced by the passing CI suites');
 });
 
 test('self-heal: a skipped scan is started once, seen running, and the daily limit holds', async () => {
@@ -84,6 +93,16 @@ test('self-heal: a skipped scan is started once, seen running, and the daily lim
   assert.ok(inADay <= s.cfg.heal.scan.maxPerDay, `daily limit (${inADay})`);
   const mem = JSON.parse(await readFile(join(s.dir, 'mem', 'memory.json'), 'utf8'));
   assert.ok(mem.actions.every((a) => a.kind === 'dispatch' && ['scan-and-deploy.yml', 'pulse.yml'].includes(a.workflow)), 'dispatch is the only action');
+  // Thirty runs later: every prediction of the next run scored, the rule verdicts kept per run.
+  const report = JSON.parse(await readFile(join(s.dir, 'report', 'agent.json'), 'utf8'));
+  assert.equal(report.selfEval.runsScored, 30, 'each run scores the predictions of the one before');
+  assert.equal(report.selfEval.ready, true);
+  assert.ok(report.selfEval.changes > 0, 'the quiet scheduler changed gate states');
+  assert.ok(Number.isFinite(report.selfEval.brier) && report.selfEval.brier < report.selfEval.brierClimatology, `the learned chain beats the plain frequency (${report.selfEval.brier} vs ${report.selfEval.brierClimatology})`);
+  const learning = report.gates.find((g) => g.id === 'agent.learning');
+  assert.ok(['PASS', 'WARN'].includes(learning.status), learning.evidence);
+  assert.equal(mem.ruleHistory['FC-2'].length, 31, 'one verdict per run for every rule');
+  assert.equal(mem.knowledge.changes.length, 1, 'the same rulebook all along');
 });
 
 test('an incident: quoted with the fix that worked last time, healing stops after two failures, resolved by the next fix', async () => {

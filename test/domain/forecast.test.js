@@ -5,8 +5,8 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { fingerprintAt, judgeWinner, largestRun, marketCandidate, roundTrip, vectorCoverage, WINNER_STATUS } from '../../src/domain/forecast/winners.js';
-import { baseRate, eventsFor, forecastBand, forecastUniverse, kernel, positivesFor, posterior, separation } from '../../src/domain/forecast/model.js';
+import { fingerprintAt, judgeWinner, largestRun, marketCandidate, qualifyingDays, roundTrip, vectorCoverage, WINNER_STATUS } from '../../src/domain/forecast/winners.js';
+import { baseRate, entryRate, eventsFor, forecastBand, forecastUniverse, identification, kernel, positivesFor, posterior, qualifyingFraction, samplesOf, separation } from '../../src/domain/forecast/model.js';
 
 const DAY = 86_400_000;
 const NOW = Date.parse('2026-10-31T00:00:00Z');
@@ -159,4 +159,51 @@ test('separation and bands are reported, not assumed', () => {
   assert.equal(forecastBand(0.01, 0.01).key, 'BASE');
   assert.equal(forecastBand(0.004, 0.01).key, 'BELOW');
   assert.equal(vectorCoverage(vec({})), 1);
+});
+
+test('the event is an investor\'s: the days from which ≥N× was reachable are counted, censored at now', () => {
+  const q100 = qualifyingDays(RUN, { nowMs: NOW, target: 100 });
+  const q20 = qualifyingDays(RUN, { nowMs: NOW, target: 20 });
+  // ≥100× only from the few weeks around the $0.05 low; ≥20× from far more of the year.
+  assert.ok(q100.days >= 20 && q100.days <= 50, `≥100× reachable on ${q100.days} days`);
+  assert.ok(q20.days > 2 * q100.days, `≥20× on ${q20.days} days`);
+  // Before the peak has happened, the run is not yet a fact: censored, nothing counts.
+  assert.equal(qualifyingDays(RUN, { nowMs: NOW - 150 * DAY, target: 100 }).days, 0);
+  // A confirmed winner carries them, with a few entry-day fingerprints per target (its low among them).
+  const w = judgeWinner({ id: 'x', symbol: 'X', name: 'X', chain: 'bsc' }, RUN, { nowMs: NOW });
+  assert.equal(w.qualifying[100], q100.days);
+  assert.ok(w.positives[100].length >= 1 && w.positives[100].length <= 4);
+  assert.ok(w.positives[100].some((x) => x.at === w.anchorAt), 'the low is one of the sampled days');
+  assert.ok(w.positives[20].every((x) => x.at <= w.peak.at), 'every sampled day is before the peak');
+  assert.equal(samplesOf(w, 100).length, w.positives[100].filter((x) => x.coverage >= 0.35).length);
+});
+
+test('the base rate is per random day: the annual rate of runs times the share of the year they were reachable', () => {
+  const C = (multiple, days) => ({ status: WINNER_STATUS.CONFIRMED, multiple, qualifying: { 100: days, 20: days * 4 } });
+  const ws = [C(150, 30), C(300, 12), { status: WINNER_STATUS.DOCUMENTED, multiple: 400 }];
+  const qf = qualifyingFraction(ws, 100);
+  assert.equal(qf.measured, 2);
+  assert.equal(qf.fallbackDays, 21, 'fewer than three measured: the documented winner is assumed 21 days');
+  assert.ok(Math.abs(qf.meanDays - (30 + 12 + 21) / 3) < 0.11);
+  const annual = baseRate({ events: 3, population: 600 });
+  const r = entryRate(annual, qf);
+  assert.ok(Math.abs(r.p - annual.p * qf.fraction) < 1e-12);
+  assert.ok(r.p < annual.p / 5, 'reachable on a few weeks a year: far below the annual rate');
+  assert.ok(r.lo <= r.p && r.p <= r.hi);
+  const three = qualifyingFraction([C(150, 30), C(300, 12), C(200, 18), { status: WINNER_STATUS.DOCUMENTED, multiple: 400 }], 100);
+  assert.equal(three.fallbackDays, 18, 'three measured: the documented one takes their median');
+});
+
+test('out-of-sample identification: held-out winners rank high when the fingerprint separates, at chance when it does not', () => {
+  const W = (i, v) => ({ status: WINNER_STATUS.CONFIRMED, coverage: 1, key: `cg:w${i}`, symbol: `W${i}`, name: `W${i}`, multiple: 150, vector: v });
+  const winners = Array.from({ length: 10 }, (_, i) => W(i, vec({ size: 15 + (i % 3), float: 10 + (i % 4), concentration: 88 - (i % 3) })));
+  const bg = Array.from({ length: 120 }, (_, i) => ({ key: `bg${i}`, vector: vec({ size: 30 + ((i * 7) % 60), float: 20 + ((i * 11) % 70), concentration: 10 + ((i * 13) % 80) }) }));
+  const good = identification(winners, bg, 100);
+  assert.equal(good.ready, true);
+  assert.ok(good.recallTop20 >= 80, `held-out winners in the top 20%: ${good.recallTop20}%`);
+  // Winners that look like everyone else: no better than chance.
+  const lookalikes = Array.from({ length: 10 }, (_, i) => W(i, bg[i * 11].vector));
+  const none = identification(lookalikes, bg.filter((_, i) => i % 11 !== 0), 100);
+  assert.ok(none.recallTop20 <= 50, `no separation: ${none.recallTop20}%`);
+  assert.equal(identification(winners.slice(0, 2), bg, 100).ready, false, 'too few winners to judge');
 });

@@ -13,8 +13,11 @@ import { calibrationSummary, makeCohort, observePrices, pruneCohorts, weekId } f
 import { observedCadence, reliability } from '../domain/cadence.js';
 import { cadenceOf } from '../domain/cron.js';
 import { efficiency } from '../domain/efficiency.js';
-import { GATES, GROUPS, STATUS, STATUS_RO, evaluateGates, summarize } from '../domain/gates.js';
+import { DERIVED_GATES, GATES, GROUPS, STATUS, STATUS_RO, evaluateGates, summarize } from '../domain/gates.js';
 import { healPlan } from '../domain/heal.js';
+import { decodeDiscovery, identificationEfficiency } from '../domain/identification.js';
+import { evaluateRules, recordRuleHistory, rememberRulebook, ruleTrends } from '../domain/rules.js';
+import { coderRecord, selfEvalSummary, stepSelfEval } from '../domain/selfeval.js';
 import { SEVERITY_ORDER, buildFindings, mergeReplay, updateIncidents } from '../domain/incidents.js';
 import { buildFacts, buildPrompt, guardNarrative, narrativeKey, templateNarrative } from '../domain/narrative.js';
 import { NORM_DEFAULTS, assess, describe } from '../domain/norms.js';
@@ -22,7 +25,9 @@ import { fnv1a } from '../domain/stats.js';
 import { WATCHED, emptyMemory, ingest, replayIncidents } from './learn.js';
 import { commitsFrom, observe, scanSecrets } from './observe.js';
 
-export const REPORT_SCHEMA_VERSION = '1.0.0';
+export const REPORT_SCHEMA_VERSION = '1.1.0';
+/** The identification windows when the rulebook does not name them. */
+export const DEFAULT_WINDOWS = Object.freeze({ short: { horizonH: 72, threshold: 0.2, label: '+20% în 72 de ore' }, medium: { horizonH: 168, threshold: 0.3, label: '+30% în 7 zile' } });
 const MAX_ACTIONS = 120;
 const MAX_REPORTS = 240;
 
@@ -101,6 +106,20 @@ export function trackedIds(memory) {
   return [...ids];
 }
 
+/**
+ * Identification efficiency on the radar's own history (cri-state/discovery.json): every full scan,
+ * the verdict it published, and what the price did next.
+ */
+async function measureIdentification(ports, windows, nowMs, cfg) {
+  if (!ports.state?.discovery) return null;
+  const r = await ports.state.discovery();
+  if (!r.ok) return null;
+  const series = decodeDiscovery(r.data);
+  const out = {};
+  for (const [w, def] of Object.entries(windows)) out[w] = { ...identificationEfficiency(series, { nowMs, horizonH: def.horizonH, threshold: def.threshold, windowDays: cfg.identification?.windowDays ?? 30 }), label: def.label ?? w };
+  return out;
+}
+
 function memoryInfo(memory, fresh) {
   const metrics = Object.entries(memory.series ?? {}).map(([k, v]) => ({ metric: k, n: v.length }));
   return {
@@ -124,6 +143,7 @@ export async function analyze({ ports, cfg, nowMs, limits = {}, logger = console
   const norms = { ...NORM_DEFAULTS, ...(cfg.norms ?? {}) };
 
   const obs = await observe({ ports, cfg, nowMs });
+  const seriesBefore = memory.series ?? {};
   const { memory: learnedMemory, learned } = ingest(memory, obs, norms);
   memory = learnedMemory;
   memory.runs = (memory.runs ?? 0) + 1;
@@ -170,8 +190,27 @@ export async function analyze({ ports, cfg, nowMs, limits = {}, logger = console
     memoryInfo: memoryInfo(memory, fresh),
     narrative: memory.narrative,
   };
-  const gateResults = evaluateGates(obs, ctx);
+  const base = evaluateGates(obs, ctx);
   const normRows = normsReport(memory, norms);
+
+  // The written knowledge: the fundamental rules, loaded into memory with their fingerprint.
+  const bookR = ports.knowledge ? await ports.knowledge.rules() : null;
+  const book = bookR?.ok ? bookR.data : null;
+  if (bookR && !bookR.ok) logger.warn?.(`agent: regulile fundamentale nu au putut fi citite (${bookR.status}${bookR.message ? `: ${bookR.message}` : ''})`);
+  memory.knowledge = rememberRulebook(memory.knowledge, book, nowIso);
+  const windows = book?.windows ?? DEFAULT_WINDOWS;
+  const identification = await measureIdentification(ports, windows, nowMs, cfg);
+
+  // Self-evaluation: score the predictions of the last run on this run's gates, then predict the next.
+  const step = stepSelfEval(memory.selfEval, { results: base, nowMs, seriesBefore, seriesAfter: memory.series });
+  memory.selfEval = step.state;
+  const selfEval = { ...selfEvalSummary(memory.selfEval), coder: coderRecord(obs.pulls) };
+
+  // Every rule judged on the project's own data; the gates derived from them in a second pass.
+  const rules = evaluateRules(book, { identification, forecast: obs.snapshot?.forecast ?? null, calibration, selfEval, norms: normRows, gates: base });
+  memory.ruleHistory = recordRuleHistory(memory.ruleHistory, rules, nowMs);
+  const derived = evaluateGates(obs, { ...ctx, rules: ports.knowledge ? rules : null, identification, knowledge: memory.knowledge, selfEval }, { only: DERIVED_GATES });
+  const gateResults = base.map((g) => derived.find((d) => d.id === g.id) ?? g);
   const anomalies = anomalyResults(normRows, nowIso);
   const all = [...gateResults, ...anomalies];
 
@@ -221,6 +260,9 @@ export async function analyze({ ports, cfg, nowMs, limits = {}, logger = console
     efficiency: eff,
     norms: normRows,
     calibration: { ...calibration, created: led.created, updatedRows: led.updated },
+    identification: identification ? { ...identification, source: 'cri-state/discovery.json', note: 'Fiecare scanare completă, cu prețul și verdictul publicate atunci; reușită = maximul prețurilor din scanările următoare, în orizont, atinge pragul. Lift = rata nivelului / rata universului din aceleași scanări; intervale Wilson 90%.' } : null,
+    rules: { ...rules, results: rules.results.map((r) => ({ ...r, trend: ruleTrends(memory.ruleHistory, { results: [r] })[0] ?? null })), knowledge: memory.knowledge },
+    selfEval,
     incidents: {
       open: memory.incidents.filter((x) => x.status === 'open').map(pickIncident),
       resolved: memory.incidents.filter((x) => x.status === 'resolved').slice(0, 15).map(pickIncident),
@@ -236,6 +278,8 @@ export async function analyze({ ports, cfg, nowMs, limits = {}, logger = console
       incidents: { open: memory.incidents.filter((x) => x.status === 'open').length, resolved: memory.incidents.filter((x) => x.status === 'resolved').length },
       fixes: Object.values(memory.fixes ?? {}).reduce((s, v) => s + v.filter((f) => f.sha).length, 0),
       transient: Object.values(memory.fixes ?? {}).reduce((s, v) => s + v.filter((f) => f.transient).length, 0),
+      rules: { version: memory.knowledge?.version ?? null, hash: memory.knowledge?.hash ?? null, total: rules.total },
+      selfEval: { runsScored: selfEval.runsScored, skill: selfEval.comparable ? selfEval.skill : selfEval.skillVsClimatology, versus: selfEval.comparable ? 'persistence' : 'climatology' },
     },
     plan: { actions: plan.actions, skipped: plan.skipped },
     actions: [],
@@ -243,7 +287,7 @@ export async function analyze({ ports, cfg, nowMs, limits = {}, logger = console
     narrative: memory.narrative ? { ...memory.narrative } : null,
     history: [...(memory.reports ?? []), { at: nowIso, overall: summary.overall, counts: summary.counts }].slice(-60),
     observed: { calls: obs.calls, sources: obs.sources, snapshotAt: obs.snapshot?.generatedAt ?? null, universeAt: obs.universe?.generatedAt ?? null },
-    policy: { freeOnly: true, researchOnly: true, actionsAllowed: ['workflow_dispatch (scan, pulse)', 'issue (o problemă deschisă, actualizată)'], llm: 'model deschis local (Ollama), fără cont, fără cheie; garda verifică fiecare cifră' },
+    policy: { freeOnly: true, researchOnly: true, actionsAllowed: ['workflow_dispatch (scan, pulse)', 'issue (o problemă deschisă, actualizată)', 'comentariu de răspuns la /agent (agent-chat.yml)', 'pull request pe o ramură agent/… doar la cererea proprietarului (/agent cod), niciodată merge'], llm: 'model deschis local (Ollama), fără cont, fără cheie; garda verifică fiecare cifră' },
     gateCatalogue: GATES.map((g) => ({ id: g.id, group: g.group, title: g.title, what: g.what, severity: g.severity })),
   };
 
@@ -255,6 +299,8 @@ export async function analyze({ ports, cfg, nowMs, limits = {}, logger = console
   const narrate = narrateMode === 'always' || (narrateMode !== 'never' && stale);
   // Until a narrative is written for this state, the template stands in (always true, never empty).
   if (!lastN || lastN.key !== key) report.narrative = { key, at: nowIso, by: 'template', text: templateNarrative(report), reason: lastN ? 'starea s-a schimbat; narațiunea se rescrie' : 'prima rulare', guard: null, model: null };
+  // The template costs nothing: while it is what stands, its numbers follow every run.
+  else if (lastN.by === 'template') report.narrative = { ...lastN, text: templateNarrative(report) };
 
   await ports.memory.save(memory);
   await publishReport(ports, report);
@@ -286,7 +332,9 @@ export async function narrate({ ports, nowMs, cfg = {}, logger = console }) {
   };
 
   const narrator = ports.narrator;
-  const usable = narrator && cfg.narrator?.enabled !== false && (await narrator.available());
+  // Why the model cannot be used (server down, model not pulled) goes into the narrator gate.
+  const st = narrator && cfg.narrator?.enabled !== false ? (narrator.status ? await narrator.status() : { ok: await narrator.available(), reason: null }) : null;
+  const usable = Boolean(st?.ok);
   let n = null;
   if (usable) {
     // The facts describe the state in which the summary is published: one written by the model.
@@ -302,7 +350,7 @@ export async function narrate({ ports, nowMs, cfg = {}, logger = console }) {
       }
     } else n = { key, at: nowIso, by: 'template', model: null, guard: null, reason: `modelul local nu a răspuns (${r.status}${r.message ? `: ${r.message}` : ''})` };
   } else {
-    n = { key, at: nowIso, by: 'template', model: null, guard: null, reason: narrator ? 'modelul local nu este disponibil în această rulare' : 'disabled' };
+    n = { key, at: nowIso, by: 'template', model: null, guard: null, reason: narrator ? `modelul local nu este disponibil în această rulare${st?.reason ? ` (${st.reason})` : ''}` : 'disabled' };
   }
   settle(n);
   // The template is written last, from the report as published, so its counts match the screen.

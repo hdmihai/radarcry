@@ -1,6 +1,8 @@
 /**
  * The agent's adapters: the GitHub REST surface (reads, one dispatch, one issue — nothing else),
- * the hosts each web adapter may reach, the public prices, and the file adapters' layouts.
+ * the hosts each web adapter may reach, the public prices, the file adapters' layouts, the written
+ * knowledge, and the git workspace of the code command (inside the repository only, tokens never
+ * passed to the tests, exactly its own changes undone).
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -9,7 +11,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createGitHub, createIssueNotifier, normRun } from '../../agent/adapters/github.js';
 import { createOllama, createPublicPrices, createSite, pagesUrlOf } from '../../agent/adapters/web.js';
-import { createMemoryFs, createStateDir } from '../../agent/adapters/files.js';
+import { createKnowledgeFs, createMemoryFs, createStateDir } from '../../agent/adapters/files.js';
+import { createWorkspace } from '../../agent/adapters/workspace.js';
+import { execFileSync } from 'node:child_process';
+import { readFile } from 'node:fs/promises';
 import { cronsOf } from '../../agent/main.js';
 import { ROOT } from '../fixture-run.js';
 
@@ -73,7 +78,7 @@ test('web adapters are pinned to their hosts', async () => {
   assert.equal(pagesUrlOf('HdMihai/radarcry'), 'https://hdmihai.github.io/radarcry/');
   assert.throws(() => createSite({ url: 'https://example.com/' }), /github\.io/);
   assert.throws(() => createOllama({ baseUrl: 'http://10.0.0.5:11434', model: 'm' }), /local/);
-  const f = fakeFetch([[/data\/summary\.json/, 200, { generatedAt: '2026-10-31T09:04:32.053Z' }], [/api\/tags/, 200, { models: [{ name: 'qwen2.5:3b' }] }], [/api\/generate/, 200, { response: '- text' }]]);
+  const f = fakeFetch([[/data\/summary\.json/, 200, { generatedAt: '2026-10-31T09:04:32.053Z' }], [/api\/version/, 200, { version: '0.12.0' }], [/api\/tags/, 200, { models: [{ name: 'qwen2.5:3b' }] }], [/api\/generate/, 200, { response: '- text' }]]);
   const site = createSite({ url: 'https://o.github.io/r', fetchImpl: f.impl });
   assert.deepEqual((await site.summary()).data, { url: 'https://o.github.io/r/', generatedAt: '2026-10-31T09:04:32.053Z' });
   const llm = createOllama({ model: 'qwen2.5:3b', fetchImpl: f.impl });
@@ -81,6 +86,10 @@ test('web adapters are pinned to their hosts', async () => {
   assert.equal((await llm.generate({ system: 's', prompt: 'p' })).data, '- text');
   assert.equal(f.calls.at(-1).body.stream, false);
   assert.equal(await createOllama({ model: 'llama3.2:3b', fetchImpl: f.impl }).available(), false, 'a model that was not pulled is not available');
+  // The reason travels to the narrator gate: the server, then the model.
+  assert.match((await createOllama({ model: 'llama3.2:3b', fetchImpl: f.impl }).status()).reason, /nu este descărcat/);
+  const down = fakeFetch([]);
+  assert.match((await createOllama({ model: 'qwen2.5:3b', fetchImpl: down.impl }).status()).reason, /serverul Ollama nu răspunde/);
 });
 
 test('public prices: chunks of ids, the 24-hour high, one patient retry on a rate limit', async () => {
@@ -128,4 +137,53 @@ test('the schedules are read from the workflow files themselves', async () => {
   assert.deepEqual(await cronsOf('pulse.yml', ROOT), ['7,22,37,52 * * * *']);
   assert.deepEqual(await cronsOf('ci.yml', ROOT), []);
   assert.deepEqual(await cronsOf('agent.yml', ROOT), ['43 * * * *']);
+});
+
+test('knowledge: the rulebook and the documents the chat answers from', async () => {
+  const k = createKnowledgeFs();
+  const rules = await k.rules();
+  assert.equal(rules.ok, true);
+  assert.ok(rules.data.rules.length >= 20);
+  const docs = await k.docs();
+  assert.deepEqual(docs.data.map((d) => d.name), ['README.md', 'docs/ARCHITECTURE.md', 'agent/README.md']);
+  const none = createKnowledgeFs({ root: tmpdir() });
+  assert.equal((await none.rules()).ok, false, 'a missing rulebook is a result, not a crash');
+});
+
+test('workspace: writes stay inside the repository, tests run without tokens, reset undoes exactly its own changes', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cri-agent-ws-'));
+  try {
+    const git = (...a) => execFileSync('git', a, { cwd: dir, stdio: 'pipe' }).toString();
+    git('init', '-q');
+    await writeFile(join(dir, 'a.js'), 'export const a = 1;\n');
+    await writeFile(join(dir, 'mine.txt'), 'the owner\'s file\n');
+    git('add', 'a.js');
+    git('-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'init');
+    // The "test suite" prints whether it can see a token.
+    const probe = `process.stdout.write(process.env.GITHUB_TOKEN ? 'TOKEN-VISIBLE' : 'no-token'); process.exit(require('fs').readFileSync('a.js','utf8').includes('2') ? 0 : 1)`;
+    const ws = createWorkspace({ root: dir, testCommand: [process.execPath, '-e', probe] });
+    assert.equal(await ws.clean(), false, 'an untracked file of the owner makes the tree not clean');
+    assert.deepEqual(await ws.list(), ['a.js']);
+    await assert.rejects(ws.write('../escape.js', 'x'), /iese din repository/);
+    await ws.write('a.js', 'export const a = 2;\n');
+    await ws.write('src/new.js', 'export const n = 1;\n');
+    const saved = process.env.GITHUB_TOKEN;
+    process.env.GITHUB_TOKEN = 'token-the-test-suite-must-not-see';
+    const t = await ws.test();
+    if (saved === undefined) delete process.env.GITHUB_TOKEN;
+    else process.env.GITHUB_TOKEN = saved;
+    assert.equal(t.ok, true);
+    assert.equal(t.output, 'no-token', 'the proposed code never sees a token');
+    const diff = await ws.diff();
+    assert.match(diff, /-export const a = 1;/);
+    assert.match(diff, /\+export const n = 1;/, 'a new file is in the diff');
+    assert.doesNotMatch(diff, /mine\.txt/, 'only the files the agent touched');
+    assert.deepEqual(ws.touched().sort(), ['a.js', 'src/new.js']);
+    await ws.reset();
+    assert.equal(await readFile(join(dir, 'a.js'), 'utf8'), 'export const a = 1;\n');
+    assert.equal(await readFile(join(dir, 'mine.txt'), 'utf8'), "the owner's file\n", 'the owner\'s file is untouched');
+    await assert.rejects(readFile(join(dir, 'src', 'new.js')), /ENOENT/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });

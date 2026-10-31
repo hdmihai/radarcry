@@ -8,6 +8,7 @@
  * + 1–3 public price calls ≈ 20 requests — against GitHub's 1 000 requests an hour per repository
  * for the workflow token.
  */
+import { scanSecrets } from '../domain/secrets.js';
 
 /** Statuses of a run that count as "the latest result" (a cancelled or skipped run says nothing). */
 const DECISIVE = new Set(['success', 'failure', 'timed_out', 'startup_failure', 'action_required']);
@@ -34,25 +35,8 @@ export function decodeTable(table) {
   return (table?.rows ?? []).map((row) => Object.fromEntries(fields.map((f, j) => [f, row[j]])));
 }
 
-/** Patterns that must never appear in a published file. */
-export const SECRET_PATTERNS = Object.freeze([
-  { id: 'url-key', re: /[?&](?:api[-_]?key|apikey|access[-_]?token|auth[-_]?token|key|token)=[A-Za-z0-9_-]{16,}/i },
-  { id: 'coingecko-key', re: /\bCG-[A-Za-z0-9]{20,}\b/ },
-  { id: 'github-token', re: /\b(?:gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{40,})\b/ },
-  { id: 'bearer', re: /\bBearer\s+[A-Za-z0-9._~+/-]{24,}/ },
-  { id: 'private-key', re: /-----BEGIN [A-Z ]*PRIVATE KEY-----/ },
-]);
-
-export function scanSecrets(files) {
-  const leaks = [];
-  let bytes = 0;
-  for (const f of files ?? []) {
-    const text = String(f.text ?? '');
-    bytes += text.length;
-    for (const p of SECRET_PATTERNS) if (p.re.test(text)) leaks.push({ file: f.name, pattern: p.id });
-  }
-  return { files: (files ?? []).length, bytesKb: Math.round(bytes / 1024), leaks };
-}
+// The secret patterns live in the domain (the chat's patch validator uses them too).
+export { SECRET_PATTERNS, scanSecrets } from '../domain/secrets.js';
 
 /** The parts of the published snapshot the gates read. */
 export function snapshotView(s) {
@@ -159,9 +143,18 @@ export async function observe({ ports, cfg, nowMs }) {
     if (dR.ok) pages = { ok: dR.data.state === 'success', via: 'deployments', url: dR.data.url ?? pages?.url ?? null, generatedAt: null, status: `deploy ${dR.data.state}`, reason: dR.data.state === 'success' ? null : `DEPLOY_${String(dR.data.state).toUpperCase()}`, state: dR.data.state, deployedAt: dR.data.at ?? dR.data.createdAt, sha: dR.data.sha };
   }
 
+  // The agent's own code proposals (pull requests on agent/… branches) and what became of them.
+  let pulls = null;
+  if (ci.agentPulls) {
+    const prR = await ci.agentPulls();
+    calls.github += 1;
+    pulls = prR.ok ? prR.data : null;
+  }
+
   return {
     nowMs,
     nowIso,
+    pulls,
     repo: repoInfo ? { ...repoInfo, defaultBranch: branch, lastCommitAt: commitR.ok ? commitR.data.at : null, lastCommitSha: commitR.ok ? commitR.data.sha : null, lastCommitMessage: commitR.ok ? commitR.data.message : null } : null,
     workflows,
     snapshot,
