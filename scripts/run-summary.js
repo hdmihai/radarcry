@@ -36,6 +36,13 @@ const u = s.health?.universe ?? {};
 out.push('');
 out.push(`Orizont: CoinGecko ${u.coingecko ?? 0} · CoinMarketCap ${u.coinmarketcap ?? 0}${u.coinmarketcap ? '' : ' (adaugă CMC_API_KEY, cheie Basic gratuită)'} · Binance Alpha ${u.binanceAlpha ?? 0} · Gate Alpha ${u.gateAlpha ?? 0} (${u.alphaOnly ?? 0} tokenuri Alpha în afara top 1000) → ${u.eligible ?? 0} eligibile · ${u.deep ?? 0} cercetate în profunzime (prioritate ${u.priority ?? '—'}) · ${u.futures ?? f0(s)} piețe perpetue`);
 
+const val = s.validity?.summary;
+if (val) {
+  const top = Object.entries(val.byCode ?? {}).sort((x, y) => y[1] - x[1]).slice(0, 5).map(([c, k]) => `${c} ${k}`).join(' · ');
+  out.push('');
+  out.push(`Validare: **${val.valid}** verificate (doar ele intră în listele CRI) · ${val.pending} în verificare · ${val.rejected} respinse${top ? ` — ${top}` : ''}`);
+}
+
 const answering = rows.filter((r) => r.verdict?.answersQuestion);
 const shown = answering.length ? answering : [...rows].sort((a, b) => (b.verdict?.opportunity ?? 0) - (a.verdict?.opportunity ?? 0)).slice(0, 8);
 if (shown.length) {

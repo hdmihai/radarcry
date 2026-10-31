@@ -22,6 +22,8 @@ import { futuresMarkup, futuresState } from '../../web/assets/js/views/futures.j
 import { researchMarkup, researchState } from '../../web/assets/js/views/research.js';
 import { parityMarkup } from '../../web/assets/js/views/parity.js';
 import { drawerMarkup } from '../../web/assets/js/views/drawer.js';
+import { validityMarkup, validityState } from '../../web/assets/js/views/validity.js';
+import { validityBadge } from '../../web/assets/js/views/widgets.js';
 import { esc, html, tip } from '../../web/assets/js/core/dom.js';
 
 let run;
@@ -47,7 +49,7 @@ test('escaping: interpolated values are escaped, tooltips are escaped exactly on
 });
 
 test('every view renders from the contract', () => {
-  for (const [name, fn] of Object.entries({ heroMarkup, discoveryMarkup, futuresMarkup, researchMarkup, parityMarkup, radarMarkup, analogsMarkup, catalystsMarkup, derivativesMarkup, narrativesMarkup, trackMarkup, healthMarkup, methodologyMarkup, topMeta, marketStrip })) {
+  for (const [name, fn] of Object.entries({ heroMarkup, discoveryMarkup, futuresMarkup, researchMarkup, parityMarkup, radarMarkup, analogsMarkup, catalystsMarkup, derivativesMarkup, narrativesMarkup, trackMarkup, healthMarkup, methodologyMarkup, validityMarkup, topMeta, marketStrip })) {
     clean(name, fn(snap));
   }
   const n = notices(snap);
@@ -225,9 +227,12 @@ test('the Univers screen renders while loading, once loaded, and when the table 
     universeState.only = 'ALL';
     universeState.stage = 'ALL';
     universeState.sort = 'rank';
+    universeState.valid = 'ALL';
+    universeState.shown = 10_000;
     const table = String(universeMarkup(snap));
-    assert.ok(table.includes('Gate'), 'the Alpha programmes are visible per row');
-    assert.ok(table.includes('data-umore') || doc.assets.rows.length <= 100, 'a long table is paged');
+    assert.ok(table.includes('Gate Alpha'), 'the Alpha programmes are visible per row');
+    universeState.shown = 100;
+    assert.ok(String(universeMarkup(snap)).includes('data-umore') || doc.assets.rows.length <= 100, 'a long table is paged');
     universeState.tab = 'futures';
     assert.ok(clean('univers[futures]', universeMarkup(snap)).includes('Nivele de research'));
 
@@ -235,6 +240,121 @@ test('the Univers screen renders while loading, once loaded, and when the table 
     universeState.error = 'HTTP 404';
     assert.ok(String(universeMarkup(snap)).includes('HTTP 404'));
     assert.ok(String(universeMarkup({ ...snap, meta: { ...snap.meta, universe: undefined } })).includes('nu are încă'), 'an older snapshot explains the missing table');
+  } finally {
+    Object.assign(universeState, saved);
+  }
+});
+
+/* ─────────────────────── the validity gate on every screen that lists projects ─────────────── */
+
+test('the Validare screen lists the rules, the counts and every project held back, with the reason', () => {
+  const v = snap.validity;
+  assert.ok(v, 'the demo snapshot carries the gate');
+  const saved = { ...validityState };
+  try {
+    validityState.tab = 'rejected';
+    validityState.q = '';
+    const rejected = clean('validare[rejected]', validityMarkup(snap));
+    assert.ok(rejected.includes('Validare'));
+    for (const c of v.checks) assert.ok(rejected.includes(c.label), `the rule "${c.label}" is printed`);
+    assert.ok(rejected.includes('„Necunoscut” nu înseamnă „respins”'), 'unknown is not bearish, on the screen');
+    if (v.rejected.length) assert.ok(rejected.includes(v.rejected[0].symbol), 'the first rejected project is listed');
+    validityState.tab = 'pending';
+    const pending = clean('validare[pending]', validityMarkup(snap));
+    if (v.pending.length) assert.ok(pending.includes(v.pending[0].symbol));
+    validityState.q = 'zzzz-nothing';
+    assert.ok(String(validityMarkup(snap)).includes('Șterge căutarea'), 'an empty search explains itself');
+    assert.ok(String(validityMarkup({ ...snap, validity: undefined })).includes('nu are încă'), 'an older snapshot explains the missing gate');
+  } finally {
+    Object.assign(validityState, saved);
+  }
+});
+
+test('every listed project carries its verdict: Small-Cap Radar, CRI radar, dossier, research card, methodology', () => {
+  const rows = snap.discovery?.rows ?? [];
+  assert.ok(rows.every((r) => r.validity?.status === 'VALID'), 'only verified projects on the Small-Cap Radar');
+  const before = discoveryState.filter;
+  try {
+    discoveryState.filter = 'all';
+    const disc = String(discoveryMarkup(snap));
+    assert.ok(disc.includes('verificat'), 'the badge is on the cards');
+    assert.ok(disc.includes('Verificare de validitate'), 'with the checks one click away');
+    assert.ok(disc.includes('#/validare'), 'and the way to the projects held back');
+  } finally {
+    discoveryState.filter = before;
+  }
+  const radar = String(radarMarkup(snap));
+  assert.ok(radar.includes('verificarea de validitate'), 'the radar says its rows passed the gate');
+  assert.ok(radar.includes('vpill'), 'with a compact verdict per row');
+  const dossier = rows.find((r) => r.onchain?.holderTable || r.comparison);
+  if (dossier) {
+    const savedKey = researchState.key;
+    researchState.key = dossier.key;
+    try {
+      assert.ok(String(researchMarkup(snap)).includes('Verificarea de validitate'), 'the dossier shows the gate');
+    } finally {
+      researchState.key = savedKey;
+    }
+  }
+  const card = String(drawerMarkup(snap.candidates[0], snap));
+  assert.ok(card.includes('Verificare de validitate'), 'the research card shows the gate');
+  assert.ok(card.includes('<dt>Spot</dt>'), 'and every spot market it is listed on');
+  const method = String(methodologyMarkup(snap));
+  assert.ok(method.includes('Poarta de validitate'), 'the methodology explains the gate');
+  // Regression: since contract v4 the legacy weights moved under methodology.similarity and the
+  // signal thresholds were no longer published, so this screen printed "CRI ≥ ," with no number.
+  const sig = snap.methodology.thresholds.signals;
+  assert.ok(sig?.buySetup?.minCri > 0, 'the signal thresholds are published');
+  assert.ok(method.includes(`CRI ≥ ${sig.buySetup.minCri}`), 'and printed');
+  assert.ok(!/≥ ,|≥ <|cu {2}puncte/.test(method), 'no threshold is left blank');
+  assert.ok(method.includes('Similaritate LAB/BTW/AGT'), 'the domain weights are drawn');
+  assert.ok(method.includes('Float circulant'), 'the fingerprint features are listed');
+});
+
+test('the validity badge: verified, verified with warnings, pending, rejected', () => {
+  const checks = [{ key: 'scope', label: 'Capitalizare', status: 'PASS', detail: '50 mil $' }];
+  assert.equal(String(validityBadge(null)), '');
+  assert.match(String(validityBadge({ status: 'VALID', label: 'verificat', checks, warnings: [] })), /verificat<\/span>$/);
+  assert.match(String(validityBadge({ status: 'VALID', label: 'verificat', checks, warnings: ['a', 'b'] })), /verificat · 2 atenționări/);
+  assert.match(String(validityBadge({ status: 'REJECTED', label: 'respins', checks, warnings: [] })), /data-tone="serious"/);
+  assert.match(String(validityBadge({ status: 'PENDING', label: 'în verificare', checks, warnings: [] }, { compact: true })), /în verificare/);
+});
+
+test('the Univers screen shows only verified projects by default, and every held-back one on request', async () => {
+  const { universeMarkup, universeState, decodeTable } = await import('../../web/assets/js/views/universe.js');
+  const { readFile } = await import('node:fs/promises');
+  const { join } = await import('node:path');
+  const saved = { ...universeState };
+  try {
+    const doc = JSON.parse(await readFile(join(run.outDir, 'universe.json'), 'utf8'));
+    universeState.status = 'ready';
+    universeState.data = { ...doc, assetRows: decodeTable(doc.assets), futuresRows: decodeTable(doc.futures) };
+    universeState.tab = 'assets';
+    universeState.shown = 10_000;
+    universeState.valid = 'V';
+    const rows = universeState.data.assetRows;
+    const verified = clean('univers[V]', universeMarkup(snap));
+    assert.ok(verified.includes('id="uvalid"'), 'the validity filter is offered');
+    const rejected = rows.filter((r) => r.valid === 'R');
+    if (rejected.length) assert.equal(verified.includes(`>${rejected[0].symbol}<`), rows.some((r) => r.valid === 'V' && r.symbol === rejected[0].symbol), 'a rejected project is not in the default view');
+    universeState.valid = 'R';
+    const held = clean('univers[R]', universeMarkup(snap));
+    if (rejected.length) {
+      assert.ok(held.includes('respins'), 'rejected rows say so');
+      assert.ok(held.includes(`>${rejected[0].symbol}<`));
+    }
+    universeState.valid = 'P';
+    clean('univers[P]', universeMarkup(snap));
+
+    // A table published before the gate has no validity column: every row stays visible.
+    const fields = doc.assets.fields.filter((f) => !['valid', 'validWhy', 'validWarn'].includes(f));
+    const idx = fields.map((f) => doc.assets.fields.indexOf(f));
+    const old = { ...doc, assets: { fields, rows: doc.assets.rows.map((r) => idx.map((i) => r[i])) } };
+    universeState.data = { ...old, assetRows: decodeTable(old.assets), futuresRows: decodeTable(old.futures) };
+    universeState.valid = 'V';
+    const legacy = clean('univers[legacy]', universeMarkup(snap));
+    assert.ok(!legacy.includes('id="uvalid"'), 'no filter without the column');
+    assert.ok(legacy.includes(`${universeState.data.assetRows.length} proiecte`) || legacy.includes(`${universeState.data.assetRows.length.toLocaleString('ro-RO')} proiecte`), 'all rows shown');
   } finally {
     Object.assign(universeState, saved);
   }

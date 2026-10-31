@@ -3,8 +3,20 @@
   "universe": {
     "topN": 1000,
     "minMarketCapUsd": 1000000,
-    "maxMarketCapUsd": 500000000,
+    "maxMarketCapUsd": 300000000,
     "minVolume24hUsd": 500000
+  },
+  "validity": {
+    "maxTaxPct": 10,
+    "warnTaxPct": 5,
+    "minDexLiquidityUsd": 50000,
+    "minSpotVolumeUsd": 10000,
+    "minAgeDays": 14,
+    "concentrationWarnPct": 50,
+    "insiderWarnPct": 20,
+    "fdvWarnRatio": 10,
+    "turnoverWarn": 3,
+    "acceptGateAlphaOnly": false
   },
   "deep": {
     "limit": 60,
@@ -26,7 +38,8 @@
     "githubLimit": 40,
     "youtubeLimit": 20,
     "reserveSeconds": 240,
-    "cacheHours": { "security": 168, "detail": 336 }
+    "cacheHours": { "security": 168, "detail": 336 },
+    "refreshHours": { "security": 120 }
   },
   "futures": {
     "watchlist": ["BTC", "ETH", "SOL", "AVAX", "NEAR", "FET", "DOGE", "JASMY", "LINK", "SUI"],

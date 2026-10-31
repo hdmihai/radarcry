@@ -12,8 +12,9 @@
  * rounds and encodes.
  */
 import { isNum, round, sig } from '../../domain/shared/math.js';
+import { VALIDITY_CODE, validityWhy } from './validity.js';
 
-export const UNIVERSE_SCHEMA_VERSION = '1.0.0';
+export const UNIVERSE_SCHEMA_VERSION = '1.1.0';
 
 export const ASSET_FIELDS = Object.freeze([
   'key', 'symbol', 'name', 'chain',
@@ -25,6 +26,8 @@ export const ASSET_FIELDS = Object.freeze([
   'futGrade', 'futScore',
   'holders', 'liquidityUsd', 'top10Eff', 'baseline',
   'selectedBy', 'detail',
+  // The validity gate: V verified · P pending (evidence missing) · R rejected; why; warnings count.
+  'valid', 'validWhy', 'validWarn',
 ]);
 
 export const FUTURES_FIELDS = Object.freeze([
@@ -33,7 +36,10 @@ export const FUTURES_FIELDS = Object.freeze([
   'bias', 'entry', 'stop', 'target1', 'rr1', 'candles', 'reason', 'detail',
 ]);
 
+const VALIDITY_GROUP = { VALID: 0, PENDING: 1, REJECTED: 2 };
 const SOURCE_CODE = { coingecko: 'CG', coinmarketcap: 'CMC', coinpaprika: 'CP', binance_alpha: 'BA', gate_alpha: 'GA' };
+/** Centralised spot markets, one letter each: Binance, MEXC, Gate, OKX, biTget, Upbit, bitHumb. */
+export const SPOT_CODE = Object.freeze({ binance: 'B', mexc: 'M', gate: 'G', okx: 'O', bitget: 'T', upbit: 'U', bithumb: 'H' });
 const r2 = (x) => (isNum(x) ? round(x, 2) : null);
 const int = (x) => (isNum(x) ? Math.round(x) : null);
 const px = (x) => (isNum(x) ? sig(x, 6) : null);
@@ -41,16 +47,21 @@ const flag = (x) => (x ? 1 : 0);
 
 /**
  * @param {{eligible:any[], researched:any[], ranked:any[], futuresRows:any[], published:{discovery:Map<string,'full'|'row'>, futures:Set<string>},
- *          selectedBy:(key:string)=>string, meta:{generatedAt:string, runId:string, mode:string}}} input
+ *          selectedBy:(key:string)=>string, validity?:Map<string, any>|null, meta:{generatedAt:string, runId:string, mode:string}}} input
  */
-export function universeTable({ eligible, researched, ranked, futuresRows, published, selectedBy, meta }) {
+export function universeTable({ eligible, researched, ranked, futuresRows, published, selectedBy, validity = null, meta }) {
   const legacy = new Map(researched.map((r) => [r.asset.key, r]));
   const disc = new Map(ranked.map((r, i) => [r.asset.key, { r, i }]));
   const fut = new Map(futuresRows.map((f) => [f.key, f]));
 
-  // Discovery order first (the engine's own ranking), then the legacy score for anything the
-  // discovery engine did not reach this run.
+  // Verified projects first (only they enter the CRI lists), then those still pending, then the
+  // rejected; inside each group the discovery order (the engine's own ranking), then the legacy
+  // score for anything the discovery engine did not reach this run.
+  const group = (a) => VALIDITY_GROUP[validity?.get(a.key)?.status] ?? 0;
   const order = [...eligible].sort((a, b) => {
+    const ga = group(a);
+    const gb = group(b);
+    if (ga !== gb) return ga - gb;
     const da = disc.get(a.key)?.i ?? Infinity;
     const db = disc.get(b.key)?.i ?? Infinity;
     if (da !== db) return da - db;
@@ -64,7 +75,14 @@ export function universeTable({ eligible, researched, ranked, futuresRows, publi
     const v = D?.verdict ?? null;
     const oc = D?.asset?.onchain ?? null;
     const m = a.market ?? {};
-    const spot = [a.venues?.binanceSpot ? 'B' : null, a.venues?.mexcSpot ? 'M' : null].filter(Boolean).join(',');
+    const spot = [
+      a.venues?.binanceSpot ? SPOT_CODE.binance : null,
+      a.venues?.mexcSpot ? SPOT_CODE.mexc : null,
+      ...Object.keys(a.venues?.spot ?? {}).map((venue) => SPOT_CODE[venue] ?? null),
+      a.venues?.krw?.upbit === true ? SPOT_CODE.upbit : null,
+      a.venues?.krw?.bithumb === true ? SPOT_CODE.bithumb : null,
+    ].filter(Boolean).join(',');
+    const val = validity?.get(a.key) ?? null;
     const best = L?.analogs?.best ?? null;
     return [
       a.key, a.symbol, a.name, a.primary?.chain ?? null,
@@ -96,6 +114,9 @@ export function universeTable({ eligible, researched, ranked, futuresRows, publi
       D ? D.baseline?.points ?? null : null,
       D ? selectedBy(a.key) : null,
       published.discovery.get(a.key) ?? (L?.depth === 'deep' ? 'research' : 'table'),
+      val ? VALIDITY_CODE[val.status] ?? null : null,
+      val ? validityWhy(val) : null,
+      val ? val.warnings.length : null,
     ];
   });
 
@@ -121,7 +142,7 @@ export function universeTable({ eligible, researched, ranked, futuresRows, publi
     generatedAt: meta.generatedAt,
     runId: meta.runId,
     mode: meta.mode,
-    note: 'Fiecare proiect cercetat în această rulare, câte un rând. Dovezile complete (teza, invalidatorii, deținătorii clasificați) sunt publicate în data/latest.json pentru vârful fiecărui clasament; coloana „detail” spune unde se află: full = fișă completă, card = card cu factori, list = rând de listă, research = cercetat în profunzime, doar aici, table = doar date de piață.',
+    note: 'Fiecare proiect cercetat în această rulare, câte un rând. Dovezile complete (teza, invalidatorii, deținătorii clasificați) sunt publicate în data/latest.json pentru vârful fiecărui clasament; coloana „detail” spune unde se află: full = fișă completă, card = card cu factori, list = rând de listă, research = cercetat în profunzime, doar aici, table = doar date de piață. Coloana „valid”: V = verificat (intră în listele CRI), P = în verificare (lipsește o dovadă), R = respins (motivul în „validWhy”).',
     assets: { fields: [...ASSET_FIELDS], rows },
     futures: { fields: [...FUTURES_FIELDS], rows: futures },
   };

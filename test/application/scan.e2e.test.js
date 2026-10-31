@@ -267,3 +267,39 @@ test('static facts are carried between runs, measurements are not, and coverage 
     if (e.detail) assert.equal(e.detail.data.watchlistUsers, undefined, `${key}: a watchlist count is never cached`);
   }
 });
+
+test('only projects that pass the validity gate reach the CRI lists; the rest are published with the reason', async () => {
+  const v = last.validity;
+  assert.ok(v, 'the snapshot carries the gate');
+  const u = last.health.universe;
+  assert.equal(v.summary.checked, u.eligible, 'every eligible project is judged');
+  assert.equal(v.summary.valid + v.summary.pending + v.summary.rejected, v.summary.checked);
+  assert.equal(v.policy.maxMarketCapUsd, 300e6);
+  assert.ok(v.summary.valid > 0 && v.summary.rejected > 0, `${v.summary.valid} valid, ${v.summary.rejected} rejected`);
+
+  // The CRI lists: Small-Cap Radar, CRI radar (candidates), alerts — VALID only.
+  assert.ok(last.discovery.rows.length > 0);
+  for (const r of last.discovery.rows) {
+    assert.equal(r.validity?.status, 'VALID', `${r.symbol} on the Small-Cap Radar`);
+    assert.ok(!(r.market?.marketCap > 300e6), `${r.symbol}: under the $300M cap`);
+  }
+  for (const c of last.candidates) assert.equal(c.validity?.status, 'VALID', `${c.symbol} on the CRI radar`);
+  const held = new Set([...v.rejected, ...v.pending].map((x) => x.key));
+  const alertKeys = [...(last.alerts.items ?? []), ...(last.watchlist.alerts ?? []), ...(last.watchlist.transitions ?? [])].map((a) => a.key).filter(Boolean);
+  for (const k of alertKeys) assert.ok(!held.has(k), `${k}: no alert for a project held back`);
+  assert.equal(last.discovery.validity.valid, v.summary.valid);
+
+  // Every held-back project says why, in the snapshot and in the universe table.
+  for (const x of v.rejected) {
+    assert.ok(x.codes.length > 0 && x.why.length > 0, `${x.symbol}: a reason`);
+    assert.equal(x.status, 'REJECTED');
+  }
+  for (const x of v.pending) assert.equal(x.status, 'PENDING');
+  const universe = JSON.parse(await readFile(join(run.outDir, 'universe.json'), 'utf8'));
+  const rows = decodeTable(universe.assets);
+  assert.equal(rows.filter((r) => r.valid === 'V').length, v.summary.valid);
+  assert.equal(rows.filter((r) => r.valid === 'R').length, v.summary.rejected);
+  for (const r of rows.filter((x) => x.valid !== 'V')) assert.ok(r.validWhy, `${r.symbol}: the table says why`);
+  const codes = rows.map((r) => r.valid);
+  assert.deepEqual(codes, [...codes].sort((a, b) => 'VPR'.indexOf(a) - 'VPR'.indexOf(b)), 'verified rows lead the table');
+});

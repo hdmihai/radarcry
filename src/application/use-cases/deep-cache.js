@@ -26,6 +26,14 @@ const HOUR = 3_600_000;
 
 export const DEFAULT_TTL_HOURS = Object.freeze({ security: 168, detail: 336 });
 
+/**
+ * The shape of each carried fact. Version 2 of `security` adds the flags the validity gate reads
+ * (owner can change balances, self-destruct, fake token, exchange list, Solana freeze/close/balance
+ * authorities). A version-1 fact stays usable — it carries the core flags — but is read again ahead of
+ * the normal rotation, so the new flags reach every project within a couple of days.
+ */
+export const FACT_VERSION = Object.freeze({ security: 2, detail: 1 });
+
 /** Static part of a GoPlus security payload: what the contract *is*, not how it is held today. */
 export function staticSecurity(raw) {
   if (!raw || typeof raw !== 'object' || !raw.security) return null;
@@ -64,7 +72,7 @@ export function cachedFact(cache, key, kind, { nowMs, ttlHours = DEFAULT_TTL_HOU
   if (!e || !Number.isFinite(e.at) || e.data === null || e.data === undefined) return null;
   const ttl = (ttlHours[kind] ?? DEFAULT_TTL_HOURS[kind] ?? 0) * HOUR;
   if (nowMs - e.at > ttl || e.at > nowMs) return null; // expired, or written by a clock ahead of ours
-  return { at: e.at, data: e.data };
+  return { at: e.at, data: e.data, v: Number.isFinite(e.v) ? e.v : 1 };
 }
 
 /** Store the static part of a fact read this run. */
@@ -72,7 +80,7 @@ export function storeFact(cache, key, kind, raw, nowMs) {
   const data = STATIC[kind] ? STATIC[kind](raw) : null;
   if (data === null) return;
   cache[key] ??= {};
-  cache[key][kind] = { at: nowMs, data };
+  cache[key][kind] = { at: nowMs, data, v: FACT_VERSION[kind] ?? 1 };
 }
 
 /** When a measurement was last refreshed for this project (ms), or null if never. */

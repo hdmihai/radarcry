@@ -155,6 +155,35 @@ test('the rate-limited slices stop at the reserve, leaving the later phases thei
   assert.ok(calls.goplus > 0 && calls.gt > 0 && calls.detail > 0, 'and all of them run when there is time');
 });
 
+test('contract scans: never-scanned first, then an older shape, then scans close to expiry — so none lapses', async () => {
+  // The validity gate holds back a project whose contract scan lapsed: a scan is read again before
+  // its TTL runs out whenever the per-run budget has room after the projects that have none.
+  const assets = Array.from({ length: 6 }, (_, i) => ({
+    key: `s${i}`, symbol: `S${i}`, name: `S${i}`, ids: { coingecko: `s${i}` }, links: {}, market: {},
+    venues: {}, primary: { chain: 'bsc', address: `0x${String(i + 70).padStart(40, '0')}` },
+  }));
+  const cache = {};
+  storeFact(cache, 's0', 'security', goplusPayload(1), NOW - 150 * H); // aging, oldest
+  storeFact(cache, 's1', 'security', goplusPayload(1), NOW - 130 * H); // aging
+  storeFact(cache, 's2', 'security', goplusPayload(1), NOW - 140 * H); // aging
+  storeFact(cache, 's3', 'security', goplusPayload(1), NOW - 10 * H);
+  cache.s3.security.v = 1; // read before the validity flags existed
+  storeFact(cache, 's4', 'security', goplusPayload(1), NOW - 10 * H); // fresh: left alone
+  const read = [];
+  const okR = (data) => ({ ok: true, status: 'OK', data, message: '', meta: { units: 1 } });
+  const P = {
+    goplus: { security: async (chain, addrs) => { read.push(...addrs); return okR(Object.fromEntries(addrs.map((x) => [x, goplusPayload(1)]))); } },
+    dexscreener: { tokens: async () => okR({}) },
+  };
+  const cfg = { ...config.deep, securityLimit: 4, coinDetailLimit: 0, holdersInfoLimit: 0, holdersLimit: 0, githubLimit: 0, youtubeLimit: 0, cgChartFallback: 0 };
+  await collectDeepData(assets, P, cfg, rt, { priorityKeys: new Set(), cache, nowMs: NOW });
+  const order = read.map((x) => assets.find((a) => a.primary.address === x).key);
+  assert.deepEqual(order, ['s5', 's3', 's0', 's2'], 'missing → outdated → aging oldest-first, within the budget');
+  assert.equal(cache.s3.security.v, 2, 're-read in the current shape');
+  assert.equal(cache.s0.security.at, NOW, 'refreshed before it could lapse');
+  assert.equal(cache.s4.security.at, NOW - 10 * H, 'a recent scan is not repeated');
+});
+
 test('the cache stays bounded by the universe', () => {
   const cache = {};
   storeFact(cache, 'gone', 'security', goplusPayload(1), NOW - 30 * 86_400_000);

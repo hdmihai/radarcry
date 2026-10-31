@@ -22,6 +22,7 @@ export const universeState = {
   tab: 'assets',
   q: '',
   alpha: 'ALL',
+  valid: 'V',
   stage: 'ALL',
   only: 'ALL',
   sort: 'rank',
@@ -89,11 +90,15 @@ const ONLY = [
   { id: 'perps', label: 'Cu perpetue' },
 ];
 
-function filtered(rows) {
+/** Tables published before the validity gate have no `valid` column: nothing to filter on. */
+const hasValidity = (data) => (data?.assets?.fields ?? []).includes('valid');
+
+function filtered(rows, gate = true) {
   const st = universeState;
   const q = st.q.trim().toLowerCase();
   return rows.filter((r) => {
     if (q && !`${r.symbol} ${r.name} ${r.key}`.toLowerCase().includes(q)) return false;
+    if (gate && st.valid !== 'ALL' && r.valid !== st.valid) return false;
     const alpha = String(r.alpha ?? '');
     if (st.alpha === 'ANY' && !alpha) return false;
     if (st.alpha === 'B' && !alpha.includes('B')) return false;
@@ -138,9 +143,46 @@ function sorted(rows) {
 
 const alphaChips = (alpha) => {
   const a = String(alpha ?? '');
-  if (!a) return html`<span class="muted xs">—</span>`;
-  return html`${a.includes('B') ? html`<span class="chip" data-tip="${tip('Listat în Binance Alpha (lista publică oficială)')}">Binance</span>` : ''}${a.includes('G') ? html`<span class="chip" data-tip="${tip('Listat în Gate Alpha (API v4 public)')}">Gate</span>` : ''}`;
+  if (!a) return '';
+  return html`${a.includes('B') ? html`<span class="chip" data-tip="${tip('Listat în Binance Alpha (lista publică oficială)')}">Binance Alpha</span>` : ''}${a.includes('G') ? html`<span class="chip" data-tip="${tip('Listat în Gate Alpha (API v4 public); singur nu ajunge pentru validare')}">Gate Alpha</span>` : ''}`;
 };
+
+/** One letter per centralised spot market, as published by the engine (universe-view SPOT_CODE). */
+const SPOT_NAME = { B: 'Binance', M: 'MEXC', G: 'Gate', O: 'OKX', T: 'Bitget', U: 'Upbit', H: 'Bithumb' };
+const spotChips = (spot) => String(spot ?? '').split(',').filter(Boolean)
+  .map((c) => html`<span class="chip" data-tone="good" data-tip="${tip(`Piață spot ${SPOT_NAME[c] ?? c} cu volum în ultimele 24 h`)}">${SPOT_NAME[c] ?? c}</span>`);
+
+function listingChips(r) {
+  const spot = spotChips(r.spot);
+  const alpha = alphaChips(r.alpha);
+  const perps = r.perps > 0 ? html`<span class="chip" data-tip="${tip(`${r.perps} ${r.perps === 1 ? 'contract perpetuu' : 'contracte perpetue'} pe bursele citite`)}">perp ×${r.perps}</span>` : '';
+  if (!spot.length && !alpha && !perps) return html`<span class="muted xs">nelistat</span>`;
+  return html`${spot}${alpha}${perps}`;
+}
+
+/** The same listings as two compact lines for the table: spot markets, then Alpha and perpetuals. */
+function listingCell(r) {
+  const spot = String(r.spot ?? '').split(',').filter(Boolean).map((c) => SPOT_NAME[c] ?? c);
+  const a = String(r.alpha ?? '');
+  const extra = [a.includes('B') ? 'Binance Alpha' : null, a.includes('G') ? 'Gate Alpha' : null, r.perps > 0 ? `perp ×${r.perps}` : null].filter(Boolean);
+  if (!spot.length && !extra.length) return html`<span class="muted xs">nelistat</span>`;
+  return html`<span class="tok" data-tip="${tip(`Spot (volum în 24 h): ${spot.length ? spot.join(', ') : 'niciuna'}${extra.length ? ` · ${extra.join(' · ')}` : ''}`)}"><span>${spot.length ? spot.join(', ') : html`<span class="muted">fără spot</span>`}</span><span class="tok-sub">${extra.join(' · ')}</span></span>`;
+}
+
+const VALID_PILL = {
+  V: { label: 'verificat', tone: 'good', icon: 'check' },
+  P: { label: 'în verificare', tone: 'muted', icon: 'clock' },
+  R: { label: 'respins', tone: 'critical', icon: 'stop' },
+};
+
+/** The validity verdict of one row; the reason is in the tooltip (and in the Validare screen). */
+function validPill(r) {
+  const v = VALID_PILL[r.valid];
+  if (!v) return html`<span class="muted xs">—</span>`;
+  const warn = r.valid === 'V' && r.validWarn > 0 ? ` · ${r.validWarn} aten.` : '';
+  const why = r.validWhy ?? (r.valid === 'V' ? (r.validWarn > 0 ? `A trecut toate verificările obligatorii, cu ${r.validWarn} ${r.validWarn === 1 ? 'atenționare' : 'atenționări'} (detaliile în fișa proiectului).` : 'A trecut toate verificările obligatorii.') : '');
+  return html`<span class="pill" data-tone="${v.tone}" data-tip="${tip(why)}">${icon(v.icon, 11)} ${v.label}${warn}</span>`;
+}
 
 function openAction(r, s) {
   if (r.detail === 'full') return html`<button class="linkish xs" type="button" data-dossier="${r.key}">dosar</button>`;
@@ -153,7 +195,8 @@ function assetRow(r, s) {
   return html`<tr>
     <td class="n muted">${r.rank}</td>
     <td><span class="tok"><span>${r.symbol}</span><span class="tok-sub">${r.name}${r.chain ? `, ${r.chain}` : ''}</span></span></td>
-    <td><span class="chips xs">${alphaChips(r.alpha)}</span></td>
+    <td>${validPill(r)}</td>
+    <td class="ucol-list">${listingCell(r)}</td>
     <td>${Number.isFinite(r.stage) ? html`<span class="tok"><span>Stage ${r.stage}</span><span class="tok-sub">${STAGE_LABEL[r.stage] ?? ''}${r.band ? ` · ${BAND_LABEL[r.band] ?? r.band}` : ''}</span></span>` : html`<span class="muted xs">necercetat</span>`}</td>
     <td class="n">${score(r.opportunity)}</td>
     <td class="n">${score(r.earliness)}</td>
@@ -170,8 +213,10 @@ function assetRow(r, s) {
 function assetCard(r, s) {
   return html`<div class="card-row">
     <span class="tok"><b>${r.rank}. ${r.symbol}</b><span class="tok-sub">${r.name}</span></span>
-    <span>${Number.isFinite(r.stage) ? `Stage ${r.stage}` : 'necercetat'}</span>
-    <span class="line">${alphaChips(r.alpha)} oportunitate ${score(r.opportunity)} · precocitate ${score(r.earliness)} · risc ${score(r.risk)}</span>
+    <span>${validPill(r)}</span>
+    ${r.validWhy ? html`<span class="line xs muted">${r.validWhy}</span>` : ''}
+    <span class="line"><span class="chips xs">${listingChips(r)}</span></span>
+    <span class="line">${Number.isFinite(r.stage) ? `Stage ${r.stage} · ` : 'necercetat · '}oportunitate ${score(r.opportunity)} · precocitate ${score(r.earliness)} · risc ${score(r.risk)}</span>
     <span class="line">${Number.isFinite(r.changes) ? `${r.changes} schimbări în ${r.families ?? 0} familii${r.simultaneous === 1 ? ' (simultan)' : ''}` : ''} · ${usd(r.marketCap)} · ${pct(r.chg7d)} 7z ${r.futGrade ? futuresGradeBadge(r.futGrade) : ''} ${openAction(r, s)}</span>
   </div>`;
 }
@@ -195,22 +240,31 @@ function futuresRow(f) {
 function assetsPanel(s, data) {
   const st = universeState;
   const all = data.assetRows;
-  const rows = sorted(filtered(all));
+  const gated = hasValidity(data);
+  if (!gated) st.valid = 'ALL';
+  const rows = sorted(filtered(all, gated));
   const visible = rows.slice(0, st.shown);
   const counts = {
     alpha: all.filter((r) => r.alpha).length,
     both: all.filter((r) => String(r.alpha ?? '').includes('B') && String(r.alpha ?? '').includes('G')).length,
     researched: all.filter((r) => Number.isFinite(r.stage)).length,
+    V: all.filter((r) => r.valid === 'V').length,
+    P: all.filter((r) => r.valid === 'P').length,
+    R: all.filter((r) => r.valid === 'R').length,
   };
   return html`
     <div class="qbar">
       <div class="qstat"><b class="num">${num(all.length)}</b><span>proiecte eligibile</span><small class="muted">small caps din top 1000 + listele Alpha</small></div>
+      ${gated ? html`<div class="qstat" data-tone="good"><b class="num">${num(counts.V)}</b><span>verificate</span><small class="muted">${num(counts.P)} în verificare · <a href="#/validare">${num(counts.R)} respinse</a></small></div>` : ''}
       <div class="qstat"><b class="num">${num(counts.researched)}</b><span>cercetate de motor</span><small class="muted">norme proprii, schimbări, risc</small></div>
       <div class="qstat"><b class="num">${num(counts.alpha)}</b><span>în programe Alpha</span><small class="muted">${num(counts.both)} în Binance și Gate deodată</small></div>
       <div class="qstat"><b class="num">${num(data.futuresRows.length)}</b><span>piețe perpetue</span><small class="muted">evaluate de Futures Radar</small></div>
     </div>
     <div class="filters">
       <label class="search"><span class="sr-only">Caută</span>${icon('search', 14)}<input type="search" id="usearch" placeholder="Caută simbol sau nume" value="${st.q}" autocomplete="off"></label>
+      ${gated ? html`<select class="select" id="uvalid" aria-label="Validare">
+        ${[['V', `Verificate (${num(counts.V)})`], ['ALL', 'Orice stare de validare'], ['P', `În verificare (${num(counts.P)})`], ['R', `Respinse (${num(counts.R)})`]].map(([v, l]) => html`<option value="${v}" ${st.valid === v ? 'selected' : ''}>${l}</option>`)}
+      </select>` : ''}
       <select class="select" id="ualpha" aria-label="Program Alpha">
         ${[['ALL', 'Orice listare'], ['ANY', 'Orice program Alpha'], ['B', 'Binance Alpha'], ['G', 'Gate Alpha'], ['BOTH', 'Binance și Gate'], ['NONE', 'Fără program Alpha']].map(([v, l]) => html`<option value="${v}" ${st.alpha === v ? 'selected' : ''}>${l}</option>`)}
       </select>
@@ -224,7 +278,7 @@ function assetsPanel(s, data) {
     ${rows.length ? html`
       <div class="tbl-wrap responsive sticky"><table class="tbl">
         <thead><tr>
-          <th class="n">#</th><th>Token</th><th>Alpha</th><th>Stadiu</th>
+          <th class="n">#</th><th>Token</th><th>Validare</th><th>Listări</th><th>Stadiu</th>
           <th class="n" title="Scorul de pre-expansiune">Oport.</th><th class="n" title="Cât de puțin evidentă este încă mișcarea">Precoc.</th><th class="n">Risc</th>
           <th class="n" title="Schimbări față de propria normă, în fereastra de 7 zile">Schimbări</th><th class="n">CRI · analog</th><th>Futures</th>
           <th class="n">Capitalizare</th><th class="n">Deținători</th><th>Detalii</th>
@@ -260,7 +314,7 @@ export function universeMarkup(s) {
   const head = html`
     <div class="view-head">
       <h2 class="view-title">Univers — întregul orizont de scanare</h2>
-      <p class="view-lede">Fiecare proiect cercetat în rularea curentă, câte un rând: toate small cap-urile eligibile din top 1000 CoinGecko + CoinMarketCap, plus tokenurile din Binance Alpha și Gate Alpha pe care top 1000 nu le atinge, și fiecare piață perpetuă evaluată de Futures Radar. Ecranele principale arată vârful fiecărui clasament cu toate dovezile; aici este restul, ca nimic din ce s-a cercetat să nu rămână nevăzut.</p>
+      <p class="view-lede">Fiecare proiect cercetat în rularea curentă, câte un rând: toate small cap-urile eligibile din top 1000 CoinGecko + CoinMarketCap, plus tokenurile din Binance Alpha și Gate Alpha pe care top 1000 nu le atinge, și fiecare piață perpetuă evaluată de Futures Radar. Ecranele principale arată vârful fiecărui clasament cu toate dovezile; aici este restul, ca nimic din ce s-a cercetat să nu rămână nevăzut. Implicit vezi doar proiectele verificate — singurele care intră în listele CRI; filtrul „Validare” arată și proiectele în verificare sau respinse, cu motivul.</p>
     </div>`;
   if (!meta) {
     return html`${head}<div class="empty"><strong>Acest snapshot nu are încă tabelul întregului orizont.</strong><p>Tabelul se publică de la prima scanare completă cu orizontul extins (data/universe.json).</p></div>`;
@@ -298,7 +352,7 @@ export function bindUniverse(root, rerender) {
   });
   root.addEventListener('change', (e) => {
     const el = e.target;
-    const map = { ualpha: 'alpha', ustage: 'stage', uonly: 'only', usort: 'sort' };
+    const map = { uvalid: 'valid', ualpha: 'alpha', ustage: 'stage', uonly: 'only', usort: 'sort' };
     const k = map[el?.id];
     if (!k) return;
     universeState[k] = el.value;

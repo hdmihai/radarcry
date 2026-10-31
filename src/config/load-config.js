@@ -90,11 +90,21 @@ function validate(c) {
   if (!(u.minVolume24hUsd >= 0)) errs.push('universe.minVolume24hUsd trebuie să fie ≥ 0');
   if (!(c.deep?.limit >= 0 && c.deep.limit <= 300)) errs.push('deep.limit trebuie să fie între 0 și 300');
   if (c.deep?.horizon !== undefined && !(c.deep.horizon >= 0 && c.deep.horizon <= 5000)) errs.push('deep.horizon trebuie să fie între 0 și 5000');
+  const refresh = c.deep?.refreshHours?.security;
+  if (refresh !== undefined && !(refresh > 0 && refresh <= (c.deep?.cacheHours?.security ?? 168))) errs.push('deep.refreshHours.security trebuie să fie pozitiv și cel mult deep.cacheHours.security');
   if (c.futures?.maxInstruments !== undefined && !(c.futures.maxInstruments >= 0 && c.futures.maxInstruments <= 5000)) errs.push('futures.maxInstruments trebuie să fie între 0 și 5000');
   if (!(c.runtime?.maxMinutes > 0 && c.runtime.maxMinutes <= 120)) errs.push('runtime.maxMinutes trebuie să fie între 1 și 120');
   const cohort = c.trackRecord?.cohort ?? {};
   if (!(cohort.minOpportunity >= 0 && cohort.minOpportunity <= 100)) errs.push('trackRecord.cohort.minOpportunity trebuie să fie între 0 și 100');
   if (!(cohort.maxRisk >= 0 && cohort.maxRisk <= 100)) errs.push('trackRecord.cohort.maxRisk trebuie să fie între 0 și 100');
+  // The validity gate: every threshold is optional (the domain has defaults) but must be sane.
+  const v = c.validity ?? {};
+  const pct = (k) => v[k] === undefined || (v[k] >= 0 && v[k] <= 100);
+  const nonNeg = (k) => v[k] === undefined || v[k] >= 0;
+  for (const k of ['maxTaxPct', 'warnTaxPct', 'concentrationWarnPct', 'insiderWarnPct']) if (!pct(k)) errs.push(`validity.${k} trebuie să fie între 0 și 100`);
+  for (const k of ['minDexLiquidityUsd', 'minSpotVolumeUsd', 'minAgeDays', 'fdvWarnRatio', 'turnoverWarn']) if (!nonNeg(k)) errs.push(`validity.${k} trebuie să fie ≥ 0`);
+  if (v.warnTaxPct !== undefined && v.maxTaxPct !== undefined && !(v.warnTaxPct <= v.maxTaxPct)) errs.push('validity.warnTaxPct trebuie să fie ≤ validity.maxTaxPct');
+  if (v.acceptGateAlphaOnly !== undefined && typeof v.acceptGateAlphaOnly !== 'boolean') errs.push('validity.acceptGateAlphaOnly trebuie să fie true sau false');
   for (const [name, q] of Object.entries(c.quotas ?? {})) {
     if (q.month !== undefined && !(q.month > 0)) errs.push(`quotas.${name}.month trebuie să fie pozitiv`);
     if (q.day !== undefined && !(q.day > 0)) errs.push(`quotas.${name}.day trebuie să fie pozitiv`);

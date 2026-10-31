@@ -142,3 +142,34 @@ export function futuresGradeBadge(grade) {
   const tone = g === 'A++' || g === 'A+' ? 'good' : g === 'A' ? 'good' : g === 'B' ? 'warning' : 'muted';
   return html`<span class="fgrade" data-tone="${tone}">${g === 'NO_TRADE' ? 'fără setup' : g}</span>`;
 }
+
+/* ── validity gate ──────────────────────────────────────────────────────────────────────────── */
+
+const CHECK_TONE = { PASS: 'good', WARN: 'warning', FAIL: 'serious', UNKNOWN: 'muted', NA: 'muted' };
+const CHECK_ICON = { PASS: 'check', WARN: 'warn', FAIL: 'stop', UNKNOWN: 'minus', NA: 'dash' };
+const CHECK_WORD = { PASS: 'trece', WARN: 'atenție', FAIL: 'respins', UNKNOWN: 'lipsește dovada', NA: 'nu se aplică' };
+const STATUS_TONE = { VALID: 'good', PENDING: 'muted', REJECTED: 'serious' };
+
+/** The checks of one verdict, as a compact list (used inside tooltips and panels). */
+export function validityList(v, { compact = false } = {}) {
+  if (!v?.checks?.length) return '';
+  return html`<ul class="vchecks${compact ? ' compact' : ''}">${v.checks.map((c) => html`<li data-tone="${CHECK_TONE[c.status] ?? 'muted'}">
+    <span class="vc-ico">${icon(CHECK_ICON[c.status] ?? 'dot', 13)}</span>
+    <span class="vc-body"><b>${c.label}</b> <span class="muted xs">· ${CHECK_WORD[c.status] ?? c.status}</span>${c.detail ? html`<br><span class="xs">${c.detail}</span>` : ''}</span>
+  </li>`)}</ul>`;
+}
+
+/**
+ * The validity pill shown next to a project everywhere it is listed: "verificat", with the number of
+ * warnings when there are any, and every check in the tooltip.
+ */
+export function validityBadge(v, { compact = false } = {}) {
+  if (!v) return '';
+  const warn = v.warnings?.length ?? 0;
+  const tone = v.status === 'VALID' && warn ? 'warning' : STATUS_TONE[v.status] ?? 'muted';
+  const label = compact
+    ? (v.status === 'VALID' ? (warn ? `${warn}` : '') : v.label ?? v.status)
+    : v.status === 'VALID' ? `verificat${warn ? ` · ${warn} ${warn === 1 ? 'atenționare' : 'atenționări'}` : ''}` : v.label ?? v.status;
+  const aria = v.status === 'VALID' ? `verificat${warn ? `, ${warn} ${warn === 1 ? 'atenționare' : 'atenționări'}` : ''}` : v.label ?? v.status;
+  return html`<span class="pill${compact ? ' vpill' : ''}" data-tone="${tone}" aria-label="${aria}" data-tip="${tip(html`<b>Verificare de validitate: ${v.label ?? v.status}</b>${validityList(v, { compact: true })}`)}">${icon(v.status === 'VALID' ? 'check' : v.status === 'REJECTED' ? 'stop' : 'minus', 12)}${label ? ` ${label}` : ''}</span>`;
+}

@@ -6,11 +6,13 @@
  *             │          Upbit, Bithumb, Binance Alpha)
  *             ├─ context (global, trending, categories, Fear & Greed, DefiLlama, DEX attention)
  *             └─ references (LAB/BTW/AGT pre-pump windows, refreshed weekly)
- *  → merge + screen (small-cap filter: 1M–500M market cap, ≥ 500k$/day volume)
+ *  → merge + screen (small/mid-cap filter: 1M–300M market cap, ≥ 500k$/day volume)
  *  → catalysts (listing-registry diff + change detection + manual notebook)
  *  → light research on every eligible asset (legacy CRI + LAB/BTW/AGT similarity)
  *  → shortlist → deep research (candles, DEX, security, HOLDER LISTS, entities, dev, attention)
  *  → DISCOVERY: baseline → what changed → pre-expansion → risk → stage → thesis
+ *  → VALIDITY: only verified projects (capitalisation, identity, listings, contract, liquidity)
+ *              reach the CRI lists; the rest are published with the reason they were held back
  *  → FUTURES RADAR: 1D trend + 4H structure + positioning + liquidity + volume → grade
  *  → alerts, track record, parity benchmark, quota report
  *  → snapshot (the only contract with the dashboard) → publish → persist state
@@ -46,6 +48,7 @@ import { buildProviderHealth, chartPayload, methodology, overallHealth, quotaVie
 import { discoveryView } from './discovery-view.js';
 import { universeTable } from './universe-view.js';
 import { cacheCoverage, pruneCache } from './deep-cache.js';
+import { preRejected, validateAsset, validityPolicy, validityReport, validityView, VALIDITY } from './validity.js';
 
 export class UniverseUnavailableError extends Error {}
 
@@ -92,9 +95,13 @@ export async function runScan(deps, config) {
       return { cg, cmc, cp, alpha, gateAlpha, platforms };
     })(),
     (async () => {
-      const [mexcSpot, binanceSpot, mexcPerps, gate, bitget, okx, hyperliquid, upbit, bithumb, alpha, gateAlpha] = await Promise.all([
+      const [mexcSpot, binanceSpot, gateSpot, okxSpot, bitgetSpot, mexcPerps, gate, bitget, okx, hyperliquid, upbit, bithumb, alpha, gateAlpha] = await Promise.all([
         safe(() => P.mexc.spotTickers()),
         safe(() => P.binanceSpot.spotTickers()),
+        // More centralised spot markets, one call each: the validity gate's listing check.
+        safe(() => P.gate.spotTickers()),
+        safe(() => P.okx.spotTickers()),
+        safe(() => P.bitget.spotTickers()),
         safe(() => P.mexc.perps()),
         safe(() => P.gate.perps()),
         safe(() => P.bitget.perps()),
@@ -105,7 +112,7 @@ export async function runScan(deps, config) {
         safe(() => P.binanceAlpha.markets()),
         safe(() => P.gateAlpha.markets()),
       ]);
-      return { mexcSpot, binanceSpot, mexcPerps, gate, bitget, okx, hyperliquid, upbit, bithumb, alpha, gateAlpha };
+      return { mexcSpot, binanceSpot, gateSpot, okxSpot, bitgetSpot, mexcPerps, gate, bitget, okx, hyperliquid, upbit, bithumb, alpha, gateAlpha };
     })(),
     (async () => {
       const [global, trending, categories, fearGreed, boosts, gtTrending, llamaProtocols, llamaFees] = await Promise.all([
@@ -153,6 +160,7 @@ export async function runScan(deps, config) {
   const venueStats = attachVenues(merged, {
     mexcSpot: venues.mexcSpot,
     binanceSpot: venues.binanceSpot,
+    spot: [['gate', venues.gateSpot], ['okx', venues.okxSpot], ['bitget', venues.bitgetSpot]].map(([venue, r]) => ({ venue, ok: r.ok, data: r.data ?? [] })),
     perps: perpResults.map(([venue, r]) => ({ venue, ok: r.ok, data: r.data ?? [] })),
     upbit: venues.upbit,
     bithumb: venues.bithumb,
@@ -224,26 +232,37 @@ export async function runScan(deps, config) {
     .map(([k]) => k));
   const refSymbols = new Set(references.map((r) => r.symbol));
   const limit = config.deep.limit;
+
+  // VALIDITY, first pass. A project that can never pass the gate this run, whatever its contract
+  // scan says — a capitalisation only Gate Alpha reports, a token no aggregator and no Binance
+  // curation confirms, an asset type outside the research universe — takes no priority slot and no
+  // free-plan rotation: those budgets go to projects that can still be valid. It still gets the bulk
+  // facts (candles, DEX liquidity) and its row in the universe table.
+  const policy = validityPolicy(config);
+  const preRejectedKeys = new Set(eligible.filter((a) => preRejected({ asset: a, nowMs, policy })).map((a) => a.key));
+  if (preRejectedKeys.size) logger.info(`validare (prima trecere): ${preRejectedKeys.size} proiecte nu pot fi validate în această rulare (capitalizare neconfirmată sau neidentificate) — fără prioritate și fără rotația surselor gratuite`);
+  const canBeValid = (key) => !preRejectedKeys.has(key);
   const shares = { prescreen: config.deep.shares?.prescreen ?? 0.4, legacy: config.deep.shares?.legacy ?? 0.35 };
 
   // 7a) PRESCREEN — the change engine, run on every eligible project against its own norm, with
   //     the facts this run already holds for the whole universe (no extra call). It claims the first
   //     share of the deep budget: the projects where something is moving right now.
   const prescreen = new Map(eligible.map((a) => [a.key, prescreenAsset({ asset: a, points: state.discovery?.[a.key]?.points ?? [], config, nowMs })]));
-  const prescreenKeys = prescreenPicks([...prescreen.values()], Math.round(limit * shares.prescreen));
+  const prescreenKeys = prescreenPicks([...prescreen.values()].filter((p) => canBeValid(p.key)), Math.round(limit * shares.prescreen));
   const shortKeys = new Set(prescreenKeys);
   // 7b) the legacy score, then 7c) the strongest structural (DNA) matches, as before.
   for (const r of light) {
     if (shortKeys.size >= Math.round(limit * (shares.prescreen + shares.legacy))) break;
-    shortKeys.add(r.asset.key);
+    if (canBeValid(r.asset.key)) shortKeys.add(r.asset.key);
   }
   const dnaOf = (r) => Math.max(0, ...r.analogs.all.map((x) => x.dnaSim ?? 0));
   for (const r of [...light].filter((x) => !['EXPANSION', 'POST_EXPANSION'].includes(x.stageInfo.stage) && x.hype.state !== 'HYPED').sort((a, b) => dnaOf(b) - dnaOf(a))) {
     if (shortKeys.size >= limit) break;
-    shortKeys.add(r.asset.key);
+    if (canBeValid(r.asset.key)) shortKeys.add(r.asset.key);
   }
   for (const r of light) {
     if (shortKeys.size >= limit + config.deep.keepWatchlist) break;
+    if (!canBeValid(r.asset.key)) continue;
     if (openKeys.has(r.asset.key) || prevSetups.has(r.asset.key) || prevBuilding.has(r.asset.key) || refSymbols.has(r.asset.symbol)) shortKeys.add(r.asset.key);
   }
   /*
@@ -257,7 +276,7 @@ export async function runScan(deps, config) {
    */
   const prescreenRank = new Map(prescreenKeys.map((k, i) => [k, i]));
   const lightRank = new Map(light.map((r, i) => [r.asset.key, i]));
-  const continuityList = [...prevBuilding].filter((k) => shortKeys.has(k))
+  const continuityList = [...prevBuilding].filter((k) => shortKeys.has(k) && canBeValid(k))
     .sort((a, b) => (state.lastSeenV4?.[b]?.opportunity ?? 0) - (state.lastSeenV4?.[a]?.opportunity ?? 0));
   const movingList = prescreenKeys.filter((k) => shortKeys.has(k));
   const priority = new Map();
@@ -289,6 +308,7 @@ export async function runScan(deps, config) {
     priorityKeys,
     cache: structuredClone(state.deepCache ?? {}),
     nowMs,
+    skipRotation: preRejectedKeys,
   });
   const hasDeep = (key) => {
     const d = deepData.get(key);
@@ -333,9 +353,22 @@ export async function runScan(deps, config) {
     }
   }
   const ranked = rankCandidates(discovery);
-  const earlyCandidates = ranked.filter((r) => r.verdict.earlyResearchCandidate);
-  const answering = ranked.filter((r) => r.verdict.answersQuestion);
-  logger.info(`discovery: ${ranked.length} analizați · ${earlyCandidates.length} candidați timpurii · ${answering.length} răspund exact la întrebarea proiectului`);
+
+  // 9b) VALIDITY — the gate. Every eligible project is judged on the evidence the run gathered:
+  //     capitalisation under the cap and confirmed, a real and identified project, listed on an
+  //     exchange, a contract without traps, real liquidity. Only VALID projects reach the CRI lists
+  //     below (radar, candidates, alerts, cohort); the rest are published with their reason.
+  const validity = new Map();
+  for (const a of eligible) validity.set(a.key, validateAsset({ asset: a, deep: deepData.get(a.key) ?? {}, nowMs, policy }));
+  const isValid = (key) => validity.get(key)?.status === VALIDITY.VALID;
+  const rankedValid = ranked.filter((r) => isValid(r.asset.key));
+  const deepKeysRanked = new Set(ranked.map((r) => r.asset.key));
+  const vCount = (st) => [...validity.values()].filter((x) => x.status === st).length;
+  const validityCounts = { valid: vCount(VALIDITY.VALID), pending: vCount(VALIDITY.PENDING), rejected: vCount(VALIDITY.REJECTED) };
+  const earlyCandidates = rankedValid.filter((r) => r.verdict.earlyResearchCandidate);
+  const answering = rankedValid.filter((r) => r.verdict.answersQuestion);
+  logger.info(`validare: ${validityCounts.valid} verificate · ${validityCounts.pending} în verificare · ${validityCounts.rejected} respinse (din ${eligible.length} eligibile)`);
+  logger.info(`discovery: ${ranked.length} analizați · ${rankedValid.length} verificați · ${earlyCandidates.length} candidați timpurii · ${answering.length} răspund exact la întrebarea proiectului`);
 
   // How far the per-project norms have got. On the first runs the honest answer to the project's
   // question is usually "nothing yet", and this block is what lets the dashboard say *why*: a change
@@ -361,7 +394,7 @@ export async function runScan(deps, config) {
   logger.info(`norme proprii: ${discoveryCoverage.withBaseline}/${discoveryCoverage.eligible} proiecte cu istoric suficient · ${discoveryCoverage.moving} cu schimbări față de propria normă · ${discoveryCoverage.prescreened} aduse în profunzime de motorul de schimbări`);
 
   // 10) FUTURES RADAR — every perpetual market of the universe, reusing the candles read above.
-  const watchlist = pickWatchlist({ assets: merged, radarRows: ranked, cfg: config.futures });
+  const watchlist = pickWatchlist({ assets: merged, radarRows: rankedValid, cfg: config.futures });
   logger.info(`futures radar: ${watchlist.length} instrumente (timp rămas ${Math.round(timeLeft() / 1000)}s)`);
   const futures = await runFuturesRadar({ watchlist, providers: P, cfg: config.futures, timeLeft, logger, nowMs, candles: deepData });
 
@@ -371,7 +404,7 @@ export async function runScan(deps, config) {
   const btcChangePct = { 7: btc?.market?.change?.d7 ?? null, 14: null, 30: btc?.market?.change?.d30 ?? null };
   let cohortEntries = scoreEntries({ entries: state.cohort ?? [], priceByKey, nowMs, btcChangePct });
   const openIds = new Set(cohortEntries.filter((e) => !e.closed).map((e) => e.key));
-  for (const r of ranked) {
+  for (const r of rankedValid) {
     if (!qualifiesForCohort(r.verdict, config.trackRecord?.cohort)) continue;
     if (openIds.has(r.asset.key)) continue;
     cohortEntries.push(openEntry({ asset: r.asset, verdict: r.verdict, changed: r.changed, risk: r.risk, nowMs }));
@@ -381,11 +414,11 @@ export async function runScan(deps, config) {
   const record = trackRecord(cohortEntries, { nowMs });
 
   // 12) Alerts (transitions against the previous run).
-  const { alerts, counts: alertCounts } = buildAlerts({ rows: ranked, lastSeen: state.lastSeenV4 ?? {}, market: marketCtx, nowMs });
+  const { alerts, counts: alertCounts } = buildAlerts({ rows: rankedValid, lastSeen: state.lastSeenV4 ?? {}, market: marketCtx, nowMs });
 
   // 13) Legacy watchlist + journal (kept: the LAB/BTW/AGT similarity track record).
   const nowIso = new Date(nowMs).toISOString();
-  const compactForJournal = researched.map((r) => ({ key: r.asset.key, symbol: r.asset.symbol, price: r.lf.price, signal: r.signal, cri: r.cri, analog: r.analogs.best, stage: r.stageInfo.stage }));
+  const compactForJournal = researched.filter((r) => isValid(r.asset.key)).map((r) => ({ key: r.asset.key, symbol: r.asset.symbol, price: r.lf.price, signal: r.signal, cri: r.cri, analog: r.analogs.best, stage: r.stageInfo.stage }));
   const watch = watchlistChanges(compactForJournal, state.lastSeen, nowIso);
   const journal = updateJournal(state.journal, compactForJournal.filter((c) => full.get(c.key)?.depth === 'deep'), nowMs, { horizonsDays: [7, 14, 30], hitThresholdPct: 25, cooldownDays: 14, retentionDays: 180 }, priceByKey);
 
@@ -427,6 +460,7 @@ export async function runScan(deps, config) {
   const chartBudget = config.snapshot?.charts ?? 30;
   const maxDeepViews = config.snapshot?.maxDeep ?? 60;
   for (const r of researched) {
+    if (!isValid(r.asset.key)) continue; // the CRI list carries verified projects only
     const goesDeep = r.depth === 'deep' && deepViews.length < maxDeepViews;
     if (!goesDeep && lightViews.length >= config.snapshot.maxLight) continue;
     const deep = deepData.get(r.asset.key);
@@ -440,9 +474,9 @@ export async function runScan(deps, config) {
       historyView: goesDeep ? points.slice(-40).map((p) => [p.t, p.cri, p.stage, p.price]) : [],
       sparkline: sparkFrom(deep, points, r.lf.price),
     };
-    const view = toCandidateView(r, ctx);
+    const view = { ...toCandidateView(r, ctx), validity: validityView(validity.get(r.asset.key)) };
     if (goesDeep) deepViews.push(view);
-    else lightViews.push(trimLight(view));
+    else lightViews.push({ ...trimLight(view), validity: view.validity });
   }
   const candidates = [...deepViews, ...lightViews].sort((x, y) => (y.score.cri ?? -1) - (x.score.cri ?? -1));
   const signalCounts = {};
@@ -461,12 +495,13 @@ export async function runScan(deps, config) {
   const cardRows = config.snapshot?.cardRows ?? 48;
   const levelOf = (r, i) => (r.verdict.earlyResearchCandidate || r.verdict.answersQuestion || i < fullRows ? 'full'
     : i < cardRows || r.changed.simultaneous ? 'card' : 'list');
-  const publishedDiscovery = ranked
+  const publishedDiscovery = rankedValid
     .map((r, i) => ({ r, i, level: levelOf(r, i) }))
     .filter(({ r, i }) => i < discoveryCap || r.verdict.earlyResearchCandidate || r.verdict.answersQuestion)
     .map((x) => ({ ...x, full: x.level === 'full' }));
   const publishedFutures = futures.rows.slice(0, config.snapshot?.futuresRows ?? 60);
-  const recentEvents = appendCatalysts([], [...eventsByKey.values()].flat(), nowMs, 7).slice(0, 120);
+  // Events of projects the gate rejected stay out of the feed (a pending one keeps its events).
+  const recentEvents = appendCatalysts([], [...eventsByKey.values()].flat().filter((e) => validity.get(e.assetKey)?.status !== VALIDITY.REJECTED), nowMs, 7).slice(0, 120);
   const finishedMs = clock.now();
 
   const sourceCoverage = coverageReport([
@@ -528,6 +563,8 @@ export async function runScan(deps, config) {
         horizon,
         discovered: ranked.length,
         published: candidates.length,
+        // The validity gate over every eligible project: only `valid` ones reach the CRI lists.
+        validity: validityCounts,
         futures: futures.rows.length,
         rolling: { tiers: deepTiers, cache: cacheCoverage(deepCache, targets.map((a) => a.key), { nowMs, ttlHours: config.deep.cacheHours ?? undefined }) },
         crossListed: merged.filter((a) => a.sources.includes('coingecko') && a.sources.includes('coinmarketcap')).length,
@@ -553,13 +590,16 @@ export async function runScan(deps, config) {
       answering: answering.length,
       earlyCandidates: earlyCandidates.length,
       analysed: ranked.length,
+      // Of the analysed projects, how many passed the validity gate (only those are published here).
+      validated: rankedValid.length,
+      validity: validityCounts,
       // Full evidence for the rows that matter (every early candidate, plus the top of the ranking);
       // the next rows ship as cards, then as list rows; each row says which in `detail`.
       published: publishedDiscovery.length,
       // Totals over the whole horizon: the published rows are its top, the rest is in universe.json.
       totals: {
-        simultaneous: ranked.filter((r) => r.changed.simultaneous).length,
-        moving: ranked.filter((r) => r.changed.count > 0).length,
+        simultaneous: rankedValid.filter((r) => r.changed.simultaneous).length,
+        moving: rankedValid.filter((r) => r.changed.count > 0).length,
       },
       rows: publishedDiscovery.map(({ r, level }) => ({
         ...discoveryView(r, {
@@ -567,6 +607,7 @@ export async function runScan(deps, config) {
           links: platformLinks(r.asset, { keys: keyed }),
           level,
         }),
+        validity: validityView(validity.get(r.asset.key)),
         selectedBy: selectedBy(r.asset.key),
       })),
       note: 'Rândurile sunt ordonate punând candidații timpurii primii, apoi după produsul dintre oportunitate, precocitate și încredere — un scor puțin mai mic, dar încă invizibil, trece înaintea unuia mai mare pe care îl vede toată lumea.',
@@ -577,6 +618,12 @@ export async function runScan(deps, config) {
       summary: { ...futures.summary, published: publishedFutures.length },
       rows: publishedFutures.map(futuresView),
     },
+    // The gate: its policy, its counts, and every project it held back, with the reason.
+    validity: validityReport({
+      ordered: [...ranked.map((r) => r.asset), ...eligible.filter((a) => !deepKeysRanked.has(a.key))],
+      results: validity,
+      policy,
+    }),
     references: referencesView(references, config.similarity).map((ref) => ({ ...ref, live: liveRef(ref, merged, researched) })),
     candidates,
     catalysts: recentEvents,
@@ -603,6 +650,7 @@ export async function runScan(deps, config) {
       futures: new Set(publishedFutures.map((f) => f.key)),
     },
     selectedBy,
+    validity,
     meta: { generatedAt: nowIso, runId, mode: deps.mode },
   });
   const published = await publisher.publish(snapshot, { universe: universeDoc });
@@ -656,6 +704,7 @@ export async function runScan(deps, config) {
       discovered: ranked.length,
       earlyCandidates: earlyCandidates.length,
       answering: answering.length,
+      validity: validityCounts,
       futures: futures.summary,
       parity: { permanent: parityReport.permanent, withKeys: parityReport.withKeys, achieved: parityReport.achieved },
       signals: signalCounts,

@@ -9,7 +9,7 @@
 import { html, tip } from '../core/dom.js';
 import { compact, dateTime, days, frac, num, pct, price, score, shortAddr, signClass, usd } from '../core/format.js';
 import { SEVERITY, icon } from '../core/labels.js';
-import { meter, qualityDot } from './widgets.js';
+import { meter, qualityDot, validityBadge, validityList } from './widgets.js';
 
 export const researchState = { key: null };
 
@@ -124,6 +124,19 @@ function platformPanel(row, catalogue) {
   </section>`;
 }
 
+const TIER_LABEL = { 1: 'listat pe o bursă de prim rang (Binance, OKX, Coinbase, Kraken, Upbit)', 2: 'listat pe o bursă mare care verifică proiectele (Gate, Bitget, Bybit, KuCoin, HTX, Bithumb)', 3: 'listat doar pe burse cu listare permisivă (MEXC sau similar)' };
+
+/** The validity gate's verdict, check by check: why this project is allowed on the CRI lists. */
+function validityPanel(v) {
+  if (!v?.checks?.length) return '';
+  return html`<section class="panel">
+    <div class="panel-head"><h4 class="panel-title">Verificarea de validitate</h4>${validityBadge(v)}</div>
+    ${validityList(v)}
+    ${v.tier ? html`<p class="panel-note">${icon('info', 12)} Cea mai bună listare: ${TIER_LABEL[v.tier] ?? `nivelul ${v.tier}`}.</p>` : ''}
+    ${v.warnings?.length ? html`<p class="panel-note">Atenționările nu exclud proiectul din liste; sunt riscuri de urmărit: ${v.warnings.join(' · ')}</p>` : ''}
+  </section>`;
+}
+
 export function researchMarkup(s) {
   const rows = s.discovery?.rows ?? [];
   if (!rows.length) {
@@ -152,6 +165,7 @@ export function researchMarkup(s) {
           <span class="pill" data-tone="${v.stage >= 3 ? 'warning' : 'good'}">Stage ${v.stage} · ${v.stageLabel}</span>
           <span class="pill">${v.bandLabel}</span>
           ${v.answersQuestion ? html`<span class="pill" data-tone="good">${icon('target', 12)} răspunde la întrebare</span>` : ''}
+          ${validityBadge(row.validity)}
           ${row.chain ? html`<span class="pill" data-tone="muted">${row.chain}</span>` : ''}
         </div>
         <div class="dcard-nums">
@@ -177,6 +191,8 @@ export function researchMarkup(s) {
           return html`<li data-tone="${sv.tone}"><div class="inval-head"><span class="sev" data-tone="${sv.tone}">${sv.label}</span><b>${r.label}</b></div><div class="inval-body">${r.invalidates}</div><div class="inval-watch">${icon('eye', 12)} ${r.watch}</div></li>`;
         })}</ul>` : ''}
       </section>
+
+      ${validityPanel(row.validity)}
 
       <section class="panel"><div class="panel-head"><h4 class="panel-title">Teza, în proză</h4><span class="muted xs">${t.confidenceLabel}</span></div>
         <p class="thesis">${t.paragraph}</p>
@@ -252,7 +268,13 @@ export function researchMarkup(s) {
           <div class="kv"><span>Taxă cumpărare</span><b>${pct(row.onchain.security.buyTaxPct, { sign: false })}</b></div>
           <div class="kv"><span>Taxă vânzare</span><b class="${(row.onchain.security.sellTaxPct ?? 0) >= 10 ? 'neg' : ''}">${pct(row.onchain.security.sellTaxPct, { sign: false })}</b></div>
           <div class="kv"><span>LP blocat</span><b>${pct(row.onchain.security.lpLockedPct, { sign: false })}</b></div>
+          ${Object.entries({
+            ownerChangeBalance: 'Owner modifică solduri', selfdestruct: 'Autodistrugere', blacklist: 'Blacklist', freezable: 'Înghețare conturi',
+            fakeToken: 'Imită alt token', airdropScam: 'Airdrop scam',
+          }).filter(([k]) => row.onchain.security[k] === true || row.onchain.security[k] === false)
+            .map(([k, label]) => html`<div class="kv"><span>${label}</span><b class="${row.onchain.security[k] ? 'neg' : 'pos'}">${row.onchain.security[k] ? 'da' : 'nu'}</b></div>`)}
         </div>
+        ${row.onchain.security.cexList ? html`<p class="panel-note">Burse care listează tokenul, după GoPlus: ${row.onchain.security.cexList.join(', ')}.</p>` : ''}
       </section>` : ''}
 
       ${platformPanel(row, s.methodology?.platforms)}

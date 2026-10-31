@@ -67,6 +67,14 @@
  */
 
 /**
+ * SpotListingPort — every USDT spot pair of one exchange in one public call (Gate, OKX, Bitget):
+ * no candles, only whether a market exists and trades. It is the listing check of the validity
+ * gate; `quoteVolume` is the 24 h volume in USDT.
+ * @typedef {Object} SpotListingPort
+ * @property {() => Promise<ProviderResult<{symbol:string,base:string,last:number,quoteVolume:number|null,changePct:number|null}[]>>} spotTickers
+ */
+
+/**
  * DerivativesVenuePort — perpetual contracts with funding and open interest, read per venue
  * (MEXC, Gate, Bitget, OKX, Hyperliquid). Funding is normalised to % per 8h by the domain.
  * @typedef {Object} DerivativesVenuePort
@@ -135,7 +143,15 @@
  *   mintable:boolean|null, ownerRenounced:boolean|null, hiddenOwner:boolean|null,
  *   canTakeBackOwnership:boolean|null, transferPausable:boolean|null, blacklist:boolean|null,
  *   slippageModifiable:boolean|null, proxy:boolean|null, openSource:boolean|null,
- *   trustList:boolean|null}} security
+ *   trustList:boolean|null,
+ *   cannotBuy?:boolean|null, ownerChangeBalance?:boolean|null, selfdestruct?:boolean|null,
+ *   externalCall?:boolean|null, tradingCooldown?:boolean|null, personalSlippageModifiable?:boolean|null,
+ *   honeypotSameCreator?:boolean|null, airdropScam?:boolean|null, fakeToken?:boolean|null,
+ *   cexList?:string[]|null, launchpad?:string|null, ownerPercent?:number|null, creatorPercent?:number|null,
+ *   freezable?:boolean|null, closable?:boolean|null, balanceMutable?:boolean|null,
+ *   nonTransferable?:boolean|null, defaultFrozen?:boolean|null, maliciousCreator?:boolean|null}} security
+ *   The optional fields feed the validity gate (traps, impostors, the exchanges GoPlus knows list the
+ *   token, Solana token-program powers); `cexList: null` means "not reported", never "unlisted".
  */
 
 /**
@@ -296,9 +312,9 @@
  * @property {UniversePort} coinpaprika
  * @property {SpotVenuePort & DerivativesVenuePort} mexc
  * @property {SpotVenuePort} binanceSpot
- * @property {DerivativesVenuePort} gate
- * @property {DerivativesVenuePort} bitget
- * @property {DerivativesVenuePort} okx
+ * @property {DerivativesVenuePort & SpotListingPort} gate
+ * @property {DerivativesVenuePort & SpotListingPort} bitget
+ * @property {DerivativesVenuePort & SpotListingPort} okx
  * @property {DerivativesVenuePort} hyperliquid
  * @property {DerivativesAggregatorPort} coinalyze
  * @property {ListingRegistryPort} upbit

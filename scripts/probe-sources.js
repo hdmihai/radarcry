@@ -43,6 +43,26 @@ export const PROBE_TARGETS = Object.freeze({
   solanaMint: 'orcaEKTdK7LKz57vaAYr9QeNsVEPfiu6QeMU1kektZE',
 });
 
+/**
+ * Two endpoints of one exchange in one row. The first one that fails is the exchange's verdict, and
+ * the message names it; when both answer, the row counts the records of both.
+ */
+export async function bothEndpoints(first, second) {
+  const a = await first.run();
+  if (!a?.ok) return { ...a, message: `${first.label}: ${a?.message ?? ''}`.trim() };
+  const b = await second.run();
+  if (!b?.ok) return { ...b, message: `${second.label}: ${b?.message ?? ''}`.trim() };
+  return {
+    ...b,
+    data: [...(Array.isArray(a.data) ? a.data : []), ...(Array.isArray(b.data) ? b.data : [])],
+    meta: {
+      ...b.meta,
+      latencyMs: (a.meta?.latencyMs ?? 0) + (b.meta?.latencyMs ?? 0),
+      endpoint: [a.meta?.endpoint, b.meta?.endpoint].filter(Boolean).join(' + ') || null,
+    },
+  };
+}
+
 /** One small call per provider — the cheapest request that still proves the endpoint works. */
 export function probes(P) {
   return [
@@ -52,9 +72,10 @@ export function probes(P) {
     { id: 'mexc', run: () => P.mexc.spotTickers() },
     { id: 'mexc_futures', run: () => P.mexc.perps() },
     { id: 'binance_spot', run: () => P.binanceSpot.spotTickers() },
-    { id: 'gate', run: () => P.gate.perps() },
-    { id: 'bitget', run: () => P.bitget.perps() },
-    { id: 'okx', run: () => P.okx.perps() },
+    // Perpetuals (derivatives) and the spot list (the validity gate's listing check), one row each.
+    { id: 'gate', run: () => bothEndpoints({ label: 'perpetue', run: () => P.gate.perps() }, { label: 'spot', run: () => P.gate.spotTickers() }) },
+    { id: 'bitget', run: () => bothEndpoints({ label: 'perpetue', run: () => P.bitget.perps() }, { label: 'spot', run: () => P.bitget.spotTickers() }) },
+    { id: 'okx', run: () => bothEndpoints({ label: 'perpetue', run: () => P.okx.perps() }, { label: 'spot', run: () => P.okx.spotTickers() }) },
     { id: 'hyperliquid', run: () => P.hyperliquid.perps() },
     { id: 'coinalyze', run: () => P.coinalyze.markets() },
     { id: 'upbit', run: () => P.upbit.markets() },

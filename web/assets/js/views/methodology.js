@@ -13,12 +13,38 @@ const STAGE_HELP = {
   POST_EXPANSION: 'După un pump mare, corecție de peste 35%.',
 };
 
+/** A published threshold, or a dash when an older snapshot does not carry it. */
+const val = (x) => (Number.isFinite(x) ? x : '—');
+
+/** The validity gate in one table: what each check reads and what makes it fail. */
+function validityMethod(v) {
+  const p = v?.policy;
+  if (!p) return '';
+  const rows = [
+    ['Capitalizare mică sau medie, confirmată', 'CoinGecko, CoinMarketCap, CoinPaprika, Binance Alpha', `peste ${usd(p.maxMarketCapUsd)} sau sub ${usd(p.minMarketCapUsd)}; capitalizare raportată doar de Gate Alpha; stablecoin, token împachetat, activ tokenizat`],
+    ['Proiect real, identificat', 'agregatori, Binance Alpha, GoPlus, site și conturi sociale', 'niciun agregator și nici Binance Alpha; GoPlus: imitație a altui token sau airdrop scam'],
+    ['Listat pe burse', 'spot Binance, OKX, Gate, Bitget, MEXC, Upbit, Bithumb; perpetue; Binance Alpha; lista de burse GoPlus', `nicio piață centralizată care tranzacționează (volum ≥ ${usd(p.minSpotVolumeUsd)} în 24 h) — Gate Alpha singur nu ajunge`],
+    ['Contract fără capcane', 'GoPlus Token Security (EVM și Solana), GeckoTerminal', `honeypot, vânzare blocată, taxă peste ${p.maxTaxPct}%, owner care modifică solduri, autodistrugere, creator cu honeypot-uri; owner ascuns, cod neverificat, înghețare — doar dacă nicio bursă de nivel 1–2 nu îl listează`],
+    ['Lichiditate reală', 'burse centralizate, DexScreener, Binance Alpha', `fără piață spot centralizată și pool DEX sub ${usd(p.minDexLiquidityUsd)}`],
+    ['Distribuția deținătorilor', 'GoPlus, NodeReal (EVM), Solana RPC', `informativ: atenționare peste ${p.concentrationWarnPct}% în top 10 efectiv`],
+    ['Vechime și activitate', 'DexScreener, Binance Alpha, CoinGecko', `informativ: atenționare sub ${p.minAgeDays} zile sau rotație peste ${p.turnoverWarn}× capitalizarea pe zi`],
+  ];
+  return html`<section class="section"><h3 class="section-title">Poarta de validitate</h3>
+    <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Verificare</th><th>Ce citește</th><th>Respinge când</th></tr></thead><tbody>
+      ${rows.map(([a, b, c]) => html`<tr><td><b>${a}</b></td><td class="ink2" style="white-space:normal">${b}</td><td class="ink2" style="white-space:normal">${c}</td></tr>`)}
+    </tbody></table></div>
+    <p class="small ink2" style="margin-top:10px">Rezultatul rulării curente: ${v.summary?.valid ?? 0} verificate, ${v.summary?.pending ?? 0} în verificare, ${v.summary?.rejected ?? 0} respinse — lista completă în ecranul <a href="#/validare">Validare</a>.</p>
+  </section>`;
+}
+
 export function methodologyMarkup(s) {
   const m = s.methodology ?? {};
   const th = m.thresholds ?? {};
   const sig = th.signals ?? {};
   const uni = th.universe ?? {};
-  const domains = [...(m.domains ?? [])].sort((a, b) => b.weight - a.weight);
+  // The legacy CRI engine's weights and fingerprint live under `similarity` since contract v4.
+  const domains = [...(m.similarity?.domains ?? m.domains ?? [])].sort((a, b) => b.weight - a.weight);
+  const features = m.similarity?.features ?? m.features ?? [];
   const wmax = Math.max(0.01, ...domains.map((d) => d.weight));
   return html`
   <div class="view-head"><div><h2 class="view-title">Metodologie</h2>
@@ -29,11 +55,12 @@ export function methodologyMarkup(s) {
       <h3 class="section-title" style="margin-top:24px">Fluxul unei rulări</h3>
       <ol class="small ink2" style="padding-left:18px;display:grid;gap:6px;margin:0">
         <li>Universul: top ${uni.topN ?? 1000} CoinGecko + CoinMarketCap (CoinPaprika ca rezervă) plus listele publice Binance Alpha și Gate Alpha, unificate după contract și nume.</li>
-        <li>Filtre: market cap între ${usd(uni.minMarketCapUsd)} și ${usd(uni.maxMarketCapUsd)}, volum 24h peste ${usd(uni.minVolume24hUsd)}, fără stablecoin/wrapped.</li>
-        <li>Venue-uri: MEXC spot, Binance spot, perpetual MEXC/Gate/Bitget/OKX/Hyperliquid, Upbit/Bithumb, Binance Alpha, Gate Alpha, trending CoinGecko/GeckoTerminal, boost-uri DexScreener, DefiLlama.</li>
+        <li>Filtre: market cap între ${usd(uni.minMarketCapUsd)} și ${usd(uni.maxMarketCapUsd)}, volum 24h peste ${usd(uni.minVolume24hUsd)}, fără stablecoin-uri (inclusiv cele ancorate la euro, franc sau yen), tokenuri împachetate sau acțiuni tokenizate.</li>
+        <li>Venue-uri: spot Binance, OKX, Gate, Bitget, MEXC, Upbit/Bithumb; perpetual MEXC/Gate/Bitget/OKX/Hyperliquid; Binance Alpha, Gate Alpha, trending CoinGecko/GeckoTerminal, boost-uri DexScreener, DefiLlama.</li>
         <li>Cercetare profundă pe tot orizontul (până la ${m.horizon?.deep ?? s.meta?.config?.deepHorizon ?? 1000} de proiecte): lumânări 1D/4H și lichiditate DEX pentru fiecare; securitate, detalii, deținători și dezvoltare prin rotație între rulări; prioritatea de ${m.horizon?.priority ?? s.meta?.config?.deepLimit ?? 60} proiecte primește în plus liste complete de deținători și, cu cheie Arkham, fluxurile de portofele și entități.</li>
         <li>Futures Radar pe fiecare piață perpetuă din univers (până la ${m.horizon?.futures ?? 1000}); tabelul complet al orizontului se publică în data/universe.json (ecranul Univers).</li>
         <li>Fuziunea dovezilor pe 9 domenii, stadiu, hype, risc, semnal și plan structural.</li>
+        <li>Poarta de validitate (ecranul <a href="#/validare">Validare</a>): în listele CRI intră doar proiectele care trec cinci verificări obligatorii — capitalizare mică sau medie confirmată de un agregator, proiect real și identificat, listare pe burse, contract fără capcane (GoPlus) și lichiditate reală. O dovadă negativă respinge; o dovadă lipsă ține proiectul „în verificare”, fără să-l eticheteze.</li>
         <li>Diferența față de rularea anterioară devine catalizatori și alerte; semnalele intră în track record.</li>
       </ol>
     </section>
@@ -42,24 +69,26 @@ export function methodologyMarkup(s) {
       <p class="small ink2" style="margin-top:12px">CRI = scor fuzionat × (0.70 + 0.20 × încredere + 0.10 × acoperire). Tier A ≥ 80, B ≥ 70, C ≥ 60, D ≥ 50.</p>
       <h3 class="section-title" style="margin-top:24px">Praguri de semnal</h3>
       <dl class="kv">
-        <dt>Setup BUY</dt><dd>stadiu pre-expansiune sau accelerare, CRI ≥ ${sig.buySetup?.minCri}, similaritate ≥ ${sig.buySetup?.minAnalog}, fiabilitate ≥ ${sig.buySetup?.minReliability}, 4H nu bearish, fără hype, risc sub D</dd>
-        <dt>Acumulare</dt><dd>bază, construcție sau pre-expansiune, CRI ≥ ${sig.accumulate?.minCri}, similaritate ≥ ${sig.accumulate?.minAnalog}, setup ≥ ${sig.accumulate?.minSetup}</dd>
-        <dt>Urmărire</dt><dd>CRI ≥ ${sig.watch?.minCri} sau similaritate ≥ ${sig.watch?.minAnalog}</dd>
-        <dt>Risk-off</dt><dd>pragul CRI pentru Setup BUY crește cu ${sig.riskOffPenalty} puncte</dd>
+        <dt>Setup BUY</dt><dd>stadiu pre-expansiune sau accelerare, CRI ≥ ${val(sig.buySetup?.minCri)}, similaritate ≥ ${val(sig.buySetup?.minAnalog)}, fiabilitate ≥ ${val(sig.buySetup?.minReliability)}, 4H nu bearish, fără hype, risc sub D</dd>
+        <dt>Acumulare</dt><dd>bază, construcție sau pre-expansiune, CRI ≥ ${val(sig.accumulate?.minCri)}, similaritate ≥ ${val(sig.accumulate?.minAnalog)}, setup ≥ ${val(sig.accumulate?.minSetup)}</dd>
+        <dt>Urmărire</dt><dd>CRI ≥ ${val(sig.watch?.minCri)} sau similaritate ≥ ${val(sig.watch?.minAnalog)}</dd>
+        <dt>Risk-off</dt><dd>pragul CRI pentru Setup BUY crește cu ${val(sig.riskOffPenalty)} puncte</dd>
       </dl>
     </section>
   </div>
   <section class="section"><h3 class="section-title">Amprenta comparată cu LAB, BTW, AGT</h3>
     <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Trăsătură</th><th>Familie</th><th class="n">Pondere</th></tr></thead><tbody>
-      ${(m.features ?? []).map((f) => html`<tr><td>${f.label}</td><td class="ink2">${f.group === 'dna' ? 'ADN (structură)' : 'fază (timing)'}</td><td class="n">${f.weight}</td></tr>`)}
+      ${features.map((f) => html`<tr><td>${f.label}</td><td class="ink2">${f.group === 'dna' ? 'ADN (structură)' : 'fază (timing)'}</td><td class="n">${f.weight}</td></tr>`)}
     </tbody></table></div>
     <p class="small ink2" style="margin-top:10px">Similaritate gaussiană pe scala fixă 0–100 (σ = ${th.similarity?.sigma}), acoperire minimă ${Math.round((th.similarity?.minCoverage ?? 0) * 100)}%; trăsăturile necunoscute sunt excluse din calcul, nu tratate ca diferență. Secvența de stadii (LCS) contribuie ${Math.round((th.similarity?.sequenceWeight ?? 0) * 100)}%.</p>
   </section>
   <section class="section"><h3 class="section-title">Ciclul de viață</h3>
     <div class="tbl-wrap"><table class="tbl"><tbody>${L.stageOrder.map((st) => html`<tr><td><b>${L.stages[st] ?? st}</b></td><td class="ink2" style="white-space:normal">${STAGE_HELP[st] ?? ''}</td></tr>`)}</tbody></table></div>
   </section>
+  ${validityMethod(s.validity)}
   <section class="section"><h3 class="section-title">Limitări asumate</h3>
     <ul class="facts">
+      <li><span>Poarta de validitate reduce riscul, nu îl elimină: GoPlus nu acoperă toate lanțurile, iar o listare pe o bursă mare nu garantează proiectul. Atenționările (concentrare, taxe mici, mint) rămân de verificat manual.</span></li>
       <li><span>API-urile gratuite au limite de rată; o rulare durează câteva minute și poate omite surse lente (marcate explicit).</span></li>
       <li><span>Holderii și concentrarea vin din GeckoTerminal/GoPlus și pot include adrese de exchange sau contracte de vesting neetichetate.</span></li>
       <li><span>Trei referințe sunt un eșantion mic: similaritatea ridicată arată un tipar comun, nu garantează un rezultat similar.</span></li>

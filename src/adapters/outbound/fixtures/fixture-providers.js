@@ -168,7 +168,22 @@ export function createFixtureProviders({ market, clock }) {
     },
     perps: async () => ok('mexc_futures', '/api/v1/contract/ticker', live().map(({ a }) => perpFor(a, 'mexc')).filter(Boolean)),
   };
-  const venue = (id) => ({ id, perps: async () => ok(id, '/perps', live().map(({ a }) => perpFor(a, id)).filter(Boolean)) });
+  /*
+   * Spot listings on Gate, OKX and Bitget, decided per project from a hash of its id — never from the
+   * simulator's random stream, so adding them leaves every other simulated fact unchanged. A project
+   * already on MEXC or a perpetual venue is likelier to be on these too; a few are on Gate alone.
+   */
+  const SPOT_SHARE = { gate: 45, okx: 15, bitget: 30 };
+  const spotOn = (a, id) => a.archetype === 'LARGE'
+    || hashSeed(`${a.id}:${id}-spot`) % 100 < (a.venues.mexc || a.venues.perps.length ? SPOT_SHARE[id] : Math.round(SPOT_SHARE[id] / 4));
+  const spotSymbol = (id, sym) => (id === 'okx' ? `${sym}-USDT` : id === 'gate' ? `${sym}_USDT` : `${sym}USDT`);
+  const venue = (id) => ({
+    id,
+    perps: async () => ok(id, '/perps', live().map(({ a }) => perpFor(a, id)).filter(Boolean)),
+    spotTickers: async () => ok(id, '/spot/tickers', live().filter(({ a }) => spotOn(a, id)).map(({ a, s }) => ({
+      symbol: spotSymbol(id, a.symbol), base: a.symbol, last: s.price, quoteVolume: s.volume24h * 0.08, changePct: s.change.h24,
+    }))),
+  });
 
   const krw = (id, flag) => ({ id, markets: async () => ok(id, '/v1/market/all', live().filter(({ a }) => a.venues[flag]).map(({ a }) => ({ market: `KRW-${a.symbol}`, base: a.symbol, englishName: a.name, warning: null }))) });
 
@@ -293,7 +308,24 @@ export function createFixtureProviders({ market, clock }) {
           creatorAddress: null,
           ownerAddress: null,
           lpLockedPct: a.honeypot ? 12 : 60 + (hashSeed(`${a.id}:lp`) % 40),
-          security: { honeypot: a.honeypot, cannotSell: a.honeypot, buyTax: 0, sellTax: a.sellTax, mintable: false, ownerRenounced: true, hiddenOwner: false, canTakeBackOwnership: false, transferPausable: false, blacklist: false, slippageModifiable: false, proxy: hashSeed(a.id) % 9 === 0, openSource: true, trustList: false },
+          security: {
+            honeypot: a.honeypot, cannotSell: a.honeypot, buyTax: 0, sellTax: a.sellTax, mintable: false, ownerRenounced: true, hiddenOwner: false, canTakeBackOwnership: false, transferPausable: false, blacklist: false, slippageModifiable: false, proxy: hashSeed(a.id) % 9 === 0, openSource: true, trustList: a.archetype === 'LARGE',
+            // The rest of the port vocabulary (normalizeEvm), with a few planted traps among the noise —
+            // hashed per project, so the simulator's random stream is untouched.
+            cannotBuy: false,
+            ownerChangeBalance: a.archetype === 'NOISE' && hashSeed(`${a.id}:ocb`) % 61 === 0,
+            selfdestruct: false,
+            externalCall: false,
+            tradingCooldown: false,
+            personalSlippageModifiable: false,
+            honeypotSameCreator: a.honeypot,
+            airdropScam: false,
+            fakeToken: a.archetype === 'NOISE' && hashSeed(`${a.id}:fake`) % 97 === 0 ? true : null,
+            cexList: a.venues.mexc ? ['MEXC', ...(spotOn(a, 'gate') ? ['Gate.io'] : [])] : null,
+            launchpad: null,
+            ownerPercent: 0,
+            creatorPercent: 0.02,
+          },
         };
       }
       return ok('goplus', '/token_security/{chain}', out);

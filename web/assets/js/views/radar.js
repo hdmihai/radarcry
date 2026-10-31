@@ -5,7 +5,7 @@ import { L, SIGNAL_ORDER, SIGNAL_RANK, icon } from '../core/labels.js';
 import { ui } from '../core/store.js';
 import { dnaStrip } from '../charts/dna.js';
 import { sparkline } from '../charts/lines.js';
-import { change, cri, gradeBadge, lifecycle, refChip, shortSignal, signalBadge } from './widgets.js';
+import { change, cri, gradeBadge, lifecycle, refChip, shortSignal, signalBadge, validityBadge } from './widgets.js';
 
 const HYPE_SHORT = { STEALTH: 'discret', EMERGING: 'atenție în creștere', HYPED: 'hype activ', EXHAUSTED: 'hype epuizat', UNKNOWN: 'atenție necunoscută' };
 const GRADE_ORDER = { A: 1, B: 2, C: 3, D: 4 };
@@ -75,7 +75,7 @@ function row(c, s) {
     <td class="n"><span class="tok"><span>${change(c.market?.change?.d7)}</span><span class="tok-sub num ${signClass(c.market?.change?.d30)}">${pct(c.market?.change?.d30)} 30z</span></span></td>
     <td class="n">${frac(c.market?.turnover)}</td>
     <td class="n"><span class="tok"><span class="num">${frac(d.oiToMcap)}</span><span class="tok-sub num">${d.venues?.length ? `funding ${funding(d.fundingAvg)}` : 'fără perp'}</span></span></td>
-    <td>${gradeBadge(c.risk, c.key)}</td>
+    <td><span class="cell-risk">${gradeBadge(c.risk, c.key)}${validityBadge(c.validity, { compact: true })}</span></td>
     <td>${sparkline(c.sparkline)}</td>
   </tr>`;
 }
@@ -95,7 +95,7 @@ function card(c, s) {
     <span class="tok"><b>${c.symbol}</b><span class="tok-sub">${c.name}</span></span>
     <span>${cri(c.score, c.key)}</span>
     <span class="line">${signalBadge(c.signal)} ${refChip(best?.ref, best?.similarity)} ${ref ? dnaStrip(c, ref, s.features, s.sigma, { withTip: false }) : ''}</span>
-    <span class="line">${lifecycle(c.stage, { proxy: c.stageProxy })} ${usd(c.market?.marketCap)} ${change(c.market?.change?.d7)} 7z ${gradeBadge(c.risk, c.key)}</span>
+    <span class="line">${lifecycle(c.stage, { proxy: c.stageProxy })} ${usd(c.market?.marketCap)} ${change(c.market?.change?.d7)} 7z ${gradeBadge(c.risk, c.key)} ${validityBadge(c.validity, { compact: true })}</span>
   </button>`;
 }
 
@@ -114,7 +114,7 @@ export function radarMarkup(s) {
   const visible = list.slice(0, shown);
   return html`
   <div class="view-head">
-    <div><h2 class="view-title">Radar</h2><p class="view-lede">Toți tokenii publicați din scanarea top 1000 CoinGecko + CoinMarketCap, ordonați după semnal și scor. Primii ${s.health?.universe?.deep ?? ''} au cercetare în profunzime (lumânări, SMC, on-chain, securitate), marcați cu punct albastru; restul au o evaluare rapidă din piață, venue-uri și derivate.</p></div>
+    <div><h2 class="view-title">Radar</h2><p class="view-lede">Toți tokenii publicați din scanarea top 1000 CoinGecko + CoinMarketCap, ordonați după semnal și scor. Primii ${s.health?.universe?.deep ?? ''} au cercetare în profunzime (lumânări, SMC, on-chain, securitate), marcați cu punct albastru; restul au o evaluare rapidă din piață, venue-uri și derivate.${s.validity ? html` Toți au trecut <a href="#/validare">verificarea de validitate</a>: capitalizare sub ${usd(s.validity.policy?.maxMarketCapUsd)} confirmată, proiect identificat, listat pe burse, contract fără capcane, lichiditate reală — ${s.validity.summary?.rejected ?? 0} proiecte respinse și ${s.validity.summary?.pending ?? 0} în verificare nu apar aici.` : ''}</p></div>
   </div>
   <div class="filters" role="search">
     <label class="search"><span class="sr-only">Caută token</span>${icon('search', 14)}<input type="search" placeholder="Caută simbol, nume sau contract" value="${f.q}" data-filter="q" autocomplete="off"></label>

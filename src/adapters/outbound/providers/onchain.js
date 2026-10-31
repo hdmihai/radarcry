@@ -252,6 +252,22 @@ export function normalizeEvm(x) {
       proxy: flag01(x.is_proxy),
       openSource: flag01(x.is_open_source),
       trustList: flag01(x.trust_list),
+      // Traps and identity signals the validity gate reads (docs: "Response Details", token security).
+      cannotBuy: flag01(x.cannot_buy),
+      ownerChangeBalance: flag01(x.owner_change_balance),
+      selfdestruct: flag01(x.selfdestruct),
+      externalCall: flag01(x.external_call),
+      tradingCooldown: flag01(x.trading_cooldown),
+      personalSlippageModifiable: flag01(x.personal_slippage_modifiable),
+      honeypotSameCreator: flag01(x.honeypot_with_same_creator),
+      airdropScam: flag01(x.is_airdrop_scam),
+      // `fake_token` is omitted without evidence; present with value 1 when the token imitates another.
+      fakeToken: x.fake_token ? flag01(x.fake_token.value) === true : null,
+      // `is_in_cex` is omitted when no known exchange lists the token: absence is not "unlisted".
+      cexList: flag01(x.is_in_cex?.listed) === true && Array.isArray(x.is_in_cex?.cex_list) ? x.is_in_cex.cex_list.map(String) : null,
+      launchpad: flag01(x.launchpad_token?.is_launchpad_token) === true ? String(x.launchpad_token?.launchpad_name ?? 'launchpad') : null,
+      ownerPercent: toNum(x.owner_percent),
+      creatorPercent: toNum(x.creator_percent),
     },
   };
 }
@@ -259,29 +275,40 @@ export function normalizeEvm(x) {
 export function normalizeSolana(x) {
   const stats = holderStats(x.holders, x.total_supply);
   const status = (v) => flag01(v?.status ?? v);
+  const creators = Array.isArray(x.creator) ? x.creator : Array.isArray(x.creators) ? x.creators : [];
+  // Transfer fees are in parts per ten thousand ("200" = 2 %); the port speaks in fractions.
+  const feeBps = toNum(x.transfer_fee?.current_fee_rate?.fee_rate ?? x.transfer_fee?.fee_rate);
+  const defaultState = x.default_account_state === undefined || x.default_account_state === null ? null : String(x.default_account_state?.status ?? x.default_account_state);
   return {
     holders: toNum(x.holder_count),
     top10Pct: stats.top10Pct,
     top10EffectivePct: stats.top10EffectivePct,
     topHolders: goplusTopHolders(x.holders, { lowercase: false }),
-    creatorAddress: x.creators?.[0]?.address ? String(x.creators[0].address) : null,
+    creatorAddress: creators[0]?.address ? String(creators[0].address) : null,
     ownerAddress: null,
     lpLockedPct: null, // Solana pools report LP burn per DEX program, not as a GoPlus LP holder list
     security: {
       honeypot: null,
       cannotSell: status(x.non_transferable),
       buyTax: null,
-      sellTax: toNum(x.transfer_fee?.fee_rate) ?? null,
+      sellTax: feeBps === null ? null : feeBps / 10_000,
       mintable: status(x.mintable),
       ownerRenounced: status(x.mintable) === false,
       hiddenOwner: null,
       canTakeBackOwnership: null,
       transferPausable: status(x.freezable),
       blacklist: null,
-      slippageModifiable: null,
+      slippageModifiable: status(x.transfer_fee_upgradable),
       proxy: null,
       openSource: null,
       trustList: flag01(x.trusted_token),
+      // Solana token-program powers the validity gate reads.
+      freezable: status(x.freezable),
+      closable: status(x.closable),
+      balanceMutable: status(x.balance_mutable_authority),
+      nonTransferable: status(x.non_transferable),
+      defaultFrozen: defaultState === null ? null : defaultState === '2',
+      maliciousCreator: creators.length ? creators.some((c) => flag01(c?.malicious_address) === true) : null,
     },
   };
 }

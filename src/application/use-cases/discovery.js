@@ -168,12 +168,34 @@ export function securityFacts(raw) {
     lpLockedPct: isNum(raw.lpLockedPct) ? raw.lpLockedPct : null,
     creatorAddress: raw.creatorAddress ?? null,
     ownerAddress: raw.ownerAddress ?? null,
+    // Traps, token-program powers and identity signals read by the validity gate.
+    cannotBuy: tri(s.cannotBuy),
+    ownerChangeBalance: tri(s.ownerChangeBalance),
+    selfdestruct: tri(s.selfdestruct),
+    externalCall: tri(s.externalCall),
+    tradingCooldown: tri(s.tradingCooldown),
+    personalSlippageModifiable: tri(s.personalSlippageModifiable),
+    honeypotSameCreator: tri(s.honeypotSameCreator),
+    airdropScam: tri(s.airdropScam),
+    fakeToken: tri(s.fakeToken),
+    freezable: tri(s.freezable),
+    closable: tri(s.closable),
+    balanceMutable: tri(s.balanceMutable),
+    nonTransferable: tri(s.nonTransferable),
+    defaultFrozen: tri(s.defaultFrozen),
+    maliciousCreator: tri(s.maliciousCreator),
+    cexList: Array.isArray(s.cexList) ? s.cexList.map(String) : null,
+    launchpad: typeof s.launchpad === 'string' ? s.launchpad : null,
+    ownerPercentPct: asPct(s.ownerPercent),
+    creatorPercentPct: asPct(s.creatorPercent),
+    trusted: s.trustList === true,
     // A contract's flags change rarely, so a scan from an earlier run is carried (see deep-cache.js);
     // the reader is told when it was read.
     asOf: isNum(raw.asOf) ? new Date(raw.asOf).toISOString() : null,
     carried: raw.carried === true,
   };
-  const measured = ['isHoneypot', 'isMintable', 'hiddenOwner', 'canTakeBackOwnership', 'transferPausable', 'isProxy', 'buyTaxPct', 'sellTaxPct']
+  const measured = ['isHoneypot', 'isMintable', 'hiddenOwner', 'canTakeBackOwnership', 'transferPausable', 'isProxy', 'buyTaxPct', 'sellTaxPct',
+    'freezable', 'ownerChangeBalance', 'balanceMutable', 'isOpenSource']
     .some((k) => facts[k] !== null);
   return measured ? facts : null;
 }

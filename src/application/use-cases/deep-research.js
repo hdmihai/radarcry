@@ -22,7 +22,7 @@
  */
 import { chartToDaily } from '../../domain/similarity/references.js';
 import { pickRepo } from '../../domain/shared/repos.js';
-import { DEFAULT_TTL_HOURS, cachedFact, lastMeasured, markMeasured, rotationOrder, storeFact } from './deep-cache.js';
+import { DEFAULT_TTL_HOURS, FACT_VERSION, cachedFact, lastMeasured, markMeasured, rotationOrder, storeFact } from './deep-cache.js';
 
 function groupByChain(assets) {
   const m = new Map();
@@ -57,18 +57,26 @@ const STOP = new Set(['BUDGET_EXHAUSTED', 'CIRCUIT_OPEN', 'QUOTA_EXHAUSTED', 'NO
  * @param {any} P providers
  * @param {any} cfg deep config
  * @param {{timeLeft:()=>number, logger:any}} rt
- * @param {{priorityKeys?:Set<string>|null, cache?:Record<string, any>|null, nowMs?:number}} [opts]
+ * @param {{priorityKeys?:Set<string>|null, cache?:Record<string, any>|null, nowMs?:number, skipRotation?:Set<string>|null}} [opts]
  *   `priorityKeys` — the projects the run is about (the shortlist); the budgeted slices serve them
  *   first and the holder lists serve only them. Without it every target is priority, which is the
  *   behaviour of a small, explicit shortlist. `cache` — the rolling cache from the state branch;
- *   it is updated in place and returned.
+ *   it is updated in place and returned. `skipRotation` — projects the validity gate has already
+ *   excluded this run: they keep the bulk facts but take no slice of a free plan's budget.
  * @returns {Promise<{byKey: Map<string, any>, usage: Record<string, any>, cache: Record<string, any>, tiers: any}>}
  */
-export async function collectDeepData(targets, P, cfg, rt, { priorityKeys = null, cache = null, nowMs = Date.now() } = {}) {
+export async function collectDeepData(targets, P, cfg, rt, { priorityKeys = null, cache = null, nowMs = Date.now(), skipRotation = null } = {}) {
   const out = new Map(targets.map((a) => [a.key, {}]));
   const priority = priorityKeys ?? new Set(targets.map((a) => a.key));
+  const skip = skipRotation ?? new Set();
+  /** The targets a budgeted (free-plan) slice may spend calls on. */
+  const budgetTargets = targets.filter((a) => !skip.has(a.key));
   const memo = cache ?? {};
   const ttlHours = { ...DEFAULT_TTL_HOURS, ...(cfg.cacheHours ?? {}) };
+  // A contract scan is read again *before* it expires, with the budget the run has left: the
+  // validity gate holds back a project whose scan lapsed, so a lapse would take a verified project
+  // off the CRI lists until the rotation reached it again.
+  const securityRefreshMs = (cfg.refreshHours?.security ?? Math.round(ttlHours.security * 0.7)) * 3_600_000;
   const enough = (ms = 45_000) => rt.timeLeft() > ms;
   // The budgeted slices come from free plans that rate-limit, and a rate-limited provider is now
   // waited for rather than abandoned. They stop early enough to leave the later phases (the futures
@@ -131,7 +139,7 @@ export async function collectDeepData(targets, P, cfg, rt, { priorityKeys = null
 
   const coingeckoTask = async () => {
     // Daily history fallback for projects with no market that publishes candles: a rotating slice.
-    const noVenue = targets.filter((a) => a.ids?.coingecko
+    const noVenue = budgetTargets.filter((a) => a.ids?.coingecko
       && !a.venues?.mexcSpot && !a.venues?.binanceSpot && !(a.venues?.alpha?.status === 'LISTED' && a.venues.alpha.alphaId && P.binanceAlpha?.klines));
     const charts = rotationOrder(noVenue, { priority, last: (a) => lastMeasured(memo, a.key, 'chart'), nowMs }).slice(0, cfg.cgChartFallback ?? 12);
     for (const a of charts) {
@@ -146,7 +154,7 @@ export async function collectDeepData(targets, P, cfg, rt, { priorityKeys = null
       } else if (STOP.has(r.status)) break;
     }
     // Coin detail: categories (narratives), repository links (development). Static, so carried.
-    const withId = targets.filter((a) => a.ids?.coingecko);
+    const withId = budgetTargets.filter((a) => a.ids?.coingecko);
     const stale = [];
     for (const a of withId) {
       const hit = cachedFact(memo, a.key, 'detail', { nowMs, ttlHours });
@@ -183,11 +191,22 @@ export async function collectDeepData(targets, P, cfg, rt, { priorityKeys = null
 
   const securityTask = async () => {
     const stale = [];
-    for (const a of targets.filter((x) => x.primary?.address)) {
+    // Carried in an older shape: usable now, read again right after the projects with no scan at all.
+    const outdated = [];
+    // Carried and still valid, but close to expiry: read with whatever budget is left, oldest first.
+    const aging = [];
+    for (const a of budgetTargets.filter((x) => x.primary?.address)) {
       const hit = cachedFact(memo, a.key, 'security', { nowMs, ttlHours });
-      if (hit) { out.get(a.key).security = { ...hit.data, asOf: hit.at, carried: true }; tiers.security.carried += 1; } else stale.push(a);
+      if (hit) {
+        out.get(a.key).security = { ...hit.data, asOf: hit.at, carried: true };
+        tiers.security.carried += 1;
+        if (hit.v < FACT_VERSION.security) outdated.push(a);
+        else if (nowMs - hit.at >= securityRefreshMs) aging.push(a);
+      } else stale.push(a);
     }
-    const list = rotationOrder(stale, { priority, last: (a) => memo[a.key]?.security?.at ?? null, nowMs, minRefreshHours: 0 }).slice(0, cfg.securityLimit ?? 45);
+    const order = (xs) => rotationOrder(xs, { priority, last: (a) => memo[a.key]?.security?.at ?? null, nowMs, minRefreshHours: 0 });
+    const oldestFirst = (xs) => [...xs].sort((x, y) => (memo[x.key]?.security?.at ?? 0) - (memo[y.key]?.security?.at ?? 0));
+    const list = [...order(stale), ...order(outdated), ...oldestFirst(aging)].slice(0, cfg.securityLimit ?? 45);
     // GoPlus answers one contract per call; a chain's group is read in small parts so the time
     // budget is checked between them, not only once per chain — a rate-limited GoPlus waits out its
     // cooldowns now, and forty BSC contracts in one piece could otherwise run past the reserve.
@@ -205,6 +224,7 @@ export async function collectDeepData(targets, P, cfg, rt, { priorityKeys = null
         for (const a of part) {
           const s = r.data[a.primary.address];
           if (!s) continue;
+          if (out.get(a.key).security?.carried) tiers.security.carried -= 1; // refreshed, no longer carried
           out.get(a.key).security = s;
           storeFact(memo, a.key, 'security', s, nowMs);
           tiers.security.fresh += 1;
@@ -218,7 +238,7 @@ export async function collectDeepData(targets, P, cfg, rt, { priorityKeys = null
   const holderListTask = async () => {
     let noderealOpen = Boolean(P.nodereal);
     let solanaOpen = Boolean(P.solanaRpc);
-    const list = targets.filter((a) => a.primary?.address && priority.has(a.key)).slice(0, cfg.holdersLimit ?? 45);
+    const list = budgetTargets.filter((a) => a.primary?.address && priority.has(a.key)).slice(0, cfg.holdersLimit ?? 45);
     for (const a of list) {
       if (!budgeted(60_000)) break;
       if (!noderealOpen && !solanaOpen) break;
@@ -240,7 +260,7 @@ export async function collectDeepData(targets, P, cfg, rt, { priorityKeys = null
   // Coarse holder facts (count, top-10 share) from GeckoTerminal, for projects without a list this run.
   const holdersInfoTask = async () => {
     if (!P.geckoterminal?.tokenInfo) return;
-    const candidates = targets.filter((a) => a.primary?.address && !out.get(a.key).holders);
+    const candidates = budgetTargets.filter((a) => a.primary?.address && !out.get(a.key).holders);
     const list = rotationOrder(candidates, { priority, last: (a) => lastMeasured(memo, a.key, 'holdersInfo'), nowMs }).slice(0, cfg.holdersInfoLimit ?? cfg.holdersLimit ?? 45);
     for (const a of list) {
       if (!budgeted(60_000)) break;
@@ -286,7 +306,7 @@ export async function collectDeepData(targets, P, cfg, rt, { priorityKeys = null
       const slot = out.get(a.key);
       return pickRepo([...(slot.detail?.repos ?? []), a.links?.github, slot.detail?.github]);
     };
-    const withRepo = targets.filter((a) => repoOf(a));
+    const withRepo = budgetTargets.filter((a) => repoOf(a));
     const list = rotationOrder(withRepo, { priority, last: (a) => lastMeasured(memo, a.key, 'dev'), nowMs }).slice(0, cfg.githubLimit ?? 18);
     for (const a of list) {
       if (!budgeted(60_000)) break;
@@ -307,7 +327,7 @@ export async function collectDeepData(targets, P, cfg, rt, { priorityKeys = null
 
   const attentionTask = async () => {
     if (!P.youtube) return;
-    const list = rotationOrder(targets, { priority, last: (a) => lastMeasured(memo, a.key, 'mentions'), nowMs }).slice(0, cfg.youtubeLimit ?? 12);
+    const list = rotationOrder(budgetTargets, { priority, last: (a) => lastMeasured(memo, a.key, 'mentions'), nowMs }).slice(0, cfg.youtubeLimit ?? 12);
     for (const a of list) {
       if (!budgeted(60_000)) break;
       const r = track('youtube', await P.youtube.mentions({ symbol: a.symbol, name: a.name, days: 30, max: 50 }));

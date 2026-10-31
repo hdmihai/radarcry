@@ -307,6 +307,12 @@ export function toCandidateView(r, ctx) {
     } : null,
     venues: {
       mexcSpot: Boolean(a.venues?.mexcSpot),
+      // Every centralised spot market the scan read for this asset (Binance, MEXC, Gate, OKX, Bitget).
+      spot: [
+        a.venues?.binanceSpot ? 'binance' : null,
+        a.venues?.mexcSpot ? 'mexc' : null,
+        ...Object.keys(a.venues?.spot ?? {}),
+      ].filter(Boolean),
       krw: a.venues?.krw ?? null,
       alpha: a.venues?.alpha ?? null,
       gateAlpha: a.venues?.gateAlpha ?? null,

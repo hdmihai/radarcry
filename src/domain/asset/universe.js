@@ -50,10 +50,13 @@ function emptyAsset(key, row) {
     market: {
       price: null, marketCap: null, fdv: null, volume24h: null, circulating: null, total: null, max: null,
       change: {}, mcapChange24h: null, ath: null, athChangePct: null, athDate: null, numMarketPairs: null, lastUpdated: null,
+      marketCapSource: null, marketCapBySource: {},
     },
     listing: { dateAdded: null, firstDataAt: null },
     tags: [],
     platforms: [],
+    /** Chains (raw aggregator ids) where the coin is a token but which no source here can read. */
+    foreignChains: [],
     image: null,
     sources: [],
     quality: { flags: [], mcapDisagreementPct: null },
@@ -96,7 +99,14 @@ function resolve(asset) {
   const m = asset.market;
   // Prices / caps / volumes: CoinGecko first (also provides 14d/200d), then CMC, then Paprika.
   m.price = pick(cg.price, cmc.price, cp.price, ba.price, ga.price);
-  m.marketCap = pick(positive(cg.marketCap), positive(cmc.marketCap), positive(cp.marketCap), positive(ba.marketCap), positive(ga.marketCap));
+  // Which source the capitalisation comes from travels with it: a figure only an exchange's Alpha
+  // list reports is a claim, not a confirmation (see domain/validity).
+  const caps = [['coingecko', cg], ['coinmarketcap', cmc], ['coinpaprika', cp], ['binance_alpha', ba], ['gate_alpha', ga]]
+    .map(([id, row]) => [id, positive(row.marketCap)])
+    .filter(([, v]) => v !== null);
+  m.marketCapBySource = Object.fromEntries(caps);
+  m.marketCapSource = caps[0]?.[0] ?? null;
+  m.marketCap = caps[0]?.[1] ?? null;
   m.volume24h = pick(cg.volume24h, cmc.volume24h, cp.volume24h, ba.volume24h, ga.volume24h);
   // Supply: CMC tends to be more complete; fall back to CoinGecko / Paprika.
   m.circulating = pick(positive(cmc.circulating), positive(cg.circulating), positive(cp.circulating), positive(ba.circulating));
@@ -154,7 +164,10 @@ export function mergeUniverse({ coingecko = null, coinmarketcap = null, coinpapr
     if (assets.has(key)) continue;
     const asset = emptyAsset(key, row);
     absorb(asset, row);
-    for (const p of cgPlatforms?.get(row.sourceId) ?? []) addPlatform(asset, p.chain, p.address);
+    for (const p of cgPlatforms?.get(row.sourceId) ?? []) {
+      if (normChain(p.chain)) addPlatform(asset, p.chain, p.address);
+      else if (p.address && !asset.foreignChains.includes(p.chain)) asset.foreignChains.push(String(p.chain));
+    }
     assets.set(key, asset);
     index(asset);
   }
@@ -166,7 +179,11 @@ export function mergeUniverse({ coingecko = null, coinmarketcap = null, coinpapr
       if (allowed(hit)) return hit;
     }
     const sym = normSymbol(row.symbol);
-    const candidates = (bySymbol.get(sym) ?? []).filter(allowed);
+    // Same ticker, but the asset is known on this row's chain at a *different* contract: a different
+    // token, however close the names and capitalisations (tickers repeat across launchpads).
+    const rowChain = row.platform?.address ? normChain(row.platform.chain) : null;
+    const conflicts = (c) => Boolean(rowChain && addr && c.platforms.some((p) => p.chain === rowChain && p.address !== addr) && !c.platforms.some((p) => p.address === addr));
+    const candidates = (bySymbol.get(sym) ?? []).filter(allowed).filter((c) => !conflicts(c));
     let best = null;
     let bestScore = -Infinity;
     for (const c of candidates) {
@@ -298,7 +315,7 @@ export function screenUniverse(assets, cfg) {
   const eligible = [];
   const excluded = [];
   for (const a of assets) {
-    const reason = exclusionReason({ symbol: a.symbol, name: a.name, tags: a.tags, price: a.market.price, change7d: a.market.change.d7 });
+    const reason = exclusionReason({ symbol: a.symbol, name: a.name, tags: a.tags, price: a.market.price, change7d: a.market.change.d7, change30d: a.market.change.d30, id: a.ids?.coingecko ?? a.key });
     if (reason) { excluded.push({ key: a.key, symbol: a.symbol, reason }); continue; }
     const mc = a.market.marketCap;
     const vol = a.market.volume24h;

@@ -115,7 +115,19 @@ export function createGate({ http, cfg }) {
       })
       .filter((p) => p.price));
   };
-  return { id: 'gate', perps };
+
+  /** Every USDT spot pair in one call — a listing check for the whole universe (validity gate). */
+  const spotTickers = async () => {
+    if (!cfg.enabled) return disabled('gate', '/spot/tickers');
+    return mapResult(
+      await http.getJson('https://api.gateio.ws/api/v4/spot/tickers', opt('gate', cfg, '/spot/tickers', { validate: Array.isArray })),
+      (rows) => rows
+        .filter((t) => typeof t.currency_pair === 'string' && t.currency_pair.endsWith('_USDT') && t.currency_pair.length > 5)
+        .map((t) => ({ symbol: t.currency_pair, base: t.currency_pair.slice(0, -5), last: toNum(t.last), quoteVolume: toNum(t.quote_volume), changePct: toNum(t.change_percentage) }))
+        .filter((t) => t.last && t.last > 0),
+    );
+  };
+  return { id: 'gate', perps, spotTickers };
 }
 
 /* ----------------------------------------------------------------------------- Bitget */
@@ -144,7 +156,23 @@ export function createBitget({ http, cfg }) {
         .filter((p) => p.price),
     );
   };
-  return { id: 'bitget', perps };
+
+  /** Every USDT spot pair in one call (v2 public market data). */
+  const spotTickers = async () => {
+    if (!cfg.enabled) return disabled('bitget', '/api/v2/spot/market/tickers');
+    return mapResult(
+      await http.getJson('https://api.bitget.com/api/v2/spot/market/tickers', opt('bitget', cfg, '/api/v2/spot/market/tickers', { validate: (d) => Array.isArray(d?.data) })),
+      (d) => d.data
+        .filter((t) => typeof t.symbol === 'string' && t.symbol.endsWith('USDT') && t.symbol.length > 4)
+        .map((t) => {
+          const last = toNum(t.lastPr);
+          const open = toNum(t.open);
+          return { symbol: t.symbol, base: t.symbol.slice(0, -4), last, quoteVolume: toNum(t.quoteVolume) ?? toNum(t.usdtVolume), changePct: last && open ? (last / open - 1) * 100 : null };
+        })
+        .filter((t) => t.last && t.last > 0),
+    );
+  };
+  return { id: 'bitget', perps, spotTickers };
 }
 
 /* ----------------------------------------------------------------------------- OKX */
@@ -168,7 +196,23 @@ export function createOkx({ http, cfg }) {
       })
       .filter((p) => p.price));
   };
-  return { id: 'okx', perps };
+
+  /** Every USDT spot pair in one call. For SPOT, volCcy24h is the 24 h volume in the quote currency. */
+  const spotTickers = async () => {
+    if (!cfg.enabled) return disabled('okx', '/api/v5/market/tickers SPOT');
+    return mapResult(
+      await http.getJson('https://www.okx.com/api/v5/market/tickers?instType=SPOT', opt('okx', cfg, '/api/v5/market/tickers SPOT', { validate: (d) => Array.isArray(d?.data) })),
+      (d) => d.data
+        .filter((t) => typeof t.instId === 'string' && t.instId.endsWith('-USDT'))
+        .map((t) => {
+          const last = toNum(t.last);
+          const open = toNum(t.open24h);
+          return { symbol: t.instId, base: t.instId.split('-')[0], last, quoteVolume: toNum(t.volCcy24h), changePct: last && open ? (last / open - 1) * 100 : null };
+        })
+        .filter((t) => t.last && t.last > 0),
+    );
+  };
+  return { id: 'okx', perps, spotTickers };
 }
 
 /* ----------------------------------------------------------------------------- Korea */
@@ -399,11 +443,25 @@ export function gateAlphaSymbol(currency) {
   return bare.toUpperCase();
 }
 
+/**
+ * The ticker to show for a Gate Alpha row. Older MemeBox ids carry the ticker (`memeboxtrump`); the
+ * newer ones are an opaque hex id (`ac56db07f86cd2b4`), and a live run published 25 tokens whose
+ * "symbol" was that hash. When the id is a hash, the row's name — which Gate sets to the ticker — is
+ * used instead.
+ */
+export function gateAlphaTicker(c) {
+  const fromId = gateAlphaSymbol(c?.currency);
+  const name = typeof c?.name === 'string' ? c.name.trim() : '';
+  const hashLike = /^[0-9A-F]{12,}$/.test(fromId);
+  if (hashLike && name && !/\s/.test(name) && name.length <= 20) return name.toUpperCase();
+  return fromId;
+}
+
 /** One Gate Alpha token: the currency row joined with its ticker (which may be missing). */
 export function normalizeGateAlpha(c, t = null) {
   return {
     currency: c.currency,
-    symbol: gateAlphaSymbol(c.currency),
+    symbol: gateAlphaTicker(c),
     name: typeof c.name === 'string' && c.name.trim() ? c.name.trim() : null,
     chain: c.chain ?? null,
     contractAddress: typeof c.address === 'string' && c.address.trim() ? c.address.trim() : null,

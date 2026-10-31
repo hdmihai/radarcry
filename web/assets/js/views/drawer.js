@@ -9,7 +9,7 @@ import { L, POLARITY, RELIABILITY, SEVERITY, icon, sourceLabel } from '../core/l
 import { candleChart } from '../charts/candles.js';
 import { dnaCompare } from '../charts/dna.js';
 import { criHistoryChart, dailyChart } from '../charts/lines.js';
-import { change, extLink, gradeBadge, lifecycle, polarity, refChip, signalBadge, statusLine } from './widgets.js';
+import { change, extLink, gradeBadge, lifecycle, polarity, refChip, signalBadge, statusLine, validityBadge, validityList } from './widgets.js';
 
 let CHART_W = 860; // set per render: narrow screens get a narrower viewBox so chart text stays legible
 const DOMAIN_ORDER = ['similarity', 'structure', 'setup', 'activity', 'derivatives', 'onchain', 'catalyst', 'attention', 'fundamentals'];
@@ -244,6 +244,18 @@ function taxState(sec) {
   return m >= 0.25 ? 'bad' : m >= 0.03 ? 'warn' : 'ok';
 }
 
+const SPOT_NAME = { binance: 'Binance', mexc: 'MEXC', gate: 'Gate', okx: 'OKX', bitget: 'Bitget' };
+
+/** The validity gate's verdict for this project: the reason it may appear in the CRI lists. */
+function validity(c) {
+  const v = c.validity;
+  if (!v?.checks?.length) return '';
+  return html`<section><h3 class="block-title">Verificare de validitate <span class="muted">doar proiectele verificate intră în listele CRI</span></h3>
+    <div style="margin-bottom:6px">${validityBadge(v)}</div>
+    ${validityList(v)}
+  </section>`;
+}
+
 function venues(c) {
   const v = c.venues ?? {};
   const a = c.attention ?? {};
@@ -252,7 +264,7 @@ function venues(c) {
   const f = c.fundamentals;
   return html`<section><h3 class="block-title">Venue-uri, atenție și fundamente</h3>
     <div class="sec-grid">
-      <dl class="kv"><dt>MEXC spot</dt><dd>${v.mexcSpot ? 'da' : 'nu'}</dd><dt>Binance Alpha</dt><dd>${alphaText}</dd><dt>Perpetual</dt><dd>${v.perps?.length ? v.perps.join(', ') : 'niciunul'}</dd><dt>Upbit / Bithumb (KRW)</dt><dd>${v.krw ? `${v.krw.upbit ? 'Upbit' : ''}${v.krw.upbit && v.krw.bithumb ? ', ' : ''}${v.krw.bithumb ? 'Bithumb' : ''}${!v.krw.upbit && !v.krw.bithumb ? 'nelistat' : ''}${v.krw.warning ? `, avertisment: ${v.krw.warning}` : ''}` : '—'}</dd></dl>
+      <dl class="kv"><dt>Spot</dt><dd>${v.spot ? (v.spot.length ? v.spot.map((x) => SPOT_NAME[x] ?? x).join(', ') : 'nelistat pe bursele citite') : v.mexcSpot ? 'MEXC' : 'nu'}</dd><dt>Binance Alpha</dt><dd>${alphaText}</dd><dt>Perpetual</dt><dd>${v.perps?.length ? v.perps.join(', ') : 'niciunul'}</dd><dt>Upbit / Bithumb (KRW)</dt><dd>${v.krw ? `${v.krw.upbit ? 'Upbit' : ''}${v.krw.upbit && v.krw.bithumb ? ', ' : ''}${v.krw.bithumb ? 'Bithumb' : ''}${!v.krw.upbit && !v.krw.bithumb ? 'nelistat' : ''}${v.krw.warning ? `, avertisment: ${v.krw.warning}` : ''}` : '—'}</dd></dl>
       <dl class="kv"><dt>Trending CoinGecko</dt><dd>${a.cgTrending ? `da${a.cgTrendingRank ? ` (#${a.cgTrendingRank})` : ''}` : 'nu'}</dd><dt>Boost DexScreener</dt><dd>${a.dexBoost ? `${a.dexBoost} (promovare plătită)` : 'nu'}</dd><dt>Trending GeckoTerminal</dt><dd>${a.gtTrending ? 'da' : 'nu'}</dd><dt>Watchlist CoinGecko</dt><dd>${int(a.watchlistUsers)}</dd></dl>
       <dl class="kv">${f ? html`<dt>Protocol</dt><dd>${f.protocol ?? '—'}</dd><dt>TVL</dt><dd>${usd(f.tvl)} ${change(f.tvlChange7d)}</dd><dt>MC / TVL</dt><dd>${Number.isFinite(f.mcapToTvl) ? `${f.mcapToTvl.toFixed(2)}×` : '—'}</dd><dt>Fees 30z</dt><dd>${usd(f.fees30d)}</dd>` : html`<dt>Fundamente</dt><dd class="muted">fără protocol DefiLlama asociat</dd>`}</dl>
     </div>
@@ -306,6 +318,7 @@ export function drawerMarkup(c, s, { narrow = false } = {}) {
     ${derivatives(c)}
     ${onchain(c)}
     ${walletIntel(c, s)}
+    ${validity(c)}
     ${venues(c)}
     ${catalysts(c)}
     ${history(c, s)}

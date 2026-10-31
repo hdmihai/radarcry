@@ -20,11 +20,32 @@ test de arhitectură respinge automat orice endpoint de execuție sau de retrage
 Întrebarea are patru părți, iar fiecare are un motor dedicat.
 
 ### „proiectele mici”
-Filtru de small-cap din soluția tehnică: capitalizare între **1 și 500 milioane $**, volum de
-minimum **500 000 $/zi**. Universul este construit din două surse independente (CoinGecko și
+Proiecte mici și medii: capitalizare între **1 și 300 milioane $**, volum de minimum
+**500 000 $/zi**. Universul este construit din două surse independente (CoinGecko și
 CoinMarketCap, cu CoinPaprika ca plasă de siguranță), fuzionate pe contract și pe nume, nu pe simbol
-— ca să nu ajungă doi omonimi în același rând. Stablecoin-urile, activele wrapped/staked și cele
-tokenizate sunt excluse explicit, iar fiecare excludere este numărată și publicată.
+— ca să nu ajungă doi omonimi în același rând; același simbol pe același lanț, dar la alt contract,
+este alt token. Stablecoin-urile (recunoscute și după comportament: un token ancorat la 1 $, 1 € sau
+la altă monedă, oricum s-ar numi), activele wrapped/staked și acțiunile tokenizate sunt excluse
+explicit, iar fiecare excludere este numărată și publicată.
+
+### Poarta de validitate: cine are voie în listele CRI
+Înainte de a fi clasat, fiecare proiect eligibil trece **cinci verificări obligatorii**. Doar cele
+care le trec pe toate apar în Small-Cap Radar, Radar CRI, Deep Research, alerte și track record:
+
+| Verificare | Ce citește | Respinge când |
+|---|---|---|
+| Capitalizare mică sau medie, confirmată | CoinGecko, CoinMarketCap, CoinPaprika, Binance Alpha | peste 300 M$ sau sub 1 M$; capitalizare raportată doar de Gate Alpha; stablecoin, wrapped, tokenizat |
+| Proiect real, identificat | agregatori, Binance Alpha, GoPlus, site și conturi sociale | niciun agregator și nici Binance Alpha; GoPlus: imitație a altui token, airdrop scam |
+| Listat pe burse | spot Binance, OKX, Gate, Bitget, MEXC, Upbit, Bithumb; perpetue; Binance Alpha; lista de burse GoPlus | nicio piață centralizată care tranzacționează (≥ 10 000 $ în 24 h) — Gate Alpha singur nu ajunge |
+| Contract fără capcane | GoPlus Token Security (EVM și Solana), GeckoTerminal | honeypot, vânzare blocată, taxă > 10 %, owner care modifică solduri, autodistrugere, creator cu honeypot-uri; owner ascuns, cod neverificat, înghețare — doar dacă nicio bursă de nivel 1–2 nu îl listează |
+| Lichiditate reală | burse centralizate, DexScreener, Binance Alpha | fără piață spot centralizată și pool DEX sub 50 000 $ |
+
+Distribuția deținătorilor și vechimea sunt **informative**: produc atenționări, nu resping. Regula
+proiectului se aplică și aici — **„necunoscut” nu înseamnă „respins”**: un proiect al cărui contract
+nu a fost încă scanat stă „în verificare” până îl aduce rotația GoPlus, fără să fie etichetat; doar o
+dovadă respinge. Ecranul **Validare** publică regulile, numerele și fiecare proiect oprit, cu motivul;
+în **Univers** filtrul „Validare” arată implicit doar proiectele verificate. Pragurile sunt în
+`config/default.json` → `validity`.
 
 **Binance Alpha intră în univers în întregime**, nu doar ca etichetă. LAB, BTW și AGT erau toate
 tokenuri Alpha, iar LAB avea 12 M$ capitalizare înainte de mișcare — sub pragul de ~15 M$ al top
@@ -130,7 +151,7 @@ npm run build && npm run serve
 | `npm run probe` | o cerere mică per furnizor (a doua trecere pentru ce nu a răspuns); stare, latență, chei lipsă, pașii de înscriere și ce nod Solana servește ce metodă |
 | `npm run labels` | reconstruiește setul de etichete on-chain din eth-labels (MIT) |
 | `npm run demo` | scanare simulată + build + server local |
-| `npm run ci` | verificare de sintaxă + 226 de teste (arhitectură, motoare, contract, end-to-end) |
+| `npm run ci` | verificare de sintaxă + 270 de teste (arhitectură, motoare, contract, end-to-end) |
 | `npm run summary` | raportul de rulare, așa cum apare în GitHub Actions |
 
 ---
@@ -144,7 +165,7 @@ gratuit declarat — exact pasul de review care împiedică un endpoint plătit 
 
 ### Fără nicio cheie
 CoinPaprika · MEXC spot și futures · oglinda publică de date Binance (`data-api.binance.vision`) ·
-Gate (perpetue + Gate Alpha) · Bitget · OKX · Hyperliquid · Upbit · Bithumb · Binance Alpha · DexScreener · GeckoTerminal ·
+Gate (spot + perpetue + Gate Alpha) · Bitget (spot + perpetue) · OKX (spot + perpetue) · Hyperliquid · Upbit · Bithumb · Binance Alpha · DexScreener · GeckoTerminal ·
 noduri RPC Solana publice (Solana Foundation, PublicNode, dRPC, OnFinality — încercate pe rând) ·
 DefiLlama Open API · alternative.me Fear & Greed · setul de etichete
 [eth-labels](https://github.com/dawsbot/eth-labels) (MIT, 61 108 adrese, inclus în repository)
@@ -235,7 +256,11 @@ registrul complet de platforme.
 ![Deep Research](docs/img/deep-research.png)
 
 Meniu secundar: Alerte · Analogi LAB/BTW/AGT · Radar CRI · Derivate · Narative · Track record ·
-Paritate și bugete · Date și surse · Metodologie.
+Paritate și bugete · Date și surse · Univers · **Validare** · Metodologie.
+
+Fiecare proiect listat poartă verdictul porții de validitate („verificat”, cu numărul de atenționări),
+iar verificările lui sunt la un clic distanță: pe cardul Small-Cap Radar, pe rândul Radar CRI, în
+dosarul Deep Research și în fișa proiectului.
 
 Dashboard-ul este mobile-first: fiecare ecran a fost verificat la 390 px fără derulare orizontală.
 
@@ -261,6 +286,9 @@ Dashboard-ul este mobile-first: fiecare ecran a fost verificat la 390 px fără 
   calcul). La 95 % din orice limită publicată, furnizorul intră în pauză preventivă până la resetare,
   ca o rulare să nu ajungă niciodată într-o zonă plătită sau blocată.
 - **Harta de lichidări este un model**, nu date de ordine, și spune asta, cu ipotezele alături.
+- **O listă CRI conține doar proiecte verificate.** Un proiect respins nu este ascuns: apare în
+  ecranul Validare cu motivul (dovada care îl descalifică), iar unul încă nescanat apare „în
+  verificare”, nu „suspect”.
 
 ---
 
@@ -270,7 +298,7 @@ Dashboard-ul este mobile-first: fiecare ecran a fost verificat la 390 px fără 
 |---|---|---|
 | `Scan & deploy` | la 4 ore, la :17 | scanare completă, validare contract, salvare stare, deploy Pages |
 | `Pulse` | la 15 minute | preț, funding, open interest; nu atinge nicio cuotă lunară |
-| `CI` | la fiecare push | sintaxă, reguli de arhitectură, 226 de teste, build DEMO offline |
+| `CI` | la fiecare push | sintaxă, reguli de arhitectură, 270 de teste, build DEMO offline |
 | `Probe surse` | săptămânal | o cerere per furnizor, a doua trecere pentru ce nu a răspuns; limitele de rată sunt avertismente, eșuează doar pe o sursă stricată |
 | `Actualizare etichete` | lunar | reconstruiește setul eth-labels și deschide un pull request |
 
@@ -320,7 +348,7 @@ src/
 web/               dashboard static, ES module native, fără build step
 schema/            contractul backend ↔ dashboard, validat la fiecare publicare
 config/labels/     setul de etichete on-chain inclus în repo (MIT)
-test/              226 de teste, inclusiv cele de arhitectură
+test/              270 de teste, inclusiv cele de arhitectură
 ```
 
 Detalii de proiectare, inclusiv de ce fiecare prag este unde este: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).

@@ -39,6 +39,7 @@ function byPrice(candidates, venuePrice, tolerance) {
  * @param {any[]} assets  canonical assets (mutated: `venues`, `attention`, `fundamentals` attached)
  * @param {{
  *   mexcSpot?: {ok:boolean, data:any[]},
+ *   spot?: {venue:string, ok:boolean, data:any[]}[],
  *   perps?: {venue:string, ok:boolean, data:any[]}[],
  *   upbit?: {ok:boolean, data:any[]}, bithumb?: {ok:boolean, data:any[]},
  *   alpha?: {ok:boolean, data:any[]}, gateAlpha?: {ok:boolean, data:any[]},
@@ -48,13 +49,20 @@ function byPrice(candidates, venuePrice, tolerance) {
  */
 export function attachVenues(assets, v) {
   const idx = symbolIndex(assets);
-  const stats = { mexcSpot: 0, binanceSpot: 0, perps: {}, upbit: 0, bithumb: 0, alpha: 0, gateAlpha: 0, alphaPrograms: { binance: 0, gate: 0, both: 0 }, unmatched: {} };
+  const stats = { mexcSpot: 0, binanceSpot: 0, spot: {}, perps: {}, upbit: 0, bithumb: 0, alpha: 0, gateAlpha: 0, alphaPrograms: { binance: 0, gate: 0, both: 0 }, unmatched: {} };
   const knownPerpVenues = (v.perps ?? []).filter((p) => p.ok).map((p) => p.venue);
+  const knownSpotVenues = [
+    ...(v.binanceSpot?.ok ? ['binance'] : []), ...(v.mexcSpot?.ok ? ['mexc'] : []),
+    ...(v.spot ?? []).filter((x) => x.ok).map((x) => x.venue),
+  ];
 
   for (const a of assets) {
     a.venues = {
       mexcSpot: null,
       binanceSpot: null,
+      // Other centralised spot markets (Gate, OKX, Bitget), read for the listing check.
+      spot: {},
+      spotKnown: knownSpotVenues,
       perps: [],
       perpsKnown: knownPerpVenues.length > 0,
       krw: { upbit: v.upbit?.ok ? false : null, bithumb: v.bithumb?.ok ? false : null, warning: null },
@@ -89,6 +97,22 @@ export function attachVenues(assets, v) {
     if (hit.venues.binanceSpot && (hit.venues.binanceSpot.quoteVolume ?? 0) >= (t.quoteVolume ?? 0)) continue;
     hit.venues.binanceSpot = { symbol: t.symbol, quote: t.quote, last: t.last, quoteVolume: t.quoteVolume, changePct: t.changePct, trades: t.trades ?? null };
     stats.binanceSpot = (stats.binanceSpot ?? 0) + 1;
+  }
+
+  // Gate, OKX and Bitget spot — the same price-sanity match: a listing is the asset's only if the
+  // pair trades within 20 % of the aggregator price (a shared ticker is not a shared token).
+  for (const venue of v.spot ?? []) {
+    if (!venue.ok) continue;
+    let count = 0;
+    for (const t of venue.data) {
+      const hit = byPrice(idx.get(normSymbol(t.base)), t.last, 0.2);
+      if (!hit) continue;
+      const prev = hit.venues.spot[venue.venue];
+      if (prev && (prev.quoteVolume ?? 0) >= (t.quoteVolume ?? 0)) continue;
+      if (!prev) count += 1;
+      hit.venues.spot[venue.venue] = { symbol: t.symbol, last: t.last, quoteVolume: t.quoteVolume ?? null, changePct: t.changePct ?? null };
+    }
+    stats.spot[venue.venue] = count;
   }
 
   // Perpetuals: funding + open interest per venue.

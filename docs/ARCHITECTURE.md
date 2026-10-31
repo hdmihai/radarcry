@@ -19,15 +19,17 @@ aici stau deciziile care nu se văd din cod și pragurile care ar părea arbitra
                        │  ports/  ← contractul                    │
                        │  use-cases/ run-scan · discovery ·       │
                        │     deep-research · deep-cache ·         │
-                       │     futures-radar · universe-view ·      │
-                       │     pulse · snapshot · state-update      │
+                       │     validity · futures-radar ·           │
+                       │     universe-view · pulse · snapshot ·   │
+                       │     state-update                         │
                        └────────────────┬─────────────────────────┘
                                         │ folosește doar domeniul
                        ┌────────────────▼─────────────────────────┐
                        │  domain  (pur: zero I/O)                 │
                        │  discovery · onchain · futures · risk ·  │
-                       │  quality · budget · platforms ·          │
-                       │  benchmark · narrative · backtest · …    │
+                       │  validity · quality · budget ·           │
+                       │  platforms · benchmark · narrative ·     │
+                       │  backtest · …                            │
                        └──────────────────────────────────────────┘
                                         │
             data/latest.json + data/universe.json  ◄── contractul
@@ -306,6 +308,46 @@ este **scrisă pe ecran**, nu acoperită. Datele exacte se pot introduce manual 
 O corecție: un supply circulant în scădere este ardere sau re-blocare, nu inflație negativă. Se
 raportează ca emisiune 0, cu explicația a ce s-a observat.
 
+### Poarta de validitate: înainte de risc, dreptul de a fi în listă
+
+Invalidatorii spun ce ar falsifica *teza*; poarta de validitate (`domain/validity/validity.js`)
+decide dacă proiectul are dreptul să fie clasat deloc. Auditul unei rulări live a găsit, printre
+rândurile publicate: un stablecoin ancorat la 1 $ („JupUSD”), o acțiune NVIDIA tokenizată potrivită
+cu perpetue pe acțiuni, tokenuri cunoscute doar din lista memebox Gate Alpha (capitalizare raportată
+doar de ea, simbol = un hash) și o treime din rânduri fără nicio piață centralizată — clasate alături
+de proiecte reale.
+
+Fiecare verificare se termină în una din cinci stări, iar diferența dintre ele este tot designul:
+
+| Stare | Înseamnă | Efect |
+|---|---|---|
+| `PASS` | dovada există și e bună | — |
+| `WARN` | dovada există și merită știută | atenționare, nu exclude |
+| `FAIL` | dovada există și descalifică | proiect **REJECTED**, cu motivul |
+| `UNKNOWN` | dovada lipsește | proiect **PENDING**, niciodată respins pentru asta |
+| `NA` | nu se aplică (moneda nativă nu are contract de token) | — |
+
+Cele cinci verificări obligatorii — capitalizare confirmată sub plafon, identitate (agregator sau
+selecția Binance Alpha), listare (spot pe șapte burse, perpetue, Binance Alpha sau lista de burse
+GoPlus), contract fără capcane, lichiditate reală — decid; distribuția și vechimea doar informează.
+Capcanele (honeypot, taxă > 10 %, owner care modifică solduri, autodistrugere, conturi înghețate
+implicit) resping oriunde ar fi listat tokenul. Puterile păstrate de cineva (owner ascuns, cod
+neverificat, autoritate de înghețare) resping doar un token pe care nicio bursă de nivel 1–2 nu îl
+listează și pe care nici lista de încredere GoPlus nu îl numește. Pe un token listat de o astfel de
+bursă devin atenționări: bursa a examinat proiectul înainte de listare, iar un contract upgradabil
+sau administrat de un owner este frecvent la proiectele reale. Puterea rămâne vizibilă.
+
+Poarta rulează de două ori. **Prima trecere**, înainte de cercetarea profundă, folosește doar ce nu
+cere niciun apel (capitalizare, tip de activ, identitate): un proiect care nu poate trece oricum nu
+primește loc în prioritate și nici din rotația surselor gratuite. **A doua trecere**, după cercetare,
+judecă tot; doar proiectele `VALID` intră în Small-Cap Radar, Radar CRI, alerte, jurnal și cohorta
+de track record. Normele proprii se construiesc în continuare pentru toți — un proiect „în
+verificare” azi are istoricul complet când devine verificat.
+
+O scanare de contract este recitită **înainte** să expire (`deep.refreshHours.security`, 5 zile din
+TTL-ul de 7), cu bugetul rămas după proiectele nescanate: altfel expirarea ar scoate un proiect
+verificat din liste până la următoarea trecere a rotației.
+
 ---
 
 ## 9. Bugetele planurilor gratuite
@@ -474,6 +516,14 @@ proiecte), validat față de `schema/universe.schema.json`. Dashboard-ul îl cit
 deschide ecranul **Univers**, iar coloana `detail` spune pentru fiecare rând unde îi sunt dovezile
 complete. Tabelul se scrie înaintea contractului, ca un cititor să nu găsească niciodată un
 `latest.json` al cărui tabel aparține altei rulări.
+
+**Poarta de validitate** are blocul ei, `validity` (politica, numărătorile, primii 150 de proiecte
+respinse și primii 150 în verificare, fiecare cu codurile și motivul), iar fiecare rând Small-Cap
+Radar și Radar CRI poartă verdictul său (`validity`: stare, verificări, atenționări). În
+`data/universe.json` (schema 1.1.0) coloanele `valid` (V/P/R), `validWhy` și `validWarn` duc
+același verdict pentru fiecare proiect eligibil, iar `spot` numește toate bursele spot (B, M, G, O,
+T, U, H). Ambele câmpuri sunt opționale în schemă: un snapshot de dinaintea porții rămâne valid, iar
+dashboard-ul explică lipsa.
 
 ---
 

@@ -57,17 +57,56 @@ const WRAPPED_PATTERNS = [
 
 const WRAPPED_NAME = /\b(wrapped|bridged|staked|restaked|liquid staking|pegged|tokenized|tokenised|xstock)\b/i;
 
+/*
+ * Tokenised shares and treasuries carry their nature in the aggregator's id or in the name more
+ * reliably than in tags (the top-1000 list has no categories). One live run published "NVIDIA •
+ * Robinhood Token" as a $18M small cap and matched it to NVDA stock perpetuals.
+ */
+const TOKENIZED_ID = /(tokenized-stock|xstock|robinhood-token|robinhood-tokenized|ondo-tokenized|backed-|tokenized-equit|stock-token)/i;
+const TOKENIZED_NAME = /(\bx ?stocks?\b|robinhood token|\btokeni[sz]ed (stock|share|equity|treasur)|ondo tokeni[sz]ed|\bstock token\b)/i;
+
+/*
+ * A stablecoin is recognised by what it *does*, not only by a list of tickers: a token that sits at
+ * $1 (or €1) and barely moves for a week and a month is pegged, whatever it is called. The ticker
+ * list misses every new dollar token ("JupUSD" reached the published radar that way — its name has
+ * no word "USD" for a word-boundary test to find).
+ */
+function looksPegged(a) {
+  const p = a.price;
+  if (typeof p !== 'number' || !Number.isFinite(p) || p <= 0) return false;
+  const d7 = Math.abs(a.change7d ?? Infinity);
+  const d30 = a.change30d === null || a.change30d === undefined ? null : Math.abs(a.change30d);
+  const quiet = d7 < 1 && (d30 === null || d30 < 2);
+  const sym = normSymbol(a.symbol);
+  const name = String(a.name ?? '');
+  const dollar = sym.includes('USD') || /usd|dollar/i.test(name);
+  const euro = /^EUR|EUR$/.test(sym) || /\beuro?\b/i.test(name);
+  if (Math.abs(p - 1) < 0.02 && quiet) return true;
+  if (dollar && Math.abs(p - 1) < 0.05 && d7 < 2) return true;
+  if (euro && p > 0.95 && p < 1.3 && d7 < 1.5 && (d30 === null || d30 < 3)) return true;
+  // Other fiat pegs (ZCHF, JPYC, XSGD, GBPT…): a currency code in the ticker and a price that has
+  // barely moved for a week and a month, at whatever level that currency trades.
+  if (FIAT_CODE.test(sym) && d7 < 1.5 && d30 !== null && d30 < 3) return true;
+  return false;
+}
+// Anchored at either end of the ticker (ZCHF, XSGD, JPYC, GBPT…): "ETHBULL" must not read as THB.
+const FIAT_CODE = /^(CHF|GBP|JPY|CNH|CNY|SGD|AUD|CAD|BRL|MXN|TRY|IDR|KRW|HKD|NZD|ZAR|INR|PHP|THB|NGN)|(CHF|GBP|JPY|CNH|CNY|SGD|AUD|CAD|BRL|MXN|TRY|IDR|KRW|HKD|NZD|ZAR|INR|PHP|THB|NGN)$/;
+
 /**
- * @param {{symbol?:string,name?:string,tags?:string[],price?:number|null,change7d?:number|null}} a
+ * @param {{symbol?:string,name?:string,tags?:string[],price?:number|null,change7d?:number|null,
+ *          change30d?:number|null,id?:string|null}} a
  * @returns {null | 'STABLECOIN' | 'WRAPPED_OR_STAKED' | 'TOKENIZED_ASSET'}
  */
 export function exclusionReason(a) {
   const sym = normSymbol(a.symbol);
   const name = String(a.name ?? '');
+  const id = String(a.id ?? '');
   const tags = (a.tags ?? []).map((t) => String(t).toLowerCase());
   if (STABLE_SYMBOLS.has(sym) || tags.some((t) => STABLE_TAGS.includes(t))) return 'STABLECOIN';
   if (/\b(usd|dollar|euro|eur)\b/i.test(name) && typeof a.price === 'number' && Math.abs(a.price - 1) < 0.03 && Math.abs(a.change7d ?? 0) < 2) return 'STABLECOIN';
   if (tags.some((t) => ['tokenized-stock', 'tokenized-stocks', 'xstocks', 'tokenized-treasury-bills', 'tokenized-treasuries', 'rwa-treasury', 'tokenized-gold'].includes(t))) return 'TOKENIZED_ASSET';
+  if (TOKENIZED_ID.test(id) || TOKENIZED_NAME.test(name)) return 'TOKENIZED_ASSET';
+  if (looksPegged(a)) return 'STABLECOIN';
   if (tags.some((t) => WRAPPED_TAGS.includes(t)) || WRAPPED_PATTERNS.some((re) => re.test(sym)) || WRAPPED_NAME.test(name)) return 'WRAPPED_OR_STAKED';
   return null;
 }

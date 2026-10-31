@@ -39,6 +39,13 @@ function scripted(script, { nodes = [], account = null } = {}) {
         return s ? s[Math.min(pass, s.length) - 1] : result('OK');
       };
     }
+    // The exchanges' second endpoint (spot list) is scripted under `<id>_spot`.
+    for (const id of ['gate', 'bitget', 'okx']) {
+      P[id].spotTickers = async () => {
+        const s = script[`${id}_spot`];
+        return s ? s[Math.min(pass, s.length) - 1] : result('OK');
+      };
+    }
     P.solanaRpc.diagnose = async () => nodes;
     P.solanaRpc.describe = () => ({ account, endpoints: nodes.map((n) => ({ id: n.id, label: n.label, keyed: n.keyed })) });
     return P;
@@ -103,6 +110,17 @@ test('a source broken on both passes fails the workflow, with an error annotatio
   const gate = probeGate(report);
   assert.equal(gate.code, 1);
   assert.ok(gate.lines.includes('::error title=Upbit::HTTP_ERROR HTTP 404: gone'), gate.lines.join('\n'));
+});
+
+test('an exchange is probed on both endpoints: a broken spot list fails it even when the perpetuals answer', async () => {
+  const { make } = scripted({ okx_spot: [result('HTTP_ERROR', 'HTTP 403: forbidden'), result('HTTP_ERROR', 'HTTP 403: forbidden')] });
+  const report = await runProbes({ makeProviders: make, settleMs: 0 });
+  const okx = report.rows.find((r) => r.id === 'okx');
+  assert.equal(okx.verdict, VERDICT.BROKEN);
+  assert.equal(okx.message, 'spot: HTTP 403: forbidden', 'the failing endpoint is named');
+  const gate = report.rows.find((r) => r.id === 'gate');
+  assert.equal(gate.verdict, VERDICT.OK);
+  assert.equal(gate.records, 6, 'both endpoints counted');
 });
 
 test('a worse second answer never replaces a better first one', async () => {

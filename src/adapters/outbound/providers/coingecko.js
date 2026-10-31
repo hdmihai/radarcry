@@ -67,8 +67,10 @@ export function createCoinGecko({ http, cfg, apiKey = null, plan = 'demo' }) {
       for (const r of rows) {
         const list = [];
         for (const [chain, address] of Object.entries(r.platforms ?? {})) {
-          if (!address || !normChain(chain)) continue;
-          list.push({ chain, address });
+          if (!address) continue;
+          // Chains the pipeline cannot read stay in the map, marked: they still say the coin is a
+          // token (with a contract somewhere), not a chain's native coin — the validity gate needs that.
+          list.push(normChain(chain) ? { chain, address } : { chain, address, unsupported: true });
         }
         if (list.length) map.set(r.id, list);
       }

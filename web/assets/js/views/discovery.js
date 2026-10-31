@@ -12,7 +12,7 @@
 import { html, tip } from '../core/dom.js';
 import { compact, days, frac, num, pct, price, score, signClass, usd } from '../core/format.js';
 import { SEVERITY, icon } from '../core/labels.js';
-import { meter, qualityDot, searchBox, sortSelect } from './widgets.js';
+import { meter, qualityDot, searchBox, sortSelect, validityBadge, validityList } from './widgets.js';
 
 const STAGE_TONE = { 0: 'muted', 1: 'good', 2: 'good', 3: 'warning', 4: 'serious' };
 
@@ -155,6 +155,7 @@ function listCard(row, s) {
         </button>
         <span class="pill" data-tone="${STAGE_TONE[v.stage] ?? 'muted'}">Stage ${v.stage} · ${v.stageLabel}</span>
         <span class="pill" data-tone="${BAND_TONE[v.band] ?? 'muted'}">${v.bandLabel}</span>
+        ${validityBadge(row.validity)}
         ${alphaPills(row)}
         ${SELECTED_BY[row.selectedBy] ? html`<span class="pill" data-tone="muted" data-tip="${tip(SELECTED_BY[row.selectedBy].tip)}">${SELECTED_BY[row.selectedBy].label}</span>` : ''}
       </div>
@@ -198,6 +199,7 @@ function card(row, s) {
         <span class="pill" data-tone="${STAGE_TONE[v.stage] ?? 'muted'}" data-tip="${tip(html`<b>Stage ${v.stage} — ${v.stageLabel}</b><br>${v.stageMeaning}`)}">Stage ${v.stage} · ${v.stageLabel}</span>
         <span class="pill" data-tone="${BAND_TONE[v.band] ?? 'muted'}">${v.bandLabel}</span>
         ${v.answersQuestion ? html`<span class="pill" data-tone="good" data-tip="${tip('Îndeplinește toate cele trei condiții pentru candidat timpuriu ȘI are schimbări simultane în cel puțin două familii — exact forma întrebării proiectului.')}">${icon('target', 12)} răspunde la întrebare</span>` : ''}
+        ${validityBadge(row.validity)}
         ${alphaPills(row)}
         ${SELECTED_BY[row.selectedBy] ? html`<span class="pill" data-tone="muted" data-tip="${tip(SELECTED_BY[row.selectedBy].tip)}">${SELECTED_BY[row.selectedBy].label}</span>` : ''}
       </div>
@@ -261,6 +263,9 @@ function card(row, s) {
       <div class="dcard-timing">${icon('clock', 13)} ${t.timing}</div>
       ${t.confirms?.length ? html`<details class="confirms"><summary>Ce ar confirma teza (${t.confirms.length})</summary>
         <ul>${t.confirms.map((c) => html`<li><b>${c.label}</b> — ${c.detail} <span class="muted xs">(${c.where})</span></li>`)}</ul>
+      </details>` : ''}
+      ${row.validity?.checks?.length ? html`<details class="confirms"><summary>Verificare de validitate (${row.validity.checks.length} verificări${row.validity.warnings?.length ? `, ${row.validity.warnings.length} ${row.validity.warnings.length === 1 ? 'atenționare' : 'atenționări'}` : ''})</summary>
+        ${validityList(row.validity)}
       </details>` : ''}
       ${platformRow(row, s.methodology?.platforms)}
     </footer>
@@ -330,6 +335,10 @@ export function discoveryMarkup(s) {
         <b class="num">${totalSimultaneous}</b><span>cu schimbări simultane</span>
         <small class="muted">≥3 schimbări în ≥2 familii, fereastră de 7 zile${totalSimultaneous !== counts.simultaneous ? html`; ${counts.simultaneous} publicate aici` : ''}</small>
       </div>
+      ${d.validity ? html`<div class="qstat" data-tone="good">
+        <b class="num">${num(d.validity.valid)}</b><span>proiecte verificate</span>
+        <small class="muted">capitalizare &lt; ${usd(s.meta?.config?.maxMarketCapUsd)}, identificate, listate, fără capcane în contract · ${num(d.validity.rejected)} respinse și ${num(d.validity.pending)} în verificare — <a href="#/validare">motivele</a></small>
+      </div>` : ''}
       <div class="qstat">
         <b class="num">${d.analysed}</b><span>proiecte analizate în adâncime</span>
         <small class="muted">din ${num(s.health?.universe?.eligible)} eligibile după filtrul de small-cap${cov?.priority ? html`; prioritate ${num(cov.priority)}` : ''}${cov ? html`; ${num(cov.prescreened)} aduse de motorul de schimbări` : ''}${unpublished ? html`; vârful clasamentului aici, restul de ${num(unpublished)} în <a href="#/univers">Univers</a>` : ''}</small>

@@ -108,9 +108,48 @@
         "platforms": { "type": "array", "minItems": 1 },
         "secrets": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/secret" } }
       }
+    },
+    "validity": {
+      "description": "Poarta de validitate: politica, numărătorile și proiectele oprite (respinse cu motivul, în verificare cu dovada lipsă). Opțional — snapshot-urile de dinaintea porții nu îl au.",
+      "type": "object",
+      "required": ["policy", "checks", "summary", "rejected", "pending", "note"],
+      "properties": {
+        "policy": { "type": "object", "required": ["minMarketCapUsd", "maxMarketCapUsd", "maxTaxPct", "minDexLiquidityUsd", "minSpotVolumeUsd"] },
+        "checks": { "type": "array", "minItems": 5, "items": { "type": "object", "required": ["key", "label", "required"] } },
+        "summary": {
+          "type": "object",
+          "required": ["checked", "valid", "pending", "rejected", "byCode", "byCheck"],
+          "properties": {
+            "checked": { "type": "integer", "minimum": 0 },
+            "valid": { "type": "integer", "minimum": 0 },
+            "pending": { "type": "integer", "minimum": 0 },
+            "rejected": { "type": "integer", "minimum": 0 }
+          }
+        },
+        "rejected": { "type": "array", "items": { "$ref": "#/$defs/validityListed" } },
+        "pending": { "type": "array", "items": { "$ref": "#/$defs/validityListed" } }
+      }
     }
   },
   "$defs": {
+    "validityStatus": { "enum": ["VALID", "PENDING", "REJECTED"] },
+    "validityVerdict": {
+      "type": "object",
+      "required": ["status", "label", "checks", "warnings"],
+      "properties": {
+        "status": { "$ref": "#/$defs/validityStatus" },
+        "checks": { "type": "array", "minItems": 5, "items": { "type": "object", "required": ["key", "label", "status"], "properties": { "status": { "enum": ["PASS", "WARN", "FAIL", "UNKNOWN", "NA"] } } } },
+        "warnings": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "validityListed": {
+      "type": "object",
+      "required": ["key", "symbol", "name", "status", "codes", "why"],
+      "properties": {
+        "status": { "enum": ["PENDING", "REJECTED"] },
+        "codes": { "type": "array", "items": { "type": "string" } }
+      }
+    },
     "score01": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
     "score100": { "type": ["number", "null"], "minimum": 0, "maximum": 100 },
     "providerStatus": { "enum": ["OK", "PARTIAL", "NOT_CONFIGURED", "RATE_LIMITED", "TIMEOUT", "HTTP_ERROR", "NETWORK_ERROR", "INVALID_PAYLOAD", "GEO_BLOCKED", "CIRCUIT_OPEN", "BUDGET_EXHAUSTED", "QUOTA_EXHAUSTED", "SKIPPED"] },
@@ -166,6 +205,7 @@
       "type": "object",
       "required": ["key", "symbol", "name", "verdict", "thesis", "changed", "score", "risk", "market", "onchain", "platforms"],
       "properties": {
+        "validity": { "$ref": "#/$defs/validityVerdict" },
         "verdict": {
           "type": "object",
           "required": ["answersQuestion", "earlyResearchCandidate", "stage", "stageLabel", "band", "opportunity", "momentum", "earliness", "risk", "confidence", "tests"],
@@ -267,6 +307,7 @@
       "type": "object",
       "required": ["key", "symbol", "name", "depth", "market", "score", "stage", "hype", "signal", "analogs", "domains", "risk", "whyNow", "missing"],
       "properties": {
+        "validity": { "$ref": "#/$defs/validityVerdict" },
         "depth": { "enum": ["deep", "light"] },
         "score": {
           "type": "object",
