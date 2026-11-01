@@ -96,6 +96,8 @@ export function createGitHub({ token = null, repo, fetchImpl = fetch, timeoutMs 
     },
     dispatch: async (file, ref, inputs) => call('POST', `${base}/actions/workflows/${encodeURIComponent(file)}/dispatches`, { ref, ...(inputs ? { inputs } : {}) }),
     // Issues (the notifier's only surface).
+    // The thread a follow-up continues („de ce?” after a question), oldest first; read-only.
+    issueComments: async (number, perPage = 100) => map(await call('GET', `${base}/issues/${Number(number)}/comments?per_page=${perPage}`), (d) => (d ?? []).map((c) => ({ id: c.id, author: c.user?.login ?? null, body: c.body ?? '', createdAt: c.created_at }))),
     openIssues: async () => map(await call('GET', `${base}/issues?state=open&per_page=50`), (d) => (d ?? []).filter((i) => !i.pull_request).map((i) => ({ number: i.number, title: i.title, body: i.body ?? '', url: i.html_url }))),
     createIssue: async (title, body) => map(await call('POST', `${base}/issues`, { title, body }), (d) => ({ number: d.number, url: d.html_url })),
     updateIssue: async (number, fields) => map(await call('PATCH', `${base}/issues/${Number(number)}`, fields), (d) => ({ number: d.number, url: d.html_url, state: d.state })),

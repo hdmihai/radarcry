@@ -37,7 +37,7 @@ export const FIXTURE_WORKFLOWS = Object.freeze([
 
 const CI_STEPS = ['Set up job', 'Run actions/checkout@v7', 'Run actions/setup-node@v7', 'Syntax + tests (architecture rules, domain engines, contract, end to end)', 'Quality gates summary (read by the AI agent)', 'Offline DEMO scan, contract validation and site build', 'The pulse runs on top of the published snapshot without breaking the contract', 'Run summary', 'The committed label dataset is present and classifies'];
 const SCAN_STEPS = ['Set up job', 'Run actions/checkout@v7', 'Syntax check + tests (zero dependencies, no install step, no network)', 'Restore research state from the cri-state branch', 'Full scan (live)', 'Scan (demo, simulated market)', 'Validate the published contract', 'Save research state (single-commit orphan branch)', 'Build static site', 'Run summary', 'Check that GitHub Pages publishes from Actions'];
-const GATE_COUNTS = { syntax: [193, 193], 'arch.layers': [4, 4], 'arch.free': [2, 2], 'arch.research': [1, 1], 'arch.deterministic': [1, 1], 'arch.parity': [1, 1], 'arch.workflows': [1, 1], domain: [146, 146], application: [63, 63], adapters: [50, 50], scripts: [9, 9], web: [18, 18], agent: [51, 51] };
+const GATE_COUNTS = { syntax: [197, 197], 'arch.layers': [4, 4], 'arch.free': [2, 2], 'arch.research': [1, 1], 'arch.deterministic': [1, 1], 'arch.parity': [1, 1], 'arch.workflows': [1, 1], domain: [146, 146], application: [63, 63], adapters: [50, 50], scripts: [9, 9], web: [18, 18], agent: [67, 67] };
 
 /** The commits of the simulated three weeks (days relative to the anchor), with the two incidents. */
 const COMMITS = [
@@ -154,6 +154,7 @@ export function createFixturePorts({ anchorMs, clock, stateDir, dataDir = null, 
       if (!f || f.r.createdAt > clock.now()) return { ok: false, status: 'HTTP_ERROR', data: null, message: 'HTTP 404' };
       return ok({ ...view(f.file, f.r, clock.now()), name: FIXTURE_WORKFLOWS.find((w) => w.file === f.file)?.name ?? f.file });
     },
+    issueComments: async () => ok(scenario.comments ?? []),
     agentPulls: async () => ok((scenario.pulls ?? DEMO_PULLS).map((p) => ({ ...p, createdAt: iso(anchorMs + p.d * DAY), closedAt: p.closedD === undefined ? null : iso(anchorMs + p.closedD * DAY) })).filter((p) => Date.parse(p.createdAt) <= clock.now())),
     jobs: async (runId) => {
       const f = findRun(runId);

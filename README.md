@@ -14,9 +14,10 @@ Pe lângă răspunsul la întrebare, fiecare proiect verificat primește o **pro
 învățată din câștigătorii ultimului an (LAB, BTW, IRYS, AKEDO, pippin…), iar un **agent AI separat**
 monitorizează gratuit toate porțile de calitate ale proiectului, măsoară cât de bine identifică radarul
 proiectele care cresc, judecă prognoza după **reguli fundamentale scrise în memoria lui**, își
-**notează singur predicțiile** (auto-evaluare) și răspunde gratuit proprietarului — dintr-un comentariu
-`/agent …` sau din terminal (Termux inclus) — cu diagnoze și, la cerere, cu **cod propus ca pull
-request**, testat înainte.
+**notează singur predicțiile** (auto-evaluare) și **vorbește cu proprietarul în limbaj natural, în text
+simplu** — „cum stă radarul?”, „de ce a picat scanarea?”, „ce s-a schimbat de ieri?” — gratuit, pe GitHub
+sau din terminal (Termux inclus), cu diagnoze și, la cerere, cu **cod propus ca pull request**, testat
+înainte.
 
 Toate cerințele de business, cu criteriul de acceptare și locul în care fiecare este verificată, sunt
 în secțiunea [Cerințele de business](#cerințele-de-business).
@@ -281,17 +282,23 @@ nu este listată ca îndeplinită.
     prognozei și a eficienței de identificare. *Acceptare:* `agent/knowledge/rules.json` încărcat la
     fiecare rulare, cu versiune și amprentă; fiecare regulă evaluată pe datele proiectului, cu istoricul
     verdictelor; orice schimbare de prag înregistrată. *Verificat:* `agent.rules`.
-22. **Interacțiune gratuită cu agentul.** *Acceptare:* un comentariu `/agent …` pe GitHub (de pe
-    telefon sau desktop), terminalul (`npm run agent:chat`, Termux inclus) și linkul din dashboard;
-    răspunde doar proprietarului și colaboratorilor. *Verificat:* `test/agent/chat.test.js`, testul de
+22. **Interacțiune gratuită cu agentul, în limbaj natural și în text simplu.** *Acceptare:* agentul
+    înțelege întrebări obișnuite, fără comenzi și cu diacritice opționale, inclusiv continuările scurte
+    („de ce?”, „detalii”) citite în contextul discuției; răspunde în text simplu — fără Markdown, cu
+    numere românești și ora României; pe GitHub într-o problemă al cărei titlu începe cu „Agent” (fără
+    prefix) sau într-un comentariu `/agent …`, în terminal (`npm run agent:chat`, Termux inclus) și din
+    linkul dashboard-ului; răspunde doar proprietarului și colaboratorilor. *Verificat:*
+    `test/agent/intent.test.js` (peste 110 propoziții, fiecare și fără diacritice),
+    `test/agent/plain.test.js`, `test/agent/chat.test.js` (niciun răspuns cu Markdown), testul de
     arhitectură al `agent-chat.yml`.
 23. **Capabilități de tip Copilot: scrie cod, diagnoză, auto-evaluare a capacității de învățare.**
-    *Acceptare:* `/agent cod …` produce un pull request pe o ramură `agent/…`, cu testele rulate într-un
-    job care nu poate scrie, fără să atingă workflow-urile sau testele de arhitectură, fără merge și
-    fără scriere în main; `/agent diagnoză …` dă pașii căzuți, adnotările, semnătura, commiturile
-    suspecte și remedierea care a funcționat data trecută; `/agent învățare` și poarta `agent.learning`
-    arată scorul Brier al predicțiilor agentului față de regulile naive, curba de învățare și câte
-    propuneri de cod a acceptat proprietarul. *Verificat:* `test/agent/chat.test.js`, regula MON-1.
+    *Acceptare:* o cerere de cod în cuvinte („scrie un test pentru …”) sau `/agent cod …` produce un
+    pull request pe o ramură `agent/…`, cu testele rulate într-un job care nu poate scrie, fără să
+    atingă workflow-urile sau testele de arhitectură, fără merge și fără scriere în main; „de ce a picat
+    …?” dă pașii căzuți, mesajul, semnătura, commiturile suspecte și remedierea care a funcționat data
+    trecută; „ce ai învățat?” și poarta `agent.learning` arată scorul Brier al predicțiilor agentului
+    față de regulile naive, curba de învățare și câte propuneri de cod a acceptat proprietarul.
+    *Verificat:* `test/agent/chat.test.js`, regula MON-1.
 24. **Model de limbaj deschis, rulat local, gratuit** (Ollama în runner; niciun cont, nicio cheie,
     niciun serviciu Google/Gemini) și **nicio cifră inventată**: orice text al modelului trece garda.
     *Verificat:* `agent.narrator`, regula P-4.
@@ -338,7 +345,7 @@ npm run build && npm run serve
 | `npm run probe` | o cerere mică per furnizor (a doua trecere pentru ce nu a răspuns); stare, latență, chei lipsă, pașii de înscriere și ce nod Solana servește ce metodă |
 | `npm run labels` | reconstruiește setul de etichete on-chain din eth-labels (MIT) |
 | `npm run demo` | scanare simulată + agentul AI pe istoric simulat + build + server local |
-| `npm run ci` | verificare de sintaxă (193 de fișiere) + 347 de teste (arhitectură, motoare, contract, end-to-end, agent) |
+| `npm run ci` | verificare de sintaxă (197 de fișiere) + 363 de teste (arhitectură, motoare, contract, end-to-end, agent) |
 | `npm run ci:gates` | aceeași suită, raportată pe porți de calitate (`.gates.json`, citit de agent în CI) |
 | `npm run agent` | agentul AI pe repository-ul real (`GITHUB_REPOSITORY=owner/nume`, doar citire fără token) |
 | `npm run agent:demo` | agentul AI pe istoricul simulat al demo-ului → `data/agent.json` |
@@ -457,21 +464,20 @@ model (credit 85 %), la fel ca harta de lichidări.
 
 Toate verificările de care depinde proiectul — **39 de porți** — într-un singur catalog
 (`agent/domain/gates.js`), evaluate de agentul AI la fiecare rulare. Starea de mai jos este cea
-**măsurată de agent pe repository-ul live** pe 31 octombrie 2026, 20:39 UTC (versiunea anterioară,
-3e0bd0a): 29 trecute, 4 atenționări, 0 eșecuri, 1 necunoscută, 2 în învățare; porțile marcate *nou*
-încep să fie măsurate după push.
+**măsurată de agent pe repository-ul live** pe 1 noiembrie 2026, 06:33 UTC (versiunea anterioară,
+714b4f8): 30 trecute, 5 atenționări, 0 eșecuri, 1 necunoscută, 3 în învățare.
 
 **Cod — CI la fiecare push, pe Node 22 și 24**
 
 | Poartă | Ce verifică | Stare live |
 |---|---|---|
-| CI verde pe ultimul commit din main | suita completă, ambele versiuni de Node | ✅ 3e0bd0a, ambele joburi |
+| CI verde pe ultimul commit din main | suita completă, ambele versiuni de Node | ✅ 714b4f8, ambele joburi |
 | Sintaxă validă | `node --check` pe src, web, scripts, test, agent | ✅ |
 | Arhitectură hexagonală | domeniu pur și determinist, aplicația doar spre domeniu, simulator = adaptoare reale, workflow-uri fără concurență comună | ✅ |
 | Doar surse gratuite | fiecare URL din adaptoare pe lista aprobată; CoinGlass API, Dune API, X API, Moralis, Etherscan, CryptoPanic, **CoinGecko Pro** interzise | ✅ |
 | Exclusiv research | niciun endpoint de ordine sau retragere | ✅ |
 | Teste de domeniu / aplicație / adaptoare / interfață | 146 / 63 / 59 / 18 teste | ✅ |
-| Testele agentului AI | porți, norme, cadență, calibrare, identificare, reguli, auto-evaluare, chat, cod | ✅ 30/30 pe 3e0bd0a; 51 în această versiune |
+| Testele agentului AI | porți, norme, cadență, calibrare, identificare, reguli, auto-evaluare, chat, cod | ✅ 51/51 pe 714b4f8; 67 în această versiune |
 | Scanare DEMO offline + contract + site | simulare de 10 zile, schemă validă, `dist/` complet | ✅ |
 | Pulsul păstrează contractul | pulsul nu încalcă schema | ✅ |
 | Etichetele on-chain clasifică | eth-labels (MIT) prezent și verificat | ✅ |
@@ -480,26 +486,26 @@ Toate verificările de care depinde proiectul — **39 de porți** — într-un 
 
 | Poartă | Ce verifică | Stare live |
 |---|---|---|
-| Ultima scanare live a reușit | fără republicarea snapshot-ului vechi | ✅ 20:01 UTC, 14,3 min |
+| Ultima scanare live a reușit | fără republicarea snapshot-ului vechi | ✅ 06:18 UTC, 14,7 min |
 | Contractul publicat respectă schema | `data/latest.json` validat înainte de publicare | ✅ |
 | Sursele obligatorii au răspuns | universul CoinGecko, lumânările 1D/4H | ✅ 2/2 |
-| Furnizorii gratuiți răspund | eșecuri și rata de succes istorică | ⚠️ 16/20 — Solana RPC public limitat (23 %), GoPlus 74 %, GeckoTerminal 83 %, GitHub 78 % (limite de rată pe IP-urile partajate ale GitHub; `SOLANA_RPC_URL` de la Helius Free le ridică) |
-| Bugetele planurilor gratuite | consum lunar proiectat < 80 % | ✅ max 15,7 % (CoinGecko Demo) |
-| Poarta de validitate aplicată | fiecare proiect eligibil are verdict, niciun respins în liste | ✅ 401 verificate · 0 în verificare · 81 respinse |
-| Prognoza ≥100× | eveniment declarat, câștigători confirmați, rată plauzibilă, fără date din viitor, validare în afara eșantionului | ✅ 8 confirmați, bază 0,45 %/an (versiunea anterioară: „de la minim la vârf”; aceasta publică rata pe zi și validarea) |
-| Durata scanării în normă | sub `runtime.maxMinutes` și în norma învățată | ✅ 12,9 din 22 min |
-| Universul în normă | top 1000 complet, eligibile fără prăbușiri | ✅ 4 537 unificate, 482 eligibile, toate cercetate |
-| Starea cercetării salvată | `cri-state` conține ultima scanare | ✅ 30 de rulări |
-| Site-ul publică ultimul snapshot | GitHub Pages servește aceeași rulare | ✅ sincron cu rularea de la 20:02 UTC |
-| Prospețimea datelor | vârsta snapshot-ului față de cadența promisă | ✅ 0,6 h |
+| Furnizorii gratuiți răspund | eșecuri și rata de succes istorică | ⚠️ 16/20 — Solana RPC public limitat (21 %), GoPlus 77 %, GeckoTerminal 85 %, GitHub 78 % (limite de rată pe IP-urile partajate ale GitHub; `SOLANA_RPC_URL` de la Helius Free le ridică) |
+| Bugetele planurilor gratuite | consum lunar proiectat < 80 % | ✅ max 10,5 % (CoinGecko Demo) |
+| Poarta de validitate aplicată | fiecare proiect eligibil are verdict, niciun respins în liste | ✅ 378 verificate · 0 în verificare · 103 respinse |
+| Prognoza ≥100× | eveniment declarat, câștigători confirmați, rată plauzibilă, fără date din viitor, validare în afara eșantionului | ✅ 15 confirmați; bază 0,17 % pentru o zi oarecare (0,67 %/an); în afara eșantionului, jumătate din cei ≥20× sunt în top 20 % |
+| Durata scanării în normă | sub `runtime.maxMinutes` și în norma învățată | ✅ 13,2 din 22 min |
+| Universul în normă | top 1000 complet, eligibile fără prăbușiri | ✅ 4 540 unificate, 481 eligibile, toate cercetate |
+| Starea cercetării salvată | `cri-state` conține ultima scanare | ✅ 33 de rulări |
+| Site-ul publică ultimul snapshot | GitHub Pages servește aceeași rulare | ✅ sincron cu rularea de la 06:19 UTC |
+| Prospețimea datelor | vârsta snapshot-ului față de cadența promisă | ✅ 0,2 h |
 | Nicio cheie în fișierele publicate | snapshot, rezumat, univers, raportul agentului | ✅ 3 fișiere, 3,9 MB, curate |
 
 **Cadență și programare**
 
 | Poartă | Ce verifică | Stare live |
 |---|---|---|
-| Cadența scanării | rulări efective / promise, 7 zile | ⚠️ 4,3 / 6 pe zi (72 %), interval median 5,9 h, maxim 10,3 h |
-| Cadența pulsului | idem, „best effort” prin design | ⚠️ 5,5 / 96 pe zi (6 %) |
+| Cadența scanării | rulări efective / promise, 7 zile | ⚠️ 4,3 / 6 pe zi (71 %), interval median 5,9 h, maxim 10,3 h |
+| Cadența pulsului | idem, „best effort” prin design | ⚠️ 5,4 / 96 pe zi (6 %), interval median 4,5 h |
 | Workflow-uri active | niciunul dezactivat | ✅ 5/5 |
 | Activitate în repository | programările se opresc după 60 de zile fără activitate | ✅ |
 
@@ -508,14 +514,14 @@ Toate verificările de care depinde proiectul — **39 de porți** — într-un 
 | Poartă | Ce verifică | Stare live |
 |---|---|---|
 | Sonda săptămânală | un apel pe fiecare furnizor | ✅ 27 oct (eșecul din 26 oct a fost rezolvat de commitul 2c6def4 — reconstruit de agent) |
-| Actualizarea lunară a etichetelor | reconstruire eth-labels + PR | … prima rulare pe 1 noiembrie |
+| Actualizarea lunară a etichetelor | reconstruire eth-labels + PR | … așteaptă prima rulare programată (1 noiembrie) |
 | Calibrarea prognozei | observat față de prognozat, Brier la scadență | … în învățare: prima cohortă, 415 prognoze înregistrate |
 | Track record-ul semnalelor | rezultat la 7 / 14 / 30 de zile | … în învățare (1 semnal în cohortă, nicio scadență atinsă) |
-| Eficiența identificării | proiectele semnalate ating +20 % în 72 h mai des decât universul? regulile ID-1…ID-5 | *nou* — calculat pe istoricul live: TIMPURIU ×1,97, Stage 2 ×1,25, ordinea respectată; verdictul a prins 0 % din 121 de mișcări (atenționare, cu recomandare) |
-| Memoria agentului | norme, incidente, remedieri | ✅ 4 rulări: 26 din 36 de norme învățate, 2 incidente rezolvate cu commitul care le-a încheiat, 3 remedieri reținute |
-| Narațiunea AI | model deschis local, verificat cifră cu cifră | ⚠️ șablon: pasul Ollama ieșea cu cod 1 (serverul local nu răspundea după instalare) — corectat în această versiune: serverul este pornit explicit, iar motivul exact apare în dovada porții |
-| Regulile fundamentale | 21 de reguli încărcate cu versiune și amprentă, evaluate la fiecare rulare | *nou* |
-| Auto-evaluarea | Brier-ul predicțiilor agentului față de „ca data trecută” și de frecvența simplă | *nou* — în învățare până la 24 de rulări notate |
+| Eficiența identificării | proiectele semnalate ating +20 % în 72 h mai des decât universul? regulile ID-1…ID-5 | ⚠️ TIMPURIU ×1,66 pe 2 978 de observații din 14 scanări, ordinea respectată (ID-3); Stage 2 ×0,9 (ID-2) și verdictul strict 0 % din 132 de mișcări (ID-5) — atenționări, cu recomandare |
+| Memoria agentului | norme, incidente, remedieri | ✅ 10 rulări: 27 din 36 de norme învățate, 5 incidente rezolvate, 4 remedieri reținute |
+| Narațiunea AI | model deschis local, verificat cifră cu cifră | ⚠️ șablon: modelul local rulează acum în runner, dar garda i-a respins textul — scrisese „35 cu starea WARN”, cifră care nu există în fapte (erau 5 atenționări). În această versiune promptul cere text simplu și interzice adunările, iar markup-ul modelului e curățat înainte de gardă |
+| Regulile fundamentale | 21 de reguli încărcate cu versiune și amprentă, evaluate la fiecare rulare | ✅ v1.0.0: 14 trec, 3 atenționări, 4 în învățare |
+| Auto-evaluarea | Brier-ul predicțiilor agentului față de „ca data trecută” și de frecvența simplă | … în învățare: 5 din 24 de rulări notate, 165 de predicții; normele: 93,4 % din valorile noi în bandă (ținta 80 %) |
 
 Fiecare rulare CI publică porțile de cod ca adnotări GitHub (`scripts/gate-reporter.js` +
 `scripts/gates-annotate.js`), iar tabelul de mai sus este regenerat de agent în ecranul **Agent AI**.
@@ -562,8 +568,8 @@ Ce spun cifrele, onest:
   **recomandă**, cu dovezi, nivelul cel mai precis care prinde măcar 5 % din mișcări: banda TIMPURIU
   (oportunitate 60–75; lift 1,97, limita inferioară 1,31, 12,4 % din mișcări). Varianta Stage 1–2 cu
   oportunitate ≥ 60 are lift 1,66, dar intervalul ei coboară încă sub 1. Pragul de 75 este o cerință de
-  business și **rămâne** până când proprietarul decide altfel (regula P-5); comanda `/agent eficiență`
-  arată tabelul actualizat oricând.
+  business și **rămâne** până când proprietarul decide altfel (regula P-5); întrebarea „cât de bine
+  prinde radarul proiectele bune?” arată tabelul actualizat oricând.
 - **Eșantionul este încă mic** (o săptămână de istoric) și piața acelor zile a fost în scădere
   (rezultatul median al tuturor observațiilor: −1,6 %); agentul recalculează totul la fiecare rulare,
   iar fereastra de 7 zile (+30 %) intră în calcul de la prima săptămână completă.
@@ -647,7 +653,7 @@ de prag este ea însăși un eveniment înregistrat), iar verdictul fiecăreia s
 | **MON-2** Normele sunt învățate | ≥ 70 % din metrici au normă | |
 | **MON-3** Datele sunt proaspete | cadența scanării ≥ 75 % din programare | |
 
-`/agent reguli ID-5` arată regula, dovada de acum, recomandarea și istoricul ei.
+„Ce spune regula ID-5?” arată regula, dovada de acum, recomandarea și istoricul ei.
 
 ![Reguli fundamentale (demo)](docs/img/agent-rules.png)
 
@@ -657,52 +663,90 @@ live, ID-1…ID-3 trec (secțiunea de mai sus).*
 
 ---
 
-## Vorbește cu agentul AI — gratuit
+## Vorbește cu agentul AI — gratuit, în cuvintele tale
 
-Cum interacționați gratuit cu agentul: trei căi, toate fără cont nou, fără cheie și fără abonament.
+Agentul înțelege întrebări obișnuite, scrise cum îți vin — cu sau fără diacritice, fără comenzi de
+memorat — și răspunde **în text simplu**: propoziții scurte, la persoana întâi, numere ca în română
+(`10,1` · `2 362`), ora României (`31 octombrie, 22:10`), fără Markdown — fără asteriscuri, diezi sau
+tabele care pe telefon și în Termux ar apărea ca zgomot. Înțelegerea nu are nevoie de niciun model:
+indicii cântărite pentru fiecare intenție și entitățile din frază (o rulare, un workflow, o poartă, o
+regulă, simbolul unui proiect, un interval de timp), deci merge la fel pe GitHub, pe telefon și în
+Termux. Doar când o frază rămâne neclară și modelul local e pornit, modelul o încadrează — în același
+vocabular, verificat; orice text scris de model trece garda de cifre și e curățat de markup.
 
-**1. Un comentariu pe GitHub** (din aplicația GitHub de pe telefon sau din browser): în orice problemă
-(issue) sau pull request, un comentariu care începe cu `/agent`. Răspunsul vine ca un comentariu, de
-obicei în 1–3 minute (cu modelul local, câteva minute în plus). Răspunde doar proprietarului și
-colaboratorilor repository-ului; ceilalți sunt ignorați. Din dashboard, ecranul **Agent AI** are un link
-care deschide direct o întrebare.
-
-| Comandă | Ce face |
+| Întrebi, de exemplu | Primești |
 |---|---|
-| `/agent stare` | starea generală, ce cere atenție, eficiența, identificarea, auto-evaluarea |
-| `/agent porți [grup \| id]` | porțile, întâi cele care nu trec (`cod`, `rulare`, `cadenta`, `periodic`, `model`, `agent`) |
-| `/agent diagnoză [id \| run <id> \| scan]` | **diagnoza**: pașii căzuți, adnotările, semnătura eșecului, commiturile de la ultima rulare reușită, remedierea care a mers data trecută |
-| `/agent eficiență` | tabelul identificării pe niveluri (lift, intervale, recall) și recomandările |
-| `/agent prognoză LAB` | probabilitatea ≥100× / ≥20× a unui proiect, baza ei și cele mai apropiate amprente |
-| `/agent reguli [ID]` | regulile fundamentale cu verdictul și istoricul lor |
-| `/agent învățare` | **auto-evaluarea**: Brier față de regulile naive, curba de învățare, normele, lecțiile, propunerile de cod acceptate |
-| `/agent întreabă <întrebare>` | răspuns din documentație (inclusiv aceste cerințe de business) și din raport, cu pasajele folosite |
-| `/agent cod <sarcina>` | **scrie cod**: pull request pe o ramură `agent/…`, cu testele rulate înainte |
-| `/agent ajutor` | lista comenzilor |
+| „cum stă radarul azi?” | starea, ce cere atenție și ce ajută, eficiența, identificarea, auto-evaluarea |
+| „ce s-a schimbat de ieri?” · „în ultimele 6 ore?” | problemele apărute și cele rezolvate (cu commitul care le-a închis), porțile la început și acum, regulile care și-au schimbat verdictul, ce a pornit agentul |
+| „de ce a picat scanarea?” · „ce nu merge la site?” · „de ce a picat rularea 123…?” | **diagnoza**: pasul căzut, mesajul, semnătura eșecului, commiturile de la ultima rulare reușită, remedierea care a mers data trecută |
+| „ce proiecte semnalează radarul?” | răspunsurile exacte la întrebarea radarului, candidații de research timpuriu sau, dacă nu sunt, cei mai apropiați — o listă de cercetat, nu de cumpărat |
+| „cât de bine prinde radarul proiectele bune?” | identificarea pe niveluri (lift, intervale, recall) și recomandările |
+| „ce șanse are LAB?” · „care au cele mai mari șanse?” | prognoza ≥100× / ≥20×, baza ei și cele mai apropiate amprente |
+| „ce reguli nu trec?” · „ce spune regula ID-5?” | regulile fundamentale, cu verdictul și istoricul lor |
+| „ce ai învățat?” | **auto-evaluarea**: Brier față de regulile naive, curba de învățare, normele, lecțiile, propunerile de cod acceptate |
+| „cum se calculează prognoza?” | răspunsul din documentație (inclusiv aceste cerințe de business), cu sursa |
+| „scrie un test pentru …” · „adaugă o funcție care …” | **cod**: un pull request pe o ramură `agent/…`, cu testele rulate înainte |
+| „pornește o scanare” | ce pornește agentul singur și în ce limite, și cum o pornești tu |
 
-Diacriticele sunt opționale (`/agent diagnoza` = `/agent diagnoză`), iar o propoziție fără cuvânt de
-comandă este tratată ca întrebare.
+O discuție are fir: după un răspuns poți continua scurt — „de ce?”, „cum repar?”, „detalii”, „și
+pulsul?” — iar agentul citește continuarea în contextul ei: pe GitHub mesajul tău de dinainte din aceeași
+problemă (sau, dacă nu există, titlul și primul ei mesaj), în terminal rândul anterior. „De ce?” după
+„cum stă radarul?” dă cauzele; „detalii” dă lista întreagă; un „de ce?” fără nimic înainte primește
+întrebarea înapoi, nu o ghicitoare.
+
+Așa arată un răspuns (demo, istoric simulat):
+
+```text
+tu:     de ce e pulsul galben?
+agent:  „Cadența pulsului” (cad.pulse) este acum în atenționare: 7/96 pe zi.
+        Ce verifică: Rulări efective pe zi față de cron; pulsul este „best effort” prin design.
+        Ce am văzut: 49 de rulări în 7 zile = 7/zi față de 96/zi promise de „7,22,37,52 * * * *” (7%);
+        interval median 2,2 h, maxim 10,6 h.
+        Ce ajută: GitHub rulează programările „best effort” și le sare la ore aglomerate; agentul
+        completează cadența cu workflow_dispatch când nu rulează nimic, în limita zilnică din
+        agent/config.json.
+        Rulările în sine merg: ultima rulare a pulse.yml a reușit pe 1 noiembrie, 01:12.
+        — Agentul AI al CRI Radar — răspuns din raportul meu de la 31 octombrie, 22:10. Cercetare, nu
+        sfat financiar.
+```
+
+**1. Pe GitHub** (aplicația de pe telefon sau browserul): deschide o problemă (issue) al cărei titlu
+începe cu „Agent” — „Agent AI — întrebare”, „Agent: …”, „Agentul …” — sau care are eticheta `agent`, și
+scrie-i acolo: fiecare comentariu e un mesaj, fără niciun prefix. Problema în care agentul își raportează
+porțile care cer atenție e tot o conversație: un „de ce?” acolo primește cauzele, un „ce s-a schimbat de
+ieri?” noutățile. În orice altă problemă sau într-un pull request, începe comentariul cu `/agent` (de
+exemplu `/agent de ce a picat CI-ul?`). Răspunsul vine ca un comentariu, de obicei în 1–3 minute (cu
+modelul local, câteva minute în plus); răspunde doar proprietarului și colaboratorilor, ceilalți sunt
+ignorați. Ecranul **Agent AI** din dashboard are un link „Pune o întrebare”.
+
+Formele scurte de odinioară merg în continuare după `/agent` — `stare`, `porți [grup]`,
+`diagnoză [id | run <id>]`, `schimbări`, `eficiență`, `prognoză SIMBOL`, `semnale`, `reguli [ID]`,
+`învățare`, `întreabă …`, `cod <sarcina>`; fără `/agent` sunt doar indicii, nu comenzi, așa că „cod de
+eroare la scanare” rămâne o întrebare despre scanare, iar „ajutor, nu merge site-ul” o diagnoză.
 
 **2. Terminalul, inclusiv Termux:**
 
 ```bash
-npm run agent:sync                       # aduce memoria agentului (.agent) și starea cercetării (.state)
-npm run agent:chat -- stare              # o comandă
-npm run agent:chat                       # sesiune interactivă: agent> diagnoza scan
-npm run agent:chat:demo -- învățare      # pe istoricul simulat, fără rețea
+npm run agent:sync                               # aduce memoria agentului (.agent) și starea cercetării (.state)
+npm run agent:chat -- "cum stă radarul?"         # o întrebare
+npm run agent:chat                               # o conversație: agent> ce s-a schimbat de ieri?  agent> de ce?
+npm run agent:chat:demo -- "ce ai învățat?"      # pe istoricul simulat, fără rețea
 ```
 
-**3. Ca un copilot — `/agent cod …`.** Agentul caută fișierele relevante (după cale și conținut,
-împreună cu testele lor), cere unui model de cod deschis rulat local (`qwen2.5-coder:7b`) blocuri de
-editare SEARCH/REPLACE, le aplică doar dacă fiecare bloc se potrivește exact o dată, rulează `npm test`,
-îi dă modelului o rundă de reparare dacă testele cad și deschide un pull request (draft dacă testele încă
-nu trec). Siguranța este în construcție, nu în promisiuni: jobul care rulează codul propus are un token
+**3. Ca un copilot.** Codul se cere explicit, tot în cuvinte: un verb de făcut și un lucru de cod
+împreună („scrie un test pentru …”, „adaugă o funcție care …”, „fă un pull request care …”) sau
+`/agent cod …`; „repară scanarea” singur este o diagnoză, iar o continuare scurtă nu scrie niciodată cod.
+Agentul caută fișierele relevante (după cale și conținut, împreună cu testele lor), cere unui model de
+cod deschis rulat local (`qwen2.5-coder:7b`) blocuri de editare SEARCH/REPLACE, le aplică doar dacă
+fiecare bloc se potrivește exact o dată, rulează `npm test`, îi dă modelului o rundă de reparare dacă
+testele cad și deschide un pull request (draft dacă testele încă nu trec), cu descrierea tot în text
+simplu. Siguranța este în construcție, nu în promisiuni: jobul care rulează codul propus are un token
 care **doar citește**; jobul care scrie **nu rulează nimic** din repository și verifică diff-ul încă o
 dată, în shell; workflow-urile, testele de arhitectură, datele și licențele nu pot fi atinse; cel mult 8
 fișiere și 400 de linii; niciun tipar de cheie. Agentul **nu face merge și nu scrie niciodată în main** —
 revizuirea și decizia rămân ale proprietarului, iar rata de acceptare a propunerilor intră în
-auto-evaluarea lui. Local: `npm run agent:chat -- --write cod <sarcina>`, pe un clone curat, cu Ollama
-instalat.
+auto-evaluarea lui. Local: `npm run agent:chat -- --write "scrie un test pentru …"`, pe un clone curat,
+cu Ollama instalat.
 
 Pentru ca pull requestul să se deschidă singur: **Settings → Actions → General → Workflow permissions →
 „Allow GitHub Actions to create and approve pull requests”**. Fără această bifă, agentul publică ramura
@@ -809,11 +853,11 @@ Dashboard-ul este mobile-first: fiecare ecran a fost verificat la 390 px fără 
 |---|---|---|
 | `Scan & deploy` | la 4 ore, la :17 | scanare completă, validare contract, salvare stare, deploy Pages |
 | `Pulse` | la 15 minute | preț, funding, open interest; nu atinge nicio cuotă lunară |
-| `CI` | la fiecare push | sintaxă, reguli de arhitectură, 347 de teste raportate pe porți, build DEMO offline cu agentul |
+| `CI` | la fiecare push | sintaxă, reguli de arhitectură, 363 de teste raportate pe porți, build DEMO offline cu agentul |
 | `Probe surse` | săptămânal | o cerere per furnizor, a doua trecere pentru ce nu a răspuns; limitele de rată sunt avertismente, eșuează doar pe o sursă stricată |
 | `Actualizare etichete` | lunar | reconstruiește setul eth-labels și deschide un pull request |
 | `Agent AI` | după CI, scanare, sondă și etichete; orar | porțile de calitate, învățarea din istoric, eficiența identificării, regulile fundamentale, auto-evaluarea, registrul prognozelor, rezumatul local, pornirea programărilor sărite |
-| `Agent AI — chat` | la un comentariu `/agent …` | răspunsul agentului; pentru `/agent cod` un pull request testat pe o ramură `agent/…` |
+| `Agent AI — chat` | la un mesaj într-o problemă „Agent …” sau la un comentariu `/agent …` | răspunsul agentului, în text simplu; pentru o cerere de cod, un pull request testat pe o ramură `agent/…` |
 
 Starea de cercetare trăiește pe ramura orfană `cri-state`, iar memoria agentului pe `cri-agent`: câte
 un singur commit, force-push la fiecare rulare, deci nu cresc niciodată. Programările GitHub sunt
@@ -833,8 +877,8 @@ declară mereu propria vechime.
    **Agent AI** arată câte puncte de eficiență aduce fiecare.
 4. Agentul AI nu cere nimic: pornește singur după primul CI. Prima lui rulare creează ramura
    `cri-agent`; site-ul include raportul de la următoarea scanare sau următorul puls.
-5. Opțional, pentru `/agent cod`: **Settings → Actions → General → Workflow permissions → „Allow GitHub
-   Actions to create and approve pull requests”**. Restul comenzilor `/agent` funcționează fără nicio
+5. Opțional, pentru cererile de cod: **Settings → Actions → General → Workflow permissions → „Allow
+   GitHub Actions to create and approve pull requests”**. Restul conversației funcționează fără nicio
    setare.
 
 ### Primele rulări: normele proprii se construiesc
@@ -872,8 +916,8 @@ src/
 agent/             agentul AI de calitate — modul separat, nu importă nimic din src/
   domain/          porți, cron și cadență, norme robuste, incidente și remedieri, calibrare,
                    eficiență, eficiența identificării, reguli, auto-evaluare, auto-reparare,
-                   narațiune și gardă, comenzi de chat, căutare în documentație, politica de patch
-                   — pur, determinist
+                   narațiune și gardă, înțelegerea limbajului natural și textul simplu al
+                   răspunsurilor, căutare în documentație, politica de patch — pur, determinist
   application/     observă → învață → evaluează → reguli → narează → acționează; chat; porturi
   adapters/        API GitHub, fișierele de stare și de cunoaștere, Pages, prețuri publice, Ollama
                    local, spațiul de lucru git al comenzii de cod, simulator
@@ -882,7 +926,7 @@ agent/             agentul AI de calitate — modul separat, nu importă nimic d
 web/               dashboard static, ES module native, fără build step
 schema/            contractele: latest, universe, agent — validate la fiecare publicare
 config/            praguri, referințe LAB/BTW/AGT, câștigătorii documentați (winners.json), etichete
-test/              347 de teste, inclusiv cele de arhitectură ale scannerului și ale agentului
+test/              363 de teste, inclusiv cele de arhitectură ale scannerului și ale agentului
 ```
 
 Detalii de proiectare, inclusiv de ce fiecare prag este unde este: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).

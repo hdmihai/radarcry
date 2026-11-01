@@ -606,11 +606,12 @@ src/ sau web/, iar acestea nu îl importă. Contractul lui cu scannerul este doa
   24 h, observat/așteptat cu interval Poisson exact, Brier și skill la scadență, sumele cohortelor
   vechi păstrate); eficiența (paritate × prospețime × fiabilitate); auto-repararea (un plan pur);
   narațiunea și garda ei; **eficiența identificării** (`identification.js`), **regulile fundamentale**
-  (`rules.js`), **auto-evaluarea** (`selfeval.js`) și **chat-ul** (`commands.js`, `chat.js`,
-  `retrieval.js`, `patch.js`). Fără ceas, fără aleatoriu, fără I/O — verificat mecanic.
+  (`rules.js`), **auto-evaluarea** (`selfeval.js`) și **conversația** (`intent.js` — înțelegerea
+  limbajului natural, `commands.js` — formele scurte, `chat.js` — răspunsurile, `plain.js` — textul
+  simplu, `retrieval.js`, `patch.js`). Fără ceas, fără aleatoriu, fără I/O — verificat mecanic.
 - **application/** — `analyze` (observă → învață → evaluează porțile → regulile → porțile derivate →
   incidente → registru → eficiență → plan), `narrate` (model local → gardă → sau șablon, cu motivul),
-  `act` (execută planul, ține problema GitHub), `chat` (comenzile proprietarului). Rulează ca pași
+  `act` (execută planul, ține problema GitHub), `chat` (mesajele proprietarului). Rulează ca pași
   separați: modelul se instalează doar când rezumatul trebuie rescris.
 - **adapters/** — API GitHub (citiri + exact două scrieri: `workflow_dispatch` și problema agentului;
   testul de arhitectură interzice delete, cancel, re-run, merge, conținut; pull requesturile agentului
@@ -682,11 +683,32 @@ normele: o valoare nouă trebuie să cadă în banda p10–p90 a seriei de dinai
 Pentru capacitatea de a scrie cod, singura măsură care nu poate fi trucată de un test: câte dintre
 pull requesturile agentului au fost acceptate de proprietar.
 
-### Chat-ul și comanda de cod, cu două joburi
+### Conversația în limbaj natural
 
-`/agent …` într-un comentariu pornește `agent-chat.yml` (doar pentru OWNER, MEMBER, COLLABORATOR;
-comentariul ajunge la scripturi doar prin mediu, niciodată interpolat). Jobul `think` are un token care
-doar citește și un checkout fără credențiale; pentru `/agent cod …` el rulează modelul de cod, aplică
+Proprietarul scrie cum vorbește — „cum stă radarul?”, „de ce a picat scanarea?”, „ce s-a schimbat de
+ieri?” — iar `domain/intent.js` înțelege fără model: fraza e pliată (litere mici, fără diacritice),
+fiecare intenție are indicii cântărite, iar entitățile citite din frază — o rulare (URL, „rularea 123…”),
+un workflow, o poartă (după id sau după concept: „pulsul”, „site-ul”, „cheile”), o regulă, simbolul unui
+proiect (cu majuscule, cu `$` sau, într-o frază despre un proiect, un simbol cunoscut scris mic), un
+interval („de ieri”, „ultimele 6 ore”) — fac intenția concretă. Încrederea este raportul dintre primul și
+al doilea scor; sub 0,5 și cu modelul local pornit, modelul primește doar sarcina de a încadra fraza într-un
+vocabular închis, iar răspunsul lui e verificat (o intenție, o poartă sau un simbol necunoscut sunt
+ignorate). O continuare scurtă („de ce?”, „cum repar?”, „detalii”) își ia subiectul din context — titlul și
+primul mesaj al problemei GitHub, sau rândul anterior din terminal; în problema cu porțile care cer atenție
+(recunoscută după marcajul ei invizibil), subiectul sunt toate constatările. Formele scurte (`/agent stare`)
+decid doar după `/agent`; fără prefix sunt indicii, iar codul cere un verb de făcut și un lucru de cod
+împreună, deci „cod de eroare la scanare” nu scrie cod. Răspunsurile sunt text simplu (`domain/plain.js`):
+numere românești, ora din `chat.timeZone`, orele ISO și zecimalele din dovezile porților rescrise la fel,
+orice Markdown al unui model sau al unui pasaj din documentație curățat (o expresie cron își păstrează
+asteriscurile).
+
+### Chat-ul și cererea de cod, cu două joburi
+
+Un mesaj într-o problemă al cărei titlu începe cu „Agent” (sau cu eticheta `agent`, dar nu într-un pull
+request) sau un comentariu `/agent …` oriunde pornește `agent-chat.yml` (doar pentru OWNER, MEMBER,
+COLLABORATOR; mesajul și contextul lui ajung la scripturi doar prin mediu, niciodată interpolate). Jobul
+`think` are un token care doar citește și un checkout fără credențiale; pentru o cerere de cod el rulează
+modelul de cod, aplică
 blocurile SEARCH/REPLACE sub politica de patch (cel mult 8 fișiere și 400 de linii; niciodată
 `.github/`, `.git/`, testele de arhitectură, datele sau licențele; niciun tipar de cheie), rulează
 `npm test` cu mediul curățat de tokenuri, îi dă modelului o rundă de reparare și scoate un diff. Jobul

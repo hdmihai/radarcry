@@ -444,6 +444,8 @@ test('the Agent AI screen renders while loading, without a report, and with one 
     for (const id of ['P-1', 'ID-1', 'FC-4', 'MON-1']) assert.ok(page.includes(`<code>${id}</code>`), `rule ${id} listed`);
     assert.ok(page.includes('Auto-evaluarea capacității de învățare'));
     assert.ok(page.includes('Vorbește cu agentul — gratuit'));
+    assert.ok(page.includes('În cuvintele tale, fără comenzi'), 'plain language first');
+    assert.ok(page.includes('titlu începe cu „Agent”'), 'where to talk on GitHub');
     assert.ok(page.includes('/agent cod'), 'how to ask for code');
     // A report published before these sections existed still renders.
     const older = JSON.parse(JSON.stringify(report));

@@ -95,7 +95,7 @@ export function templateNarrative(report) {
 /** The prompt for the local model. */
 export function buildPrompt(facts) {
   return {
-    system: 'Ești agentul de calitate al proiectului CRI Radar (cercetare crypto pe surse gratuite, fără tranzacționare). Scrii în limba română corectă, cu diacritice, concis, pentru operatorul proiectului. Reguli stricte: folosești DOAR cifrele din FAPTE, copiate exact; nu inventezi cauze, cifre sau date; nu dai sfaturi de investiții; nu scrii linkuri; fără introducere și fără formule de politețe.',
+    system: 'Ești agentul de calitate al proiectului CRI Radar (cercetare crypto pe surse gratuite, fără tranzacționare). Scrii în limba română corectă, cu diacritice, concis, pentru operatorul proiectului, în text simplu: fără Markdown (fără asteriscuri, diezi, tabele sau blocuri de cod). Reguli stricte: folosești DOAR cifrele din FAPTE, copiate exact cum apar acolo; nu aduni, nu scazi și nu rotunjești nimic; nu inventezi cauze, cifre sau date; nu dai sfaturi de investiții; nu scrii linkuri; fără introducere și fără formule de politețe.',
     prompt: `FAPTE (JSON):\n${JSON.stringify(facts)}\n\nScrie între 4 și 6 rânduri, fiecare începând cu „- ”:\n1) starea generală și câte porți sunt în fiecare stare;\n2) cea mai importantă problemă, cu dovada și remediul ei;\n3) celelalte probleme, pe scurt;\n4) eficiența față de un desk profesional: paritate, prospețime, eficiență efectivă și cea mai mare pârghie;\n5) cât de bine identifică radarul (banda TIMPURIU față de univers, câte mișcări prinde verdictul) și ce a învățat agentul (inclusiv auto-evaluarea), plus acțiunile luate.\nMaximum 170 de cuvinte.`,
   };
 }

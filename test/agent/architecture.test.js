@@ -131,6 +131,14 @@ test('the agent chat: the job that runs proposed code cannot write, and the job 
   assert.deepEqual(perms(reply), ['actions:write', 'contents:write', 'issues:write', 'pull-requests:write']);
   assert.match(think, /persist-credentials: false/, 'no credential is left in the checkout that runs proposed code');
   assert.match(think, /"OWNER", "MEMBER", "COLLABORATOR"/, 'only the owner and collaborators get an answer');
+  // A conversation: an issue titled „Agent …” (or labelled „agent”) needs no prefix; a pull request does.
+  assert.match(think, /startsWith\(github\.event\.issue\.title, 'Agent '\)/);
+  assert.match(think, /contains\(github\.event\.issue\.labels\.\*\.name, 'agent'\)/);
+  assert.match(think, /!github\.event\.issue\.pull_request && \(/, 'never a conversation on a pull request');
+  assert.match(think, /CRI_AGENT_CONVERSATION:/);
+  assert.match(think, /CRI_AGENT_CONTEXT: \|-/, 'a follow-up is read in the issue it is written in');
+  // What the agent posts is plain text: no Markdown headings or bold in the shell's messages either.
+  for (const m of reply.matchAll(/^\s+run: \|\n((?:\s{10,}.*\n?)+)/gm)) assert.doesNotMatch(m[1], /echo "\*\*|###|\\`/, 'the reply job writes plain text');
   // The comment is untrusted text: it reaches the scripts only through the environment.
   for (const m of wf.matchAll(/^\s+run: \|\n((?:\s{10,}.*\n?)+)/gm)) assert.doesNotMatch(m[1], /\$\{\{\s*github\.event\.(comment|issue)\.(body|title)/, 'a run script never interpolates the comment');
   // The writing job executes nothing from the repository: no node, no npm, no script of the project.

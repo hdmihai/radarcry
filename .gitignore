@@ -21,3 +21,5 @@ data/agent.json
 data/agent.md
 .gates.json
 .gates-syntax.json
+# Răspunsul pregătit de agent-chat.yml (jobul think)
+.chat/

@@ -40,6 +40,26 @@ export function tokens(text) {
  * Split Markdown documents into sections (one per heading, long sections in pieces).
  * @param {{name:string, text:string}[]} docs
  */
+/**
+ * A paragraph too long for one passage: its list items or table rows whole; a wrapped prose
+ * paragraph by sentences; anything else (a code block, a diagram) by lines.
+ */
+function piecesOf(para) {
+  const lines = para.split('\n');
+  const item = /^\s*(?:[-*+]|\d+\.|\|)\s?/;
+  if (lines.some((l) => item.test(l))) {
+    const items = [];
+    for (const l of lines) {
+      if (item.test(l) || !items.length) items.push(l);
+      else items[items.length - 1] += `\n${l}`;
+    }
+    return [items, '\n'];
+  }
+  const prose = lines.every((l, i) => (l.length >= 50 || i === lines.length - 1) && !/^\s/.test(l) && !/[│┌└─┐┘├┤]/.test(l));
+  if (prose) return [para.replace(/\n/g, ' ').split(/(?<=[.!?…])\s+(?=[\p{Lu}„(0-9*`])/u), ' '];
+  return [lines, '\n'];
+}
+
 export function chunkDocs(docs, { maxChars = 1800 } = {}) {
   const out = [];
   for (const d of docs ?? []) {
@@ -50,9 +70,26 @@ export function chunkDocs(docs, { maxChars = 1800 } = {}) {
     let inCode = false;
     const flush = () => {
       const text = buf.join('\n').trim();
-      if (text) {
-        for (let i = 0; i < text.length; i += maxChars) out.push({ doc: d.name, heading, path: trail.join(' › '), text: text.slice(i, i + maxChars) });
+      // Whole paragraphs up to maxChars (a long one by lines, a huge line at word boundaries), so a
+      // passage quoted to the owner starts where a thought starts, never in the middle of a word.
+      let cur = '';
+      const push = () => {
+        if (cur.trim()) out.push({ doc: d.name, heading, path: trail.join(' › '), text: cur.trim() });
+        cur = '';
+      };
+      for (const para of text ? text.split(/\n{2,}/) : []) {
+        const [pieces, join] = para.length <= maxChars ? [[para], '\n'] : piecesOf(para);
+        let sep = '\n\n';
+        for (const piece of pieces) {
+          const parts = piece.length <= maxChars ? [piece] : piece.match(new RegExp(`\\S[\\s\\S]{0,${maxChars - 2}}(?=\\s|$)`, 'g')) ?? [piece.slice(0, maxChars)];
+          for (const part of parts) {
+            if (cur && cur.length + part.length + 2 > maxChars) push();
+            cur = cur ? `${cur}${sep}${part}` : part;
+            sep = join;
+          }
+        }
       }
+      push();
       buf = [];
     };
     for (const line of lines) {

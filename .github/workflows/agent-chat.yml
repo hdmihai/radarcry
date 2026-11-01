@@ -1,15 +1,18 @@
-# CRI Radar — talk to the AI agent, free: a comment that starts with `/agent` on any issue or pull
-# request (or a new issue whose text starts with `/agent`). Only the owner and the collaborators get
-# an answer; anyone else is ignored.
+# CRI Radar — talk to the AI agent, free, in plain language; it answers in plain text.
 #
-#   /agent stare · porți · diagnoză [poartă | run <id> | scan] · eficiență · prognoză SIMBOL
-#   /agent reguli [ID] · învățare · întreabă <întrebare> · cod <sarcina> · ajutor
+# Where it listens (only to the owner and the collaborators; anyone else is ignored):
+#   · any issue whose title starts with „Agent” — „Agent”, „Agent AI — întrebare”, „Agent: …”,
+#     „Agentul …” — or that carries the label „agent”: every message is for the agent, no prefix
+#     needed („cum stă radarul?”, „ce s-a schimbat de ieri?”, „de ce a picat scanarea?”, „ce șanse
+#     are LAB?”, „scrie un test pentru …”), and a short follow-up („de ce?”, „detalii”) is read in the
+#     issue's context. The dashboard's link opens such an issue; the agent's findings issue is one too;
+#   · anywhere else (issues and pull requests), a comment that starts with /agent.
 #
-# Two jobs, because the code command runs code a language model wrote:
-#   think  (read-only token) reads the agent's memory and the research state and answers. For
-#          `/agent cod …` it runs a local open coder model (Ollama), applies its edits under the patch
-#          policy and runs the test suite. Its token cannot write anything, so the proposal never runs
-#          next to a write token.
+# Two jobs, because writing code runs code a language model wrote:
+#   think  (read-only token) understands the message, reads the agent's memory and the research state
+#          and answers. For a code request it runs a local open coder model (Ollama), applies its edits
+#          under the patch policy and runs the test suite. Its token cannot write anything, so the
+#          proposal never runs next to a write token.
 #   reply  (write token) never runs the repository's code: it posts the answer and, when there is a
 #          patch, checks it again in the shell (paths, size, modes — no workflow, no architecture test),
 #          applies it on a branch agent/<issue>-<slug>, pushes it, opens a pull request (or links the
@@ -28,15 +31,17 @@ on:
 permissions: {}
 
 concurrency:
-  # One conversation at a time per issue; a second question waits for the first answer.
-  group: agent-chat-${{ github.event.issue.number }}
+  # One group per message: GitHub keeps a single pending run per group, so a group per issue would drop
+  # the middle one of three quick messages. Every message gets its answer; quick ones may overtake.
+  group: agent-chat-${{ github.event.comment.id || github.event.issue.number }}
   cancel-in-progress: false
 
 jobs:
   think:
     if: >-
-      startsWith(github.event.comment.body || github.event.issue.body, '/agent') &&
-      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association || github.event.issue.author_association)
+      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association || github.event.issue.author_association) &&
+      (startsWith(github.event.comment.body || github.event.issue.body, '/agent') ||
+      (!github.event.issue.pull_request && (github.event.issue.title == 'Agent' || startsWith(github.event.issue.title, 'Agent ') || startsWith(github.event.issue.title, 'Agent:') || startsWith(github.event.issue.title, 'Agentul') || contains(github.event.issue.labels.*.name, 'agent'))))
     runs-on: ubuntu-latest
     timeout-minutes: 60 # a code task: model pull, two generations on CPU, two test runs
     permissions:
@@ -61,12 +66,6 @@ jobs:
           node-version-file: .nvmrc
           package-manager-cache: false
 
-      - name: Read the command (the comment arrives through the environment, never the script)
-        id: cmd
-        env:
-          BODY: ${{ github.event.comment.body || github.event.issue.body }}
-        run: node agent/main.js chat-parse --text-env BODY
-
       - name: Restore the agent memory (cri-agent) and the research state (cri-state), read-only
         env:
           TOKEN: ${{ github.token }}
@@ -82,7 +81,23 @@ jobs:
             git archive --format=tar FETCH_HEAD | tar -x -C .state
           fi
 
-      - name: Local open model (only for "întreabă" and "cod" — Ollama, free, no account, in this runner)
+      - name: Understand the message (it arrives through the environment, never the script)
+        id: cmd
+        env:
+          BODY: ${{ github.event.comment.body || github.event.issue.body }}
+          # What a comment continues, so „de ce?” or „detalii” make sense: the owner's previous message in
+          # the thread (read with this read-only token), else the issue's title and first message.
+          CRI_AGENT_CONTEXT: |-
+            ${{ github.event.comment && github.event.issue.title || '' }}
+            ${{ github.event.comment && github.event.issue.body || '' }}
+          CRI_AGENT_ISSUE: ${{ github.event.issue.number }}
+          CRI_AGENT_COMMENT_ID: ${{ github.event.comment.id }}
+          CRI_AGENT_AUTHOR: ${{ github.event.comment.user.login || github.event.issue.user.login }}
+          GITHUB_TOKEN: ${{ github.token }}
+          CRI_AGENT_CONVERSATION: ${{ (!github.event.issue.pull_request && (github.event.issue.title == 'Agent' || startsWith(github.event.issue.title, 'Agent ') || startsWith(github.event.issue.title, 'Agent:') || startsWith(github.event.issue.title, 'Agentul') || contains(github.event.issue.labels.*.name, 'agent'))) && 'true' || 'false' }}
+        run: node agent/main.js chat-parse --text-env BODY --state .state
+
+      - name: Local open model (free questions, unclear ones and code — Ollama, free, no account, in this runner)
         id: llm
         if: steps.cmd.outputs.llm == 'true' && vars.CRI_AGENT_LLM != 'off'
         continue-on-error: true # without a model the answer is the documentation's passages
@@ -113,9 +128,13 @@ jobs:
         id: answer
         env:
           BODY: ${{ github.event.comment.body || github.event.issue.body }}
+          CRI_AGENT_CONTEXT: |-
+            ${{ github.event.comment && github.event.issue.title || '' }}
+            ${{ github.event.comment && github.event.issue.body || '' }}
           # Read-only, and only for the commands that read GitHub (a diagnosis); never next to proposed code.
           GITHUB_TOKEN: ${{ steps.cmd.outputs.coder != 'true' && github.token || '' }}
           CRI_AGENT_ISSUE: ${{ github.event.issue.number }}
+          CRI_AGENT_COMMENT_ID: ${{ github.event.comment.id }}
           CRI_AGENT_AUTHOR: ${{ github.event.comment.user.login || github.event.issue.user.login }}
           CRI_AGENT_MODEL: ${{ steps.cmd.outputs.coder != 'true' && steps.llm.outputs.model || '' }}
           CRI_AGENT_CODE_MODEL: ${{ steps.cmd.outputs.coder == 'true' && steps.llm.outputs.model || '' }}
@@ -162,7 +181,7 @@ jobs:
           if [ -n "$REPLY_B64" ]; then
             printf '%s' "$REPLY_B64" | base64 -d > reply.md
           else
-            printf '<!-- cri-agent-chat -->\n### Agentul AI nu a putut răspunde\n\nJobul de răspuns s-a încheiat cu „%s”; detaliile sunt în %s\n' "$THINK" "$run_url" > reply.md
+            printf '<!-- cri-agent-chat -->\nNu am putut răspunde de data aceasta: jobul care pregătește răspunsul s-a încheiat cu „%s”. Detaliile sunt aici: %s\n' "$THINK" "$run_url" > reply.md
           fi
           if [ -n "$PATCH_B64" ]; then
             printf '%s' "$PATCH_B64" | base64 -d > "$RUNNER_TEMP/agent.patch"
@@ -171,7 +190,7 @@ jobs:
             # The final check, in the shell, of the diff itself: what the job that ran the proposal says
             # about it is not trusted.
             if ! git apply --check --numstat "$RUNNER_TEMP/agent.patch" > "$RUNNER_TEMP/numstat" 2> "$RUNNER_TEMP/apply.err"; then
-              { echo; echo "**Propunerea nu se mai aplică pe \`${DEFAULT_BRANCH}\`** (ramura s-a mișcat între timp): $(head -c 300 "$RUNNER_TEMP/apply.err")"; } >> reply.md
+              { echo; echo "Propunerea nu se mai aplică pe ${DEFAULT_BRANCH}, pentru că ramura s-a mișcat între timp: $(head -c 300 "$RUNNER_TEMP/apply.err")"; } >> reply.md
             else
               files=$(cut -f3 "$RUNNER_TEMP/numstat")
               nfiles=$(printf '%s\n' "$files" | grep -c . || true)
@@ -180,7 +199,7 @@ jobs:
               binary=$(awk -F'\t' '$1 == "-" { print $3 }' "$RUNNER_TEMP/numstat")
               modes=$(grep -cE '^(old mode|new mode|deleted file mode|new file mode 120000)' "$RUNNER_TEMP/agent.patch" || true)
               if [ -n "$protected" ] || [ -n "$binary" ] || [ "$nfiles" -gt 8 ] || [ "$nlines" -gt 400 ] || [ "$modes" -gt 0 ]; then
-                { echo; echo "**Propunerea a fost refuzată de verificarea finală:** ${nfiles} fișiere, ${nlines} linii; protejate: ${protected:-—}; binare: ${binary:-—}; schimbări de mod sau ștergeri: ${modes}."; } >> reply.md
+                { echo; echo "Verificarea finală a refuzat propunerea: ${nfiles} fișiere, ${nlines} linii; protejate: ${protected:-niciunul}; binare: ${binary:-niciunul}; schimbări de mod sau ștergeri: ${modes}."; } >> reply.md
               else
                 slug=$(jq -r '.branch // ""' "$RUNNER_TEMP/pr.json" | sed 's|^agent/||' | tr -cd 'a-z0-9-' | cut -c1-50)
                 branch="agent/${slug:-${ISSUE}-propunere}"
@@ -195,11 +214,11 @@ jobs:
                 draft_flag=()
                 if [ "$draft" = "true" ]; then draft_flag=(--draft); fi
                 if url=$(gh pr create --base "$DEFAULT_BRANCH" --head "$branch" --title "$title" --body-file "$RUNNER_TEMP/pr.md" "${draft_flag[@]}" 2> "$RUNNER_TEMP/pr.err"); then
-                  { echo; echo "**Pull request:** ${url} — revizuiți și decideți voi; agentul nu face merge."; } >> reply.md
+                  { echo; echo "Pull requestul: ${url}. Îl revizuiești și decizi tu; eu nu fac merge."; } >> reply.md
                 elif url=$(gh pr list --head "$branch" --json url --jq '.[0].url' 2>/dev/null) && [ -n "$url" ]; then
-                  { echo; echo "**Pull request actualizat:** ${url}"; } >> reply.md
+                  { echo; echo "Am actualizat pull requestul: ${url}"; } >> reply.md
                 else
-                  { echo; echo "**Ramura \`${branch}\` este publicată**, dar GitHub Actions nu are voie să deschidă pull requesturi aici (Settings → Actions → General → 'Allow GitHub Actions to create and approve pull requests'). Cu un clic: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/compare/${DEFAULT_BRANCH}...${branch}?expand=1"; } >> reply.md
+                  { echo; echo "Ramura ${branch} este publicată, dar GitHub Actions nu are voie să deschidă pull requesturi aici (Settings → Actions → General → Allow GitHub Actions to create and approve pull requests). Îl deschizi cu un clic: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/compare/${DEFAULT_BRANCH}...${branch}?expand=1"; } >> reply.md
                 fi
                 if gh workflow run ci.yml --ref "$branch" > /dev/null 2>&1; then
                   { echo; echo "CI rulează acum pe ramură: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/workflows/ci.yml"; } >> reply.md

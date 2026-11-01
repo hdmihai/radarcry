@@ -1,6 +1,7 @@
 /**
- * CHAT COMMANDS — what the owner can ask the agent, free, from a GitHub issue comment (`/agent …`),
- * from the terminal (`npm run agent:chat -- …`, Termux included) or from the dashboard's link.
+ * CHAT COMMANDS — the short forms the owner can still type: after `/agent` in a GitHub comment they
+ * decide what is asked („/agent stare”, „/agent prognoză LAB”); anywhere else they are only strong
+ * hints for the plain-language understanding (agent/domain/intent.js), which reads the whole message.
  *
  * Pure: a text in, a command out. Diacritics are optional (`diagnoză` = `diagnoza`), so a phone
  * keyboard never gets in the way.
@@ -10,7 +11,7 @@
 export const fold = (s) =>
   String(s ?? '')
     .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
+    .replace(/[\u0300-\u036f]/g, '')
     .replace(/[șş]/g, 's')
     .replace(/[țţ]/g, 't')
     .toLowerCase();
@@ -19,13 +20,15 @@ export const COMMANDS = Object.freeze([
   { id: 'help', words: ['ajutor', 'help', 'comenzi', '?'], usage: 'ajutor', what: 'lista comenzilor', llm: false },
   { id: 'status', words: ['stare', 'status', 'rezumat'], usage: 'stare', what: 'starea generală, ce cere atenție, eficiența și ce a învățat agentul', llm: false },
   { id: 'gates', words: ['porti', 'gates', 'poarta'], usage: 'porți [grup | id]', what: 'porțile de calitate, întâi cele care nu trec (grupuri: cod, rulare, cadenta, periodic, model, agent)', llm: false },
-  { id: 'diagnose', words: ['diagnoza', 'diagnostic', 'diagnose', 'de ce'], usage: 'diagnoză [id-poartă | run <id> | url rulare]', what: 'cauza unei porți eșuate sau a unei rulări: pașii căzuți, adnotările, semnătura, commiturile suspecte și remedierea care a mers data trecută', llm: false },
+  { id: 'diagnose', words: ['diagnoza', 'diagnostic', 'diagnose'], usage: 'diagnoză [id-poartă | run <id> | url rulare]', what: 'cauza unei porți eșuate sau a unei rulări: pașii căzuți, adnotările, semnătura, commiturile suspecte și remedierea care a mers data trecută', llm: false },
+  { id: 'changes', words: ['schimbari', 'noutati', 'changes'], usage: 'schimbări [interval]', what: 'ce s-a schimbat într-un interval (implicit ultimele 24 de ore): probleme noi, rezolvate, reguli care și-au schimbat verdictul, ce a pornit agentul', llm: false },
   { id: 'efficiency', words: ['eficienta', 'identificare', 'efficiency'], usage: 'eficiență', what: 'cât de des ating proiectele semnalate +20% în 72 h față de univers, pe niveluri (lift, intervale, recall)', llm: false },
   { id: 'forecast', words: ['prognoza', 'forecast'], usage: 'prognoză SIMBOL', what: 'probabilitatea ≥100× / ≥20× în 12 luni a unui proiect și din ce se formează', llm: false },
+  { id: 'signals', words: ['semnale', 'candidati', 'proiecte', 'signals'], usage: 'semnale', what: 'proiectele pe care radarul le semnalează acum: răspunsurile exacte la întrebare, candidații de research timpuriu, cei mai apropiați', llm: false },
   { id: 'rules', words: ['reguli', 'rules', 'criterii'], usage: 'reguli [id]', what: 'regulile fundamentale de evaluare și monitorizare, cu verdictul fiecăreia', llm: false },
   { id: 'learning', words: ['invatare', 'autoevaluare', 'auto-evaluare', 'learning'], usage: 'învățare', what: 'auto-evaluarea: cât de bine anticipează agentul, curba de învățare, normele, lecțiile, propunerile de cod acceptate', llm: false },
   { id: 'ask', words: ['intreaba', 'ask', 'intrebare'], usage: 'întreabă <întrebare>', what: 'răspuns din documentație (cerințele de business din README, arhitectura) și din raport, cu sursele', llm: true },
-  { id: 'code', words: ['cod', 'code', 'scrie', 'implementeaza', 'repara'], usage: 'cod <sarcina>', what: 'scrie codul cerut cu un model deschis local, rulează testele, deschide un pull request pe o ramură agent/… (nu face merge)', llm: true, coder: true },
+  { id: 'code', words: ['cod', 'code'], usage: 'cod <sarcina>', what: 'scrie codul cerut cu un model deschis local, rulează testele, deschide un pull request pe o ramură agent/… (nu face merge)', llm: true, coder: true },
 ]);
 
 const BY_WORD = new Map(COMMANDS.flatMap((c) => c.words.map((w) => [fold(w), c])));
@@ -47,13 +50,9 @@ export function parseCommand(text, { requirePrefix = false } = {}) {
   const rest = lines.slice(start + 1).join('\n').trim();
   if (!first && !rest) return { id: 'help', word: null, args: '', llm: false, coder: false, ok: true, reason: null };
   const m = /^(\S+)(?:\s+([\s\S]*))?$/.exec(first) ?? [first, '', ''];
-  let word = fold(m[1]).replace(/[:,.!]+$/, '');
-  let args = [m[2] ?? '', rest].filter(Boolean).join('\n').trim();
-  // Two-word commands ("de ce …").
-  if (word === 'de' && /^ce\b/i.test(args)) {
-    word = 'de ce';
-    args = args.replace(/^ce\b\s*/i, '');
-  }
+  const w0 = fold(m[1]);
+  const word = w0.replace(/[:,.!?]+$/, '') || w0;
+  const args = [m[2] ?? '', rest].filter(Boolean).join('\n').trim();
   const c = BY_WORD.get(word);
   if (!c) {
     // A question without a command word is a question.
@@ -63,12 +62,9 @@ export function parseCommand(text, { requirePrefix = false } = {}) {
   return { id: c.id, word, args, llm: Boolean(c.llm), coder: Boolean(c.coder), ok: true, reason: null };
 }
 
-/** The help text (Markdown). */
+/** The short forms, in plain text (the help answer lists plain-language examples first). */
 export function helpText({ prefix = '/agent ' } = {}) {
-  const lines = ['**Comenzi** (diacriticele sunt opționale):', ''];
-  for (const c of COMMANDS) lines.push(`- \`${prefix}${c.usage}\` — ${c.what}${c.coder ? ' — doar pentru proprietar și colaboratori' : ''}`);
-  lines.push('', 'Gratuit: răspunsurile vin din memoria agentului și din raportul lui; „întreabă” și „cod” folosesc un model deschis rulat local în runner (fără cont, fără cheie). Cercetare, nu sfat financiar.');
-  return lines.join('\n');
+  return ['Formele scurte (după ' + prefix.trim() + '; diacriticele sunt opționale):', ...COMMANDS.map((c) => `- ${prefix}${c.usage} — ${c.what}`)].join('\n');
 }
 
 /** A run id from an argument: "run 123", a bare number, or an Actions run URL. */

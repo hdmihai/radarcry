@@ -34,7 +34,8 @@ import { createOllama, createPublicPrices, createSite, pagesUrlOf } from './adap
 import { createWorkspace } from './adapters/workspace.js';
 import { chat } from './application/chat.js';
 import { act, analyze, narrate, runAll } from './application/monitor.js';
-import { parseCommand } from './domain/commands.js';
+import { CHAT_MARKER } from './domain/chat.js';
+import { isFollowUp, threadContext, understand } from './domain/intent.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -107,7 +108,8 @@ async function chatPorts({ flags, env, cfg, memoryDir, reportDir, stateDir, data
     state: createStateDir({ dir: stateDir, dataDir }),
     knowledge: createKnowledgeFs({ root: ROOT }),
     ci: repo.includes('/') ? createGitHub({ token: env.GITHUB_TOKEN || env.GH_TOKEN || null, repo }) : null,
-    narrator: llmOn && cmd.llm && !cmd.coder ? createOllama({ baseUrl: ollama, model: env.CRI_AGENT_MODEL || cfg.chat?.model || cfg.narrator.model, timeoutMs: cfg.narrator.timeoutMs, numPredict: 600, numCtx: 8192 }) : null,
+    // The small model answers free questions and classifies unclear ones; absent, the agent still answers.
+    narrator: llmOn && !cmd.coder ? createOllama({ baseUrl: ollama, model: env.CRI_AGENT_MODEL || cfg.chat?.model || cfg.narrator.model, timeoutMs: cfg.narrator.timeoutMs, numPredict: 600, numCtx: 8192 }) : null,
     coder: llmOn && cmd.coder ? createOllama({ baseUrl: ollama, model: env.CRI_AGENT_CODE_MODEL || cfg.chat?.codeModel, timeoutMs: cfg.chat?.codeTimeoutMs ?? 1_200_000, numPredict: cfg.chat?.codeNumPredict ?? 2048, numCtx: cfg.chat?.codeNumCtx ?? 16384, temperature: 0.1 }) : null,
     workspace: cmd.coder && flags.write ? createWorkspace({ root: ROOT }) : null,
   };
@@ -121,26 +123,73 @@ async function chatPorts({ flags, env, cfg, memoryDir, reportDir, stateDir, data
   return ports;
 }
 
+/** The symbols the radar knows (universe and learning list): they make „ce șanse are lab?” a forecast question. */
+async function knownSymbols(stateDir, dataDir) {
+  const st = createStateDir({ dir: stateDir, dataDir });
+  const out = new Set();
+  const u = await st.universe();
+  if (u.ok) {
+    const f = u.data?.assets?.fields ?? [];
+    const k = f.indexOf('symbol');
+    for (const row of u.data?.assets?.rows ?? []) if (k >= 0 && row[k]) out.add(String(row[k]).toUpperCase());
+  }
+  return out;
+}
+
+/**
+ * What a message continues. On GitHub a follow-up („de ce?”, „detalii”) continues the owner's previous
+ * message in the thread (read with the job's read-only token), else the issue's title and first
+ * message; on the terminal, the previous line (kept by the conversation loop).
+ */
+async function threadOf({ env, flags, text }) {
+  const issue = String(env[String(flags['context-env'] ?? 'CRI_AGENT_CONTEXT')] ?? '').trim().slice(0, 6000) || null;
+  const number = Number(flags.issue ?? env.CRI_AGENT_ISSUE);
+  const commentId = Number(env.CRI_AGENT_COMMENT_ID);
+  const repo = String(flags.repo ?? env.GITHUB_REPOSITORY ?? '');
+  if (!isFollowUp(text) || !(number > 0) || !(commentId > 0) || !repo.includes('/')) return issue;
+  const r = await createGitHub({ token: env.GITHUB_TOKEN || env.GH_TOKEN || null, repo }).issueComments(number);
+  if (!r.ok) return issue;
+  const author = env.CRI_AGENT_AUTHOR || null;
+  const previous = r.data.filter((c) => c.id < commentId && (!author || c.author === author) && !String(c.body ?? '').startsWith(CHAT_MARKER)).map((c) => c.body);
+  return threadContext(previous, issue);
+}
+
+/** The demo's clock: the simulated history ends ten minutes after the demo snapshot. */
+async function demoNow(stateDir, dataDir) {
+  const s = await createStateDir({ dir: stateDir, dataDir }).snapshot();
+  return s.ok ? Date.parse(s.data.meta.generatedAt) + 10 * 60_000 : Date.now();
+}
+
 async function runChat({ flags, env, cfg, memoryDir, stateDir, dataDir, argv }) {
   const reportDir = resolve(String(flags.report ?? join(memoryDir, 'report')));
   const text = flags['text-env'] ? String(env[String(flags['text-env'])] ?? '') : positional(argv);
   const issue = flags.issue ? Number(flags.issue) : env.CRI_AGENT_ISSUE ? Number(env.CRI_AGENT_ISSUE) : null;
   const author = flags.author ? String(flags.author) : env.CRI_AGENT_AUTHOR || null;
+  // What the message continues: on GitHub the thread it is written in; on the terminal, the previous line.
+  let context = await threadOf({ env, flags, text });
+  // On GitHub „cod” is a command only after /agent; on the terminal it is one by itself.
+  const commandWords = !env.GITHUB_ACTIONS;
+  const fixedNow = flags.now ? Date.parse(String(flags.now)) : flags.fixtures ? await demoNow(stateDir, dataDir) : null;
   const once = async (t) => {
-    const cmd = parseCommand(t);
+    const cmd = understand(t, { commandWords, context });
     const ports = await chatPorts({ flags, env, cfg, memoryDir, reportDir, stateDir, dataDir, cmd });
     if (cmd.coder && ports.workspace && !env.GITHUB_ACTIONS && !(await ports.workspace.clean())) {
-      return { reply: 'Scrierea de cod locală cere un working tree curat (`git status` fără modificări), ca schimbările agentului să rămână separate de ale dumneavoastră.', patch: null, cmd };
+      return { reply: 'Ca să scriu cod local am nevoie de un working tree curat (git status fără modificări), ca schimbările mele să rămână separate de ale tale.', patch: null, intent: cmd };
     }
-    return chat({ ports, cfg, nowMs: Date.now(), text: t, author, issue, logger });
+    return chat({ ports, cfg, nowMs: fixedNow ?? Date.now(), text: t, context, author, issue, logger, commandWords });
   };
   if (!text.trim() && process.stdin.isTTY && !flags['reply-dir']) {
-    console.log('Agentul AI al CRI Radar — scrieți o comandă („ajutor” pentru listă, „ieșire” pentru final).');
+    console.log('Agentul AI al CRI Radar. Scrie-mi în cuvintele tale, de exemplu „cum stă radarul?”, „ce s-a schimbat de ieri?” sau „ce șanse are LAB?”; după un răspuns poți continua cu „de ce?” sau „detalii”. „ieșire” încheie.');
     const rl = createInterface({ input: process.stdin, output: process.stdout, prompt: 'agent> ' });
     rl.prompt();
     for await (const line of rl) {
       if (/^\s*(iesire|ieșire|exit|quit)\s*$/i.test(line)) break;
-      if (line.trim()) console.log(`\n${(await once(line)).reply.replace(/^<!--.*-->\n/, '')}\n`);
+      if (line.trim()) {
+        const r = await once(line);
+        console.log(`\n${r.reply.replace(/^<!--.*-->\n/, '')}\n`);
+        // A follow-up keeps the thread's topic; a new question starts a new one.
+        if (!r.intent?.followUp && !['help', 'greet'].includes(r.intent?.intent)) context = line;
+      }
       rl.prompt();
     }
     rl.close();
@@ -178,8 +227,15 @@ async function main() {
   if (env.CRI_AGENT_LLM === 'off') cfg.narrator.enabled = false;
 
   if (cmd === 'chat-parse') {
-    const c = parseCommand(String(env[String(flags['text-env'] ?? 'BODY')] ?? ''), { requirePrefix: true });
-    const out = `cmd=${c.id}\nok=${c.ok}\nllm=${c.llm}\ncoder=${c.coder}\n`;
+    // In an agent conversation (an issue titled „Agent…” or labelled „agent”) no prefix is needed.
+    const conversation = env.CRI_AGENT_CONVERSATION === 'true';
+    const symbols = flags.state ? await knownSymbols(stateDir, dataDir) : null;
+    const body = String(env[String(flags['text-env'] ?? 'BODY')] ?? '');
+    const context = await threadOf({ env, flags, text: body });
+    const c = understand(body, { requirePrefix: !conversation, commandWords: false, symbols, context });
+    // The small model is installed for free questions and for unclear ones (it classifies them).
+    const llm = c.ok && (c.llm || (c.intent === 'ask' && !c.explicit) || c.confidence < 0.5);
+    const out = `cmd=${c.intent}\nok=${c.ok}\nllm=${llm}\ncoder=${c.coder}\n`;
     if (env.GITHUB_OUTPUT) await appendFile(env.GITHUB_OUTPUT, out);
     else process.stdout.write(out);
     return;

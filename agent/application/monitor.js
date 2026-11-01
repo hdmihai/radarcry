@@ -10,6 +10,7 @@
  * the narrative must be rewritten), and `run` chains them for local use and the demo.
  */
 import { calibrationSummary, makeCohort, observePrices, pruneCohorts, weekId } from '../domain/calibration.js';
+import { ISSUE_MARKER } from '../domain/chat.js';
 import { observedCadence, reliability } from '../domain/cadence.js';
 import { cadenceOf } from '../domain/cron.js';
 import { efficiency } from '../domain/efficiency.js';
@@ -21,6 +22,7 @@ import { coderRecord, selfEvalSummary, stepSelfEval } from '../domain/selfeval.j
 import { SEVERITY_ORDER, buildFindings, mergeReplay, updateIncidents } from '../domain/incidents.js';
 import { buildFacts, buildPrompt, guardNarrative, narrativeKey, templateNarrative } from '../domain/narrative.js';
 import { NORM_DEFAULTS, assess, describe } from '../domain/norms.js';
+import { plain } from '../domain/plain.js';
 import { fnv1a } from '../domain/stats.js';
 import { WATCHED, emptyMemory, ingest, replayIncidents } from './learn.js';
 import { commitsFrom, observe, scanSecrets } from './observe.js';
@@ -287,7 +289,7 @@ export async function analyze({ ports, cfg, nowMs, limits = {}, logger = console
     narrative: memory.narrative ? { ...memory.narrative } : null,
     history: [...(memory.reports ?? []), { at: nowIso, overall: summary.overall, counts: summary.counts }].slice(-60),
     observed: { calls: obs.calls, sources: obs.sources, snapshotAt: obs.snapshot?.generatedAt ?? null, universeAt: obs.universe?.generatedAt ?? null },
-    policy: { freeOnly: true, researchOnly: true, actionsAllowed: ['workflow_dispatch (scan, pulse)', 'issue (o problemă deschisă, actualizată)', 'comentariu de răspuns la /agent (agent-chat.yml)', 'pull request pe o ramură agent/… doar la cererea proprietarului (/agent cod), niciodată merge'], llm: 'model deschis local (Ollama), fără cont, fără cheie; garda verifică fiecare cifră' },
+    policy: { freeOnly: true, researchOnly: true, actionsAllowed: ['workflow_dispatch (scan, pulse)', 'issue (o problemă deschisă, actualizată)', 'răspuns în text simplu la mesajele proprietarului (agent-chat.yml)', 'pull request pe o ramură agent/… doar când proprietarul cere cod, niciodată merge'], llm: 'model deschis local (Ollama), fără cont, fără cheie; garda verifică fiecare cifră' },
     gateCatalogue: GATES.map((g) => ({ id: g.id, group: g.group, title: g.title, what: g.what, severity: g.severity })),
   };
 
@@ -342,8 +344,10 @@ export async function narrate({ ports, nowMs, cfg = {}, logger = console }) {
     const facts = buildFacts(report);
     const r = await narrator.generate(buildPrompt(facts));
     if (r.ok) {
-      const g = guardNarrative(r.data, facts);
-      if (g.ok) n = { key, at: nowIso, by: 'llm', model: narrator.model, guard: 'fiecare cifră se regăsește în fapte', reason: null, text: String(r.data).trim() };
+      // Plain text, like everything the agent writes: whatever markup the model still produced goes.
+      const text = plain(r.data);
+      const g = guardNarrative(text, facts);
+      if (g.ok) n = { key, at: nowIso, by: 'llm', model: narrator.model, guard: 'fiecare cifră se regăsește în fapte', reason: null, text };
       else {
         n = { key, at: nowIso, by: 'template', model: null, guard: null, reason: `garda a respins textul modelului: ${g.reasons.join('; ')}`, rejected: String(r.data).slice(0, 1200) };
         logger.warn?.(`agent: narațiunea modelului respinsă (${g.reasons.join('; ')}) — se publică șablonul`);
@@ -400,19 +404,20 @@ export async function act({ ports, nowMs, cfg = {}, logger = console, dryRun = f
 }
 
 function issueBody(report, findings) {
-  // No timestamp in the body: the issue is edited only when the findings themselves change.
-  const lines = ['<!-- cri-agent -->', `Stare generală a porților de calitate: **${STATUS_RO[report.overall] ?? report.overall}**. Raportul complet: ecranul „Agent AI” al dashboard-ului.`, ''];
-  if (!findings.length) lines.push('Toate porțile serioase și critice au trecut; problema se închide automat.');
+  // Plain text, like everything the agent writes; no timestamp, so the issue is edited only when the
+  // findings themselves change.
+  const lines = [ISSUE_MARKER, `Starea porților de calitate: ${STATUS_RO[report.overall] ?? report.overall}. Raportul complet este în ecranul „Agent AI” al dashboard-ului.`, ''];
+  if (!findings.length) lines.push('Toate porțile serioase și critice trec; problema se închide singură.', '');
   for (const f of findings) {
-    lines.push(`### ${f.status === 'FAIL' ? '❌' : '⚠️'} ${f.title}`);
-    lines.push(f.evidence);
-    if (f.remedy) lines.push(`**Remediu:** ${f.remedy}`);
-    if (f.lesson?.lastFix) lines.push(`**Din istoric:** rezolvat ultima dată de ${f.lesson.lastFix.sha.slice(0, 7)} — ${f.lesson.lastFix.message}`);
-    else if (f.lesson?.transient) lines.push(`**Din istoric:** s-a rezolvat singur de ${f.lesson.transient} ori.`);
-    if (f.link) lines.push(`[rularea](${f.link})`);
+    lines.push(`${f.title} (${STATUS_RO[f.status] ?? f.status}): ${f.evidence}`);
+    if (f.remedy) lines.push(`Ce ajută: ${f.remedy}`);
+    if (f.lesson?.lastFix) lines.push(`Din istoric: s-a rezolvat ultima dată prin commitul ${f.lesson.lastFix.sha.slice(0, 7)} („${f.lesson.lastFix.message}”).`);
+    else if (f.lesson?.transient) lines.push(`Din istoric: s-a rezolvat singur de ${f.lesson.transient} ori.`);
+    if (f.link) lines.push(`Rularea: ${f.link}`);
     lines.push('');
   }
-  lines.push('_Problema este scrisă și închisă automat de workflow-ul „Agent AI”. Cercetare, nu sfat financiar._');
+  lines.push('Îmi poți scrie aici, în cuvintele tale — de exemplu „de ce?” sau „ce s-a schimbat de ieri?” — și îți răspund în câteva minute.');
+  lines.push('Problema este scrisă și închisă automat de workflow-ul „Agent AI”. Cercetare, nu sfat financiar.');
   return lines.join('\n');
 }
 

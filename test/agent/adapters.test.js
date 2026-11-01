@@ -50,6 +50,11 @@ test('github: runs normalised, the token sent as a bearer, dispatch posts the re
   assert.equal(missing.ok, false);
   assert.equal(missing.status, 'HTTP_ERROR');
   assert.equal(normRun({ id: 2, head_commit: null, display_title: 'Scan & deploy' }).message, 'Scan & deploy');
+  // The thread a follow-up continues, read only.
+  const t = fakeFetch([[/GET .*\/issues\/12\/comments\?per_page=100$/, 200, [{ id: 5, user: { login: 'owner' }, body: 'cum stă radarul?', created_at: '2026-11-01T08:00:00Z' }, { id: 6, user: null, body: null, created_at: '2026-11-01T08:01:00Z' }]]]);
+  const thread = await createGitHub({ token: 't', repo: 'o/r', fetchImpl: t.impl }).issueComments(12);
+  assert.deepEqual(thread.data, [{ id: 5, author: 'owner', body: 'cum stă radarul?', createdAt: '2026-11-01T08:00:00Z' }, { id: 6, author: null, body: '', createdAt: '2026-11-01T08:01:00Z' }]);
+  assert.equal(t.calls[0].method, 'GET');
   assert.throws(() => createGitHub({ repo: 'not-a-repo' }), /owner\/nume/);
 });
 

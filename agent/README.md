@@ -11,8 +11,9 @@ deploy-uri, propriile pull requesturi) și prețurile publice CoinGecko, fără 
 domain/        pur, determinist: porți, cron și cadență, norme robuste, incidente și remedieri,
                calibrarea prognozei, eficiență, eficiența identificării (identification.js),
                regulile fundamentale (rules.js), auto-evaluarea (selfeval.js), auto-reparare,
-               narațiune și gardă, comenzile de chat (commands.js), răspunsurile (chat.js),
-               căutarea în documentație (retrieval.js), politica de patch (patch.js), chei (secrets.js)
+               narațiune și gardă, înțelegerea limbajului natural (intent.js), formele scurte
+               (commands.js), răspunsurile (chat.js) în text simplu (plain.js), căutarea în
+               documentație (retrieval.js), politica de patch (patch.js), chei (secrets.js)
 application/   observe → learn → analyze / narrate / act, și chat, prin porturi
 adapters/      API GitHub, fișiere de stare, memorie și cunoaștere, Pages, prețuri publice, Ollama
                local, spațiul de lucru git al comenzii de cod (workspace.js), simulator
@@ -35,22 +36,29 @@ node agent/main.js act --memory .agent --out .agent/report --dry-run
 actualizare de etichete, plus orar; memoria și raportul se salvează pe ramura `cri-agent`, iar
 scanarea și pulsul publică raportul în ecranul **Agent AI** al dashboard-ului.
 
-## Vorbește cu el
+## Vorbește cu el — în cuvintele tale
 
 ```bash
-npm run agent:sync                       # memoria (.agent) și starea cercetării (.state) din GitHub
-npm run agent:chat -- stare              # sau: porți · diagnoză [id | run <id> | scan] · eficiență
-                                         #      prognoză SIMBOL · reguli [ID] · învățare
-                                         #      întreabă <întrebare> · cod <sarcina> · ajutor
-npm run agent:chat                       # sesiune interactivă (Termux inclus)
-npm run agent:chat:demo -- învățare      # pe istoricul simulat
-npm run agent:chat -- --write cod <sarcina>   # cod local, pe un clone curat, cu Ollama
+npm run agent:sync                                 # memoria (.agent) și starea cercetării (.state) din GitHub
+npm run agent:chat -- "cum stă radarul?"           # o întrebare, cum ți-ar veni s-o pui
+npm run agent:chat                                 # o conversație (Termux inclus): după un răspuns, „de ce?”
+npm run agent:chat:demo -- "ce s-a schimbat de ieri?"   # pe istoricul simulat
+npm run agent:chat -- --write "scrie un test pentru …"  # cod local, pe un clone curat, cu Ollama
 ```
 
-Pe GitHub: un comentariu care începe cu `/agent` în orice problemă sau pull request
-(`.github/workflows/agent-chat.yml`; răspunde doar proprietarului și colaboratorilor). Comanda de cod
-rulează modelul și testele în jobul `think`, al cărui token doar citește; jobul `reply` nu execută nimic
-din repository, verifică diff-ul din nou și deschide pull requestul pe o ramură `agent/…`.
+Înțelegerea (`domain/intent.js`) e deterministă — indicii cântărite pentru fiecare intenție (stare,
+schimbări, diagnoză, semnale, eficiență, prognoză, reguli, învățare, pornirea unui workflow, cod, ajutor,
+întrebare liberă) și entitățile din frază (rulare, workflow, poartă, regulă, simbol, interval) — cu
+diacritice opționale; o continuare scurtă („de ce?”, „detalii”) își ia subiectul din mesajul anterior.
+Doar o frază neclară ajunge la modelul local, care o încadrează în același vocabular. Răspunsurile
+(`domain/chat.js`) sunt text simplu (`domain/plain.js`): propoziții, numere românești, ora din
+`config.json` (`chat.timeZone`), fără Markdown.
+
+Pe GitHub: orice mesaj într-o problemă al cărei titlu începe cu „Agent” (sau cu eticheta `agent`) și,
+în rest, un comentariu care începe cu `/agent` (`.github/workflows/agent-chat.yml`; răspunde doar
+proprietarului și colaboratorilor). O cerere de cod rulează modelul și testele în jobul `think`, al cărui
+token doar citește; jobul `reply` nu execută nimic din repository, verifică diff-ul din nou și deschide
+pull requestul pe o ramură `agent/…`.
 
 ## Ce poate face și ce nu
 
@@ -58,8 +66,9 @@ din repository, verifică diff-ul din nou și deschide pull requestul pe o ramur
   snapshot-ul publicat și istoricul scanărilor, prețurile publice, propriile pull requesturi.
 - Scrie: `workflow_dispatch` pentru o scanare sau un puls sărit de GitHub (cel mult 4 / 8 pe 24 h,
   niciodată după două eșecuri la rând sau peste 85 % din cota unui plan gratuit), o singură problemă
-  GitHub cât timp există porți serioase sau critice eșuate, comentariile de răspuns la `/agent` și, doar
-  la cererea proprietarului, un pull request pe o ramură `agent/…`.
+  GitHub cât timp există porți serioase sau critice eșuate, răspunsurile în text simplu la mesajele
+  proprietarului și, doar când el cere cod, un pull request pe o ramură `agent/…`. Din conversație nu
+  pornește workflow-uri: la „pornește o scanare” explică limitele și cum se pornește manual.
 - Nu poate: anula, șterge, relua cu alți parametri, face merge, scrie în main, atinge workflow-urile sau
   testele de arhitectură.
 

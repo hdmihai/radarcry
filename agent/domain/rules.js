@@ -17,6 +17,8 @@
 import { bestTier, TIERS } from './identification.js';
 import { fnv1a, isNum, round } from './stats.js';
 
+const inversions = (k) => (k === 1 ? '1 inversiune' : `${k} ${k >= 20 ? 'de ' : ''}inversiuni`);
+
 export const RULE_STATUS = Object.freeze({ PASS: 'PASS', WARN: 'WARN', FAIL: 'FAIL', UNKNOWN: 'UNKNOWN', LEARNING: 'LEARNING' });
 const S = RULE_STATUS;
 export const RULE_CODE = Object.freeze({ PASS: 'P', WARN: 'W', FAIL: 'F', UNKNOWN: 'U', LEARNING: 'L' });
@@ -111,8 +113,8 @@ const CHECKS = {
     }
     const chain = (c.orders ?? []).map((o) => o.map((id) => `${id} ${pctTxt(tierOf(eff, id)?.ratePct)}`).join(' ≤ ')).join('; ');
     if (!compared) return out(S.LEARNING, null, `Prea puține niveluri cu eșantion suficient pentru a compara ordinea (${chain}).`);
-    if (strong.length) return out(S.FAIL, `${breaks.length} inversiuni`, `Ordinea este inversată semnificativ: ${strong.join(', ')} (intervalele nu se suprapun). Lanț: ${chain}.`, 'scorul trimite atenția spre nivelul greșit; pragurile benzilor sau ponderile factorilor trebuie revăzute.');
-    if (breaks.length) return out(S.WARN, `${breaks.length} inversiuni`, `Ordinea nu este respectată: ${breaks.join(', ')} (toleranță ${tol} p.p.; intervalele se suprapun). Lanț: ${chain}.`);
+    if (strong.length) return out(S.FAIL, inversions(breaks.length), `Ordinea este inversată semnificativ: ${strong.join(', ')} (intervalele nu se suprapun). Lanț: ${chain}.`, 'scorul trimite atenția spre nivelul greșit; pragurile benzilor sau ponderile factorilor trebuie revăzute.');
+    if (breaks.length) return out(S.WARN, inversions(breaks.length), `Ordinea nu este respectată: ${breaks.join(', ')} (toleranță ${tol} p.p.; intervalele se suprapun). Lanț: ${chain}.`);
     return out(S.PASS, 'ordonat', `Ratele cresc odată cu nivelul: ${chain}.`);
   },
 
