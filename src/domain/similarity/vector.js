@@ -16,10 +16,10 @@ export const FEATURES = [
   { key: 'size', label: 'Market cap', group: 'dna', weight: 1.0, raw: (r) => r.mcapUsd, map: (r) => band(log10(r.mcapUsd), 6.5, 9.0) },
   { key: 'float', label: 'Float circulant', group: 'dna', weight: 1.2, raw: (r) => r.floatRatio, map: (r) => band(r.floatRatio, 1.0, 0.05) },
   { key: 'concentration', label: 'Concentrare top 10', group: 'dna', weight: 0.9, raw: (r) => r.top10Pct, map: (r) => (isNum(r.top10Pct) ? clamp(r.top10Pct) : null) },
-  { key: 'perps', label: 'Perpetual pe venue-uri', group: 'dna', weight: 1.0, raw: (r) => r.perpVenues, map: (r) => band(r.perpVenues, 0, 3) },
+  { key: 'perps', label: 'Perpetual pe venue-uri', group: 'dna', weight: 0.5, raw: (r) => r.perpVenues, map: (r) => band(r.perpVenues, 0, 3) },
   // Binary traits use soft levels: absence is a difference, not a disqualification.
-  { key: 'bnbChain', label: 'BNB Chain', group: 'dna', weight: 0.6, raw: (r) => r.chain, map: (r) => (r.chain ? (r.chain === 'bsc' ? 100 : r.chain === 'native' ? 25 : 45) : null) },
-  { key: 'alpha', label: 'Binance Alpha', group: 'dna', weight: 0.8, raw: (r) => r.alphaListed, map: (r) => (r.alphaListed === true ? 100 : r.alphaListed === false ? 35 : null) },
+  { key: 'bnbChain', label: 'BNB Chain', group: 'dna', weight: 0.25, raw: (r) => r.chain, map: (r) => (r.chain ? (r.chain === 'bsc' ? 100 : r.chain === 'native' ? 25 : 45) : null) },
+  { key: 'alpha', label: 'Binance Alpha', group: 'dna', weight: 0.3, raw: (r) => r.alphaListed, map: (r) => (r.alphaListed === true ? 100 : r.alphaListed === false ? 35 : null) },
   { key: 'reset', label: 'Distanță de ATH', group: 'dna', weight: 0.9, raw: (r) => r.athChangePct, map: (r) => band(r.athChangePct, 0, -95) },
   { key: 'age', label: 'Vechime listare', group: 'dna', weight: 0.6, raw: (r) => r.ageDays, map: (r) => band(log10(r.ageDays), Math.log10(14), Math.log10(900)) },
   { key: 'turnover', label: 'Turnover volum/MC', group: 'dna', weight: 0.7, raw: (r) => r.turnover, map: (r) => band(log10(r.turnover), -2.5, 0) },

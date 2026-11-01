@@ -52,7 +52,11 @@ export function researchAsset(asset, ctx) {
   const sequence = closedDaily?.length >= 35 ? stageSequence(closedDaily, 30) : null;
   const raw = candidateRaw(asset, lf, d1, oc);
   const vector = toVector(raw);
-  const analogs = matchAnalogs({ vector, sequence }, ctx.references, config.similarity);
+  // A reference token is never its own analog: AGT compared with AGT's pre-pump fingerprint is a
+  // tautology, not evidence. Compare only with the OTHER references.
+  const ownSymbol = String(asset.symbol ?? '').toUpperCase();
+  const comparable = ctx.references.filter((r) => String(r.symbol ?? '').toUpperCase() !== ownSymbol);
+  const analogs = matchAnalogs({ vector, sequence }, comparable, config.similarity);
 
   const fund = asset.fundamentals;
   const domains = [

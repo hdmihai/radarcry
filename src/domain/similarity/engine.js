@@ -9,6 +9,8 @@
 import { compress, isNum, lcsLength, mean, round } from '../shared/math.js';
 import { FEATURES } from './vector.js';
 
+const VENUE_TRAITS = new Set(['perps', 'bnbChain', 'alpha']);
+
 function gaussianSimilarity(a, b, features, sigma) {
   let num = 0;
   let den = 0;
@@ -51,7 +53,9 @@ export function compareVectors(a, b, { sigma = 22, minCoverage = 0.4 } = {}) {
     distance: round(all.distance, 2),
     coverage: round(coverage, 3),
     components,
-    topMatches: known.slice(0, 4).map((c) => c.key),
+    // Traits every reference shares by selection (BNB Chain, Binance Alpha, perps) say nothing about
+    // pre-pump behaviour: they stay in the score at low weight but never headline the explanation.
+    topMatches: known.filter((c) => !VENUE_TRAITS.has(c.key)).slice(0, 4).map((c) => c.key),
     weakest: known.slice(-3).reverse().map((c) => c.key),
   };
 }

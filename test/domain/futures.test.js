@@ -248,3 +248,22 @@ test('a structural stop inside the noise is widened to one 4H ATR, and says so',
   assert.equal(none.stop, null);
   assert.equal(none.rr1, null);
 });
+
+test('trade levels: late entry reports the reward/risk a buyer at today\'s price really gets', () => {
+  // Same shape as the live PEPE case: zone far below the price, targets close above it.
+  const setup = {
+    smc: { close: 487, atr14: 22.9, swingLow: 400, swingHigh: 515 },
+    entryZone: { top: 432, bottom: 426, kind: 'OB_MITIGAT' },
+    invalidation: 406,
+  };
+  const l = tradeLevels(setup, { blocksLong: false });
+  assert.equal(l.lateEntry, true);
+  assert.ok(l.entryDistancePct > CHASE_LIMIT_PCT);
+  assert.ok(l.rr1 >= 3, 'the zone-based figure stays available');
+  assert.ok(l.rrLive1 < 1, `live R:R to target 1 is below 1R, got ${l.rrLive1}`);
+  assert.ok(l.rrLive2 < l.rr2);
+  assert.ok(l.liveRiskPct > l.riskPct);
+  // An entry inside the zone has no late-entry flag and the two figures agree closely.
+  const inside = tradeLevels({ ...setup, smc: { ...setup.smc, close: 430 } }, { blocksLong: false });
+  assert.equal(inside.lateEntry, false);
+});

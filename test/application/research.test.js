@@ -89,3 +89,9 @@ test('for an Alpha token the prescreen measures holders and liquidity growth wit
   assert.equal(r.current.holdersSource, 'binance_alpha', 'the reading is stored with its source for the next comparison');
   assert.ok(r.score > 0);
 });
+
+test('a reference token is never matched against its own fingerprint', async () => {
+  const src = await import('node:fs').then((m) => m.readFileSync(new URL('../../src/application/use-cases/research.js', import.meta.url), 'utf8'));
+  assert.match(src, /ownSymbol/);
+  assert.match(src, /matchAnalogs\(\{ vector, sequence \}, comparable/);
+});

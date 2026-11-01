@@ -16,7 +16,8 @@ export function pickSetups(s, limit = 8) {
   const live = s.candidates.filter((c) => ['BUY_SETUP', 'ACCUMULATE', 'WATCH'].includes(c.signal?.type));
   return live
     .sort((a, b) => (SIGNAL_RANK[b.signal.type] - SIGNAL_RANK[a.signal.type])
-      || ((b.signal.type === 'WATCH' ? (b.analogs?.best?.similarity ?? 0) : b.score.cri) - (a.signal.type === 'WATCH' ? (a.analogs?.best?.similarity ?? 0) : a.score.cri)))
+      || ((b.score?.cri ?? 0) - (a.score?.cri ?? 0))
+      || ((b.analogs?.best?.similarity ?? 0) - (a.analogs?.best?.similarity ?? 0)))
     .slice(0, limit);
 }
 
@@ -66,7 +67,7 @@ export function heroMarkup(s) {
       <p class="qlead-a">${questionLine(s)}</p>
       <p class="qlead-m">
         <a href="#/radar-small-cap">Small-Cap Radar</a> · <a href="#/futures">Futures Radar</a> · <a href="#/deep-research">Deep Research</a>
-        <span class="muted">· ${d.analysed ?? 0} proiecte cercetate în adâncime, ${d.earlyCandidates ?? 0} candidați timpurii · paritate ${score(s.parity?.achieved)}% față de soluțiile comerciale</span>
+        <span class="muted">· ${d.analysed ?? 0} proiecte cercetate în adâncime, ${d.earlyCandidates ?? 0} candidați timpurii · acoperire funcțională estimată ${score(s.parity?.achieved)}% față de soluțiile comerciale (autoevaluare, nu comparație măsurată)</span>
       </p>
     </div>
   </div>

@@ -46,7 +46,8 @@ function levelsPanel(l) {
     <div class="kv"><span>Invalidare</span><b class="num">$${price(l.stop)}${l.stopBasis === 'ATR_FLOOR' ? html` <span class="muted small" data-tip="${tip('Invalidarea structurală era mai aproape de un ATR(4H) de intrare, adică în zgomotul obișnuit al pieței. Stopul a fost mutat la 1 ATR(4H) sub intrare, iar R:R este calculat față de acest risc.')}">lărgită la 1 ATR</span>` : ''}</b></div>
     <div class="kv"><span>Obiectiv 1</span><b class="num">$${price(l.target1)}</b></div>
     <div class="kv"><span>Obiectiv 2</span><b class="num">$${price(l.target2)}</b></div>
-    <div class="kv"><span>Risc / R:R</span><b>${pct(l.riskPct, { sign: false })} · ${l.rr1 ?? '—'}R → ${l.rr2 ?? '—'}R</b></div>
+    <div class="kv"><span>Risc / R:R de la zonă</span><b>${pct(l.riskPct, { sign: false })} · ${l.rr1 ?? '—'}R → ${l.rr2 ?? '—'}R${l.lateEntry ? ' (zona nu mai e accesibilă)' : ''}</b></div>
+    ${l.lateEntry ? html`<div class="kv"><span>R:R real, de la prețul curent</span><b>${pct(l.liveRiskPct, { sign: false })} risc · ${l.rrLive1 ?? '—'}R → ${l.rrLive2 ?? '—'}R</b></div>` : ''}
     ${l.entryZone ? html`<div class="kv"><span>Tip zonă</span><b>${l.entryZone.kind}</b></div>` : ''}
     <div class="kv"><span>ATR 4H</span><b>${pct(l.atrPct, { sign: false })}</b></div>
   </div>

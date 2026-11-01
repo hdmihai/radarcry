@@ -16,6 +16,9 @@
  *   OPTIONAL_KEY  — reproduced when the operator supplies a free/trial key (Level 2 of the platform model)
  *   NOT_COVERED   — not reproducible without a subscription; stated plainly rather than hidden
  *
+ * NOTE: the achieved figure is a SELF-ASSESSMENT of capability coverage (weights chosen by the author),
+ * not a measured accuracy comparison against commercial products; the dashboard must say so.
+ *
  * Two parity figures are always reported, never one:
  *   · `permanent`  — what works forever, with no key that can expire
  *   · `withKeys`   — what works while the optional free/trial keys are configured

@@ -56,7 +56,8 @@ test('similarity: identical fingerprints score 100, unknown features are exclude
   assert.equal(r.similarity, 100, 'missing traits do not count as differences');
   assert.ok(r.coverage < 1);
   const totalW = FEATURES.reduce((s, f) => s + f.weight, 0);
-  assert.ok(Math.abs(r.coverage - (totalW - 0.9 - 0.8) / totalW) < 0.002);
+  const wOf = (k) => FEATURES.find((f) => f.key === k).weight;
+  assert.ok(Math.abs(r.coverage - (totalW - wOf('concentration') - wOf('alpha')) / totalW) < 0.002);
 });
 
 test('analog matching ranks the closer reference first and reports DNA vs phase', () => {
@@ -86,4 +87,12 @@ test('watchlist: important transitions and new signals raise alerts in Romanian'
   assert.deepEqual(alerts.map((a) => a.kind).sort(), ['SCORE', 'SIGNAL', 'STAGE']);
   assert.ok(alerts.find((a) => a.kind === 'STAGE').reason.includes('Pre-expansiune'));
   assert.equal(alerts[0].severity, 'HIGH', 'HIGH alerts sort first');
+});
+
+test('analog explanation never headlines venue traits shared by every reference', () => {
+  const raw = { mcapUsd: 2e7, floatRatio: 0.1, top10Pct: 85, perpVenues: 2, chain: 'bsc', alphaListed: true, athChangePct: -70, ageDays: 170, turnover: 0.12 };
+  const v = toVector(raw);
+  const r = compareVectors(v, v);
+  for (const k of ['perps', 'bnbChain', 'alpha']) assert.ok(!r.topMatches.includes(k), `${k} must not be a headline match`);
+  assert.ok(r.topMatches.length > 0);
 });

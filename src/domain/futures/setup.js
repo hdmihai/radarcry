@@ -129,7 +129,20 @@ export function tradeLevels(setup, trend) {
 
   const rr1 = isNum(risk) && risk > 0 && isNum(t1) ? (t1 - entry) / risk : null;
   const rr2 = isNum(risk) && risk > 0 && isNum(t2) ? (t2 - entry) / risk : null;
+  // Live reward/risk: what a buyer at today's price actually gets. Far above the zone, the zone's
+  // R:R describes an entry that is no longer available.
+  const liveRisk = isNum(stop) && close > stop ? close - stop : null;
+  const rrLive1 = isNum(liveRisk) && isNum(t1) && t1 > close ? (t1 - close) / liveRisk : isNum(t1) && isNum(liveRisk) ? 0 : null;
+  const rrLive2 = isNum(liveRisk) && isNum(t2) && t2 > close ? (t2 - close) / liveRisk : isNum(t2) && isNum(liveRisk) ? 0 : null;
+  const entryDistancePct = isNum(zone?.top) && zone.top > 0 ? round((close / zone.top - 1) * 100, 2) : null;
+  const lateEntry = isNum(entryDistancePct) && entryDistancePct > CHASE_LIMIT_PCT;
   return {
+    price: round(close, 8),
+    entryDistancePct,
+    lateEntry,
+    liveRiskPct: isNum(liveRisk) ? round((liveRisk / close) * 100, 2) : null,
+    rrLive1: isNum(rrLive1) ? round(rrLive1, 2) : null,
+    rrLive2: isNum(rrLive2) ? round(rrLive2, 2) : null,
     bias: trend?.blocksLong ? 'FĂRĂ LONG' : 'LONG',
     entryZone: zone,
     entry: round(entry, 8),
