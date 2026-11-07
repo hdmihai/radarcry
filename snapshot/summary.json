@@ -1,0 +1,136 @@
+{
+  "schemaVersion": "4.0.0",
+  "generatedAt": "2026-11-07T10:41:01.077Z",
+  "mode": "live",
+  "overall": "HEALTHY",
+  "universe": {
+    "coingecko": 1000,
+    "coinmarketcap": 0,
+    "coinpaprika": 1600,
+    "binanceAlpha": 378,
+    "gateAlpha": 4069,
+    "alphaOnly": 3549,
+    "alphaOnlyEligible": 38,
+    "binanceAlphaOnly": 13,
+    "gateAlphaOnly": 3307,
+    "alphaPrograms": {
+      "binance": 376,
+      "gate": 3785,
+      "both": 352
+    },
+    "merged": 4548,
+    "excluded": 4063,
+    "eligible": 485,
+    "deep": 485,
+    "priority": 68,
+    "horizon": 485,
+    "discovered": 485,
+    "published": 150,
+    "validity": {
+      "valid": 378,
+      "pending": 0,
+      "rejected": 107
+    },
+    "futures": 554,
+    "rolling": {
+      "tiers": {
+        "candles": 443,
+        "dex": 371,
+        "security": {
+          "fresh": 1,
+          "carried": 378
+        },
+        "detail": {
+          "fresh": 0,
+          "carried": 463
+        },
+        "holdersInfo": 47,
+        "holderLists": 0,
+        "dev": 32,
+        "mentions": 0
+      },
+      "cache": {
+        "projects": 485,
+        "security": 380,
+        "detail": 469,
+        "holdersInfo": 197,
+        "dev": 101,
+        "mentions": 0,
+        "windowHours": 72,
+        "ttlHours": {
+          "security": 168,
+          "detail": 336
+        }
+      }
+    },
+    "crossListed": 0
+  },
+  "signals": {
+    "LATE": 6,
+    "WATCH": 30,
+    "NONE": 82,
+    "AVOID": 32
+  },
+  "top": [
+    {
+      "symbol": "ARIA",
+      "cri": 66.5,
+      "signal": "LATE",
+      "stage": "EXPANSION"
+    },
+    {
+      "symbol": "BIRB",
+      "cri": 64.9,
+      "signal": "WATCH",
+      "stage": "BASE"
+    },
+    {
+      "symbol": "MEGA",
+      "cri": 62.7,
+      "signal": "WATCH",
+      "stage": "BUILDING"
+    },
+    {
+      "symbol": "ELSA",
+      "cri": 62.4,
+      "signal": "WATCH",
+      "stage": "ACCELERATION"
+    },
+    {
+      "symbol": "IDOL",
+      "cri": 62.4,
+      "signal": "LATE",
+      "stage": "EXPANSION"
+    },
+    {
+      "symbol": "AXIS",
+      "cri": 60.9,
+      "signal": "WATCH",
+      "stage": "BASE"
+    },
+    {
+      "symbol": "TA",
+      "cri": 59.8,
+      "signal": "WATCH",
+      "stage": "BUILDING"
+    },
+    {
+      "symbol": "BEAT",
+      "cri": 59.2,
+      "signal": "WATCH",
+      "stage": "PRE_EXPANSION"
+    },
+    {
+      "symbol": "CTR",
+      "cri": 58.9,
+      "signal": "WATCH",
+      "stage": "BUILDING"
+    },
+    {
+      "symbol": "ON",
+      "cri": 58.6,
+      "signal": "WATCH",
+      "stage": "BASE"
+    }
+  ]
+}
