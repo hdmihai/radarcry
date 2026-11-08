@@ -16,6 +16,8 @@
  *   node agent/main.js chat    [text…] [--text-env VAR] [--reply-dir dir] [--write] [--issue N]
  *                              talk to the agent (no text on a terminal: an interactive session)
  *   node agent/main.js chat-parse --text-env VAR   the command a comment asks for (GITHUB_OUTPUT)
+ *   node agent/main.js serve   [--port 8787] [--host 127.0.0.1] [--dist dist] [--origin url,…]
+ *                              the dashboard's chat: conversations API + the built dashboard
  *
  * Environment: GITHUB_TOKEN, GITHUB_REPOSITORY (owner/name), CRI_AGENT_NARRATE (auto|always|never),
  * CRI_AGENT_MODEL (default from agent/config.json), CRI_AGENT_CODE_MODEL, CRI_AGENT_OLLAMA_URL
@@ -27,13 +29,22 @@ import { existsSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createCasesFs } from './adapters/cases-fs.js';
+import { createConversationsFs } from './adapters/conversations-fs.js';
+import { createConsult, createLlmChain, createOpenAiCompat } from './adapters/llm-openai.js';
+import { createNotesFs } from './adapters/notes-fs.js';
+import { createExa, createJinaReader, createTavily, createWeb } from './adapters/web-search.js';
 import { createKnowledgeFs, createMemoryFs, createStateDir } from './adapters/files.js';
+import { createAgentServer } from './adapters/http.js';
 import { createFixturePorts } from './adapters/fixtures.js';
 import { createGitHub, createIssueNotifier } from './adapters/github.js';
 import { createOllama, createPublicPrices, createSite, pagesUrlOf } from './adapters/web.js';
 import { createWorkspace } from './adapters/workspace.js';
+import { approveOp, assist, deleteOp, feedbackOp, learnOp, patchOp } from './application/assistant.js';
 import { chat } from './application/chat.js';
+import { deleteConversation, exportConversation, listConversations, openConversation, sendMessage, updateConversation } from './application/conversation.js';
 import { act, analyze, narrate, runAll } from './application/monitor.js';
+import { consultMessages } from './domain/assistant.js';
 import { CHAT_MARKER } from './domain/chat.js';
 import { isFollowUp, threadContext, understand } from './domain/intent.js';
 
@@ -90,7 +101,7 @@ function positional(argv) {
   const out = [];
   for (let i = 1; i < argv.length; i += 1) {
     if (argv[i].startsWith('--')) {
-      if (['--text-env', '--reply-dir', '--memory', '--report', '--state', '--data', '--repo', '--issue', '--author', '--now'].includes(argv[i])) i += 1;
+      if (['--text-env', '--reply-dir', '--memory', '--report', '--state', '--data', '--repo', '--issue', '--author', '--now', '--port', '--host', '--dist', '--origin', '--mem-dir'].includes(argv[i])) i += 1;
       continue;
     }
     out.push(argv[i]);
@@ -209,6 +220,75 @@ async function runChat({ flags, env, cfg, memoryDir, stateDir, dataDir, argv }) 
   } else console.log(r.reply.replace(/^<!--.*-->\n/, ''));
 }
 
+/**
+ * The dashboard's chat: a local HTTP server (127.0.0.1 by default) with the conversations API, and the
+ * built dashboard itself when --dist is given, so one address (http://127.0.0.1:8787/#/chat) is the
+ * whole thing — Termux included. History is kept as files in <memory>/conversations.
+ */
+async function runServe({ flags, env, cfg, memoryDir, stateDir, dataDir }) {
+  const reportDir = resolve(String(flags.report ?? join(memoryDir, 'report')));
+  const port = Number(flags.port ?? env.CRI_AGENT_PORT ?? 8787);
+  const host = String(flags.host ?? env.CRI_AGENT_HOST ?? '127.0.0.1');
+  const dist = flags.dist && flags.dist !== true ? resolve(String(flags.dist)) : existsSync(resolve('dist')) ? resolve('dist') : null;
+  const conversations = createConversationsFs({ dir: join(memoryDir, 'conversations') });
+  const repo = String(flags.repo ?? env.GITHUB_REPOSITORY ?? '');
+  const pagesUrl = env.CRI_AGENT_PAGES_URL || cfg.pagesUrl || (repo.includes('/') ? pagesUrlOf(repo) : '') || '';
+  const extra = String(flags.origin ?? env.CRI_AGENT_ORIGINS ?? '').split(',').map((x) => x.trim()).filter(Boolean);
+  const origins = [...new Set([...(pagesUrl ? [new URL(pagesUrl).origin] : []), `http://127.0.0.1:${port}`, `http://localhost:${port}`, ...extra])];
+  const nowOf = async () => (flags.now ? Date.parse(String(flags.now)) : flags.fixtures ? demoNow(stateDir, dataDir) : Date.now());
+  // Ports are built per message: the report and the research state are read as they are now.
+  const portsNow = async () => ({ ...(await chatPorts({ flags, env, cfg, memoryDir, reportDir, stateDir, dataDir, cmd: { coder: false } })), conversations });
+  const app = {
+    list: async () => listConversations({ ports: { conversations } }),
+    open: async (id) => openConversation({ ports: { conversations }, id }),
+    update: async (id, patch) => updateConversation({ ports: { conversations }, id, patch }),
+    remove: async (id) => deleteConversation({ ports: { conversations }, id }),
+    exportText: async (id) => exportConversation({ ports: { conversations }, id, cfg }),
+    send: async (id, text, onStatus) => sendMessage({ ports: await portsNow(), cfg, nowMs: await nowOf(), id, text, logger, onStatus }),
+  };
+  const { listen } = createAgentServer({ app, port, host, dist, origins, token: env.CRI_AGENT_TOKEN || null });
+  await listen();
+  logger.info(`agent: chat pornit pe http://${host}:${port}${dist ? '/#/chat (dashboard-ul din ' + dist + ')' : ' (fără dashboard: dă --dist dist)'}; istoricul în ${join(memoryDir, 'conversations')}`);
+  if (!['127.0.0.1', 'localhost', '::1'].includes(host)) logger.warn('agent: serverul ascultă în afara buclei locale; accesul cere tokenul din CRI_AGENT_TOKEN.');
+}
+
+/**
+ * One operation of the hosted assistant, run by the private repo's workflow (hosted/radarcry-agent).
+ * Input comes from the environment, never from the command line: ASSIST_OP, ASSIST_CONVERSATION,
+ * ASSIST_MESSAGE, ASSIST_TEXT, ASSIST_EXTRA (JSON). The assistant's own memory is in --mem-dir
+ * (conversations, cases, lessons); the radar's memory and state are the usual --memory and --state.
+ */
+async function runAssist({ flags, env, cfg, memoryDir, stateDir, dataDir }) {
+  const memRoot = resolve(String(flags['mem-dir'] ?? join(memoryDir, 'assistant')));
+  const reportDir = resolve(String(flags.report ?? join(memoryDir, 'report')));
+  const key = (name) => env[name] || null;
+  const providers = (cfg.assistant?.providers ?? []).map((p) => createOpenAiCompat({ id: p.id, baseUrl: p.baseUrl, apiKey: key(p.envKey), model: p.model, fetchImpl: globalThis.fetch }));
+  const llm = createLlmChain({ providers });
+  const searchers = { tavily: createTavily({ apiKey: key('TAVILY_API_KEY') }), exa: createExa({ apiKey: key('EXA_API_KEY') }) };
+  const web = createWeb({ searchers: (cfg.assistant?.search?.order ?? ['tavily', 'exa']).map((id) => searchers[id]).filter(Boolean), reader: createJinaReader({ apiKey: key('JINA_API_KEY') }) });
+  const base = await chatPorts({ flags, env, cfg, memoryDir, reportDir, stateDir, dataDir, cmd: { coder: false } });
+  const conversations = createConversationsFs({ dir: join(memRoot, 'conversations') });
+  const ports = { ...base, narrator: null, conversations, cases: createCasesFs({ dir: join(memRoot, 'cases') }), notes: createNotesFs({ dir: memRoot }), llm, web, consult: createConsult({ chain: llm, roles: cfg.assistant?.consult ?? {}, build: consultMessages }) };
+  const nowMs = flags.now ? Date.parse(String(flags.now)) : flags.fixtures ? await demoNow(stateDir, dataDir) : Date.now();
+  const op = String(env.ASSIST_OP ?? 'chat');
+  const id = String(env.ASSIST_CONVERSATION ?? '');
+  let extra = {};
+  try { extra = env.ASSIST_EXTRA ? JSON.parse(env.ASSIST_EXTRA) : {}; } catch { throw new Error('ASSIST_EXTRA nu este JSON'); }
+  let r;
+  switch (op) {
+    case 'chat': r = await assist({ ports, cfg, nowMs, id, messageId: String(env.ASSIST_MESSAGE ?? ''), text: String(env.ASSIST_TEXT ?? ''), logger }); break;
+    case 'patch': r = await patchOp({ ports, id, patch: extra }); break;
+    case 'delete': r = await deleteOp({ ports, id }); break;
+    case 'feedback': r = await feedbackOp({ ports, id, messageId: String(env.ASSIST_MESSAGE ?? ''), value: extra.value ?? null }); break;
+    case 'learn': r = await learnOp({ ports, cfg, nowMs, logger }); break;
+    case 'approve': r = await approveOp({ ports }); break;
+    case 'reindex': await conversations.reindex(); r = { ok: true, data: {} }; break;
+    default: r = { ok: false, message: `operație necunoscută: ${op}` };
+  }
+  if (!r.ok) throw new Error(`asistent: ${op} refuzat — ${r.message ?? r.status}`);
+  logger.info(`asistent: ${op} făcut${r.data?.by ? ` (${r.data.by})` : ''}${llm.providers.length ? '' : ' — niciun model configurat, răspunsurile vin din raport'}`);
+}
+
 async function main() {
   const argv = process.argv.slice(2);
   const { cmd, flags } = parseArgs(argv);
@@ -238,6 +318,14 @@ async function main() {
     const out = `cmd=${c.intent}\nok=${c.ok}\nllm=${llm}\ncoder=${c.coder}\n`;
     if (env.GITHUB_OUTPUT) await appendFile(env.GITHUB_OUTPUT, out);
     else process.stdout.write(out);
+    return;
+  }
+  if (cmd === 'assist') {
+    await runAssist({ flags, env, cfg, memoryDir, stateDir, dataDir });
+    return;
+  }
+  if (cmd === 'serve') {
+    await runServe({ flags, env, cfg, memoryDir, stateDir, dataDir });
     return;
   }
   if (cmd === 'chat') {
@@ -303,7 +391,7 @@ async function main() {
     const { report } = await runAll({ ports, cfg, nowMs: now, limits, logger, narrateMode, dryRun: Boolean(flags['dry-run']) });
     logger.info(`agent: ${report.overall} — raport în ${join(reportDir, 'agent.json')}${replay ? ` (după ${replay} rulări reluate)` : ''}`);
   } else {
-    throw new Error(`comandă necunoscută: ${cmd} (analyze | narrate | act | run | chat | chat-parse)`);
+    throw new Error(`comandă necunoscută: ${cmd} (analyze | narrate | act | run | chat | chat-parse | serve | assist)`);
   }
 }
 

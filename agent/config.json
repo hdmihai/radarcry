@@ -2,27 +2,144 @@
   "version": "1.1.0",
   "description": "Agentul AI de calitate al CRI Radar: monitorizează gratuit toate porțile de calitate (CI, scanări, cadență, surse, cote, site, calibrarea prognozei, eficiența identificării), învață din istoricul proiectului, se autoevaluează și răspunde proprietarului în limbaj natural, în text simplu (gratuit: probleme GitHub al căror titlu începe cu „Agent”, comentarii /agent, terminal). Modul separat: nu importă nimic din src/.",
   "workflows": [
-    { "file": "ci.yml", "role": "ci", "name": "CI" },
-    { "file": "scan-and-deploy.yml", "role": "scan", "name": "Scan & deploy", "cadence": { "warnBelow": 0.75, "failBelow": 0.4 } },
-    { "file": "pulse.yml", "role": "pulse", "name": "Pulse", "inspect": false, "cadence": { "warnBelow": 0.5, "failBelow": null } },
-    { "file": "probe.yml", "role": "probe", "name": "Probe surse", "maxAgeDays": 8 },
-    { "file": "labels.yml", "role": "labels", "name": "Actualizare etichete on-chain", "inspect": false, "maxAgeDays": 32 }
+    {
+      "file": "ci.yml",
+      "role": "ci",
+      "name": "CI"
+    },
+    {
+      "file": "scan-and-deploy.yml",
+      "role": "scan",
+      "name": "Scan & deploy",
+      "cadence": {
+        "warnBelow": 0.75,
+        "failBelow": 0.4
+      }
+    },
+    {
+      "file": "pulse.yml",
+      "role": "pulse",
+      "name": "Pulse",
+      "inspect": false,
+      "cadence": {
+        "warnBelow": 0.5,
+        "failBelow": null
+      }
+    },
+    {
+      "file": "probe.yml",
+      "role": "probe",
+      "name": "Probe surse",
+      "maxAgeDays": 8
+    },
+    {
+      "file": "labels.yml",
+      "role": "labels",
+      "name": "Actualizare etichete on-chain",
+      "inspect": false,
+      "maxAgeDays": 32
+    }
   ],
   "cadenceWindowDays": 7,
-  "norms": { "minSamples": 8, "z": 3.5, "maxPoints": 120, "window": 60 },
-  "freshness": { "warnFactor": 1.5, "failFactor": 3 },
-  "inactivity": { "warnDays": 50, "failDays": 60 },
+  "norms": {
+    "minSamples": 8,
+    "z": 3.5,
+    "maxPoints": 120,
+    "window": 60
+  },
+  "freshness": {
+    "warnFactor": 1.5,
+    "failFactor": 3
+  },
+  "inactivity": {
+    "warnDays": 50,
+    "failDays": 60
+  },
   "heal": {
     "enabled": true,
-    "scan": { "enabled": true, "minGapHours": 4.5, "maxPerDay": 4 },
-    "pulse": { "enabled": true, "minGapHours": 2, "maxPerDay": 8 },
+    "scan": {
+      "enabled": true,
+      "minGapHours": 4.5,
+      "maxPerDay": 4
+    },
+    "pulse": {
+      "enabled": true,
+      "minGapHours": 2,
+      "maxPerDay": 8
+    },
     "maxQuotaShare": 85
   },
-  "issues": { "enabled": true, "minSeverity": "serious" },
-  "narrator": { "enabled": true, "model": "qwen2.5:3b", "maxAgeHours": 24, "timeoutMs": 240000, "numPredict": 420 },
-  "calibration": { "maxRows": 600, "keepDays": 430 },
-  "efficiency": { "halfLifeHours": { "research": 24, "market": 2 }, "marketShare": 0.12 },
-  "identification": { "windowDays": 30 },
-  "chat": { "timeZone": "Europe/Bucharest", "model": "qwen2.5:3b", "codeModel": "qwen2.5-coder:7b", "maxRounds": 2, "contextFiles": 4, "codeTimeoutMs": 1200000, "codeNumCtx": 16384, "codeNumPredict": 2048 },
-  "pagesUrl": null
+  "issues": {
+    "enabled": true,
+    "minSeverity": "serious"
+  },
+  "narrator": {
+    "enabled": true,
+    "model": "qwen2.5:3b",
+    "maxAgeHours": 24,
+    "timeoutMs": 240000,
+    "numPredict": 420
+  },
+  "calibration": {
+    "maxRows": 600,
+    "keepDays": 430
+  },
+  "efficiency": {
+    "halfLifeHours": {
+      "research": 24,
+      "market": 2
+    },
+    "marketShare": 0.12
+  },
+  "identification": {
+    "windowDays": 30
+  },
+  "chat": {
+    "timeZone": "Europe/Bucharest",
+    "model": "qwen2.5:3b",
+    "codeModel": "qwen2.5-coder:7b",
+    "maxRounds": 2,
+    "contextFiles": 4,
+    "codeTimeoutMs": 1200000,
+    "codeNumCtx": 16384,
+    "codeNumPredict": 2048
+  },
+  "pagesUrl": null,
+  "assistant": {
+    "maxSteps": 6,
+    "providers": [
+      {
+        "id": "groq",
+        "baseUrl": "https://api.groq.com/openai/v1",
+        "envKey": "GROQ_API_KEY",
+        "model": "openai/gpt-oss-120b"
+      },
+      {
+        "id": "openrouter",
+        "baseUrl": "https://openrouter.ai/api/v1",
+        "envKey": "OPENROUTER_API_KEY",
+        "model": "openrouter/free"
+      }
+    ],
+    "consult": {
+      "skeptic": {
+        "provider": "groq",
+        "model": "qwen/qwen3.8-27b"
+      },
+      "researcher": {
+        "provider": "openrouter",
+        "model": "openrouter/free"
+      },
+      "second_opinion": {
+        "provider": "groq",
+        "model": "openai/gpt-oss-20b"
+      }
+    },
+    "search": {
+      "order": [
+        "tavily",
+        "exa"
+      ]
+    }
+  }
 }

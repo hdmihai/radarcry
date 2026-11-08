@@ -25,6 +25,7 @@ import { drawerMarkup } from '../../web/assets/js/views/drawer.js';
 import { validityMarkup, validityState } from '../../web/assets/js/views/validity.js';
 import { forecastMarkup } from '../../web/assets/js/views/forecast.js';
 import { agentMarkup, agentState } from '../../web/assets/js/views/agent.js';
+import { bannerMarkup, chatMarkup, chatState, headMarkup, sideMarkup, threadMarkup } from '../../web/assets/js/views/chat.js';
 import { identificationEfficiency } from '../../agent/domain/identification.js';
 import { createFixturePorts } from '../../agent/adapters/fixtures.js';
 import { runAll } from '../../agent/application/monitor.js';
@@ -459,4 +460,50 @@ test('the Agent AI screen renders while loading, without a report, and with one 
     Object.assign(agentState, saved);
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+test('chat: offline it says how to start the agent and keeps the draft; online it shows the history, the thread and the typing state', () => {
+  Object.assign(chatState, { mode: 'local', reason: 'local', status: 'offline', base: null, tried: ['http://127.0.0.1:8787'], convs: [], activeId: null, title: '', messages: [], sending: false, error: null, draft: 'ce <b>șanse</b> are LAB?', filter: '', sideOpen: false, settings: false, token: '' });
+  const off = String(chatMarkup(snap));
+  clean('chat (offline)', off);
+  assert.match(off, /npm run agent:serve/);
+  assert.match(off, /Agentul local nu răspunde/);
+  assert.ok(off.includes('ce &lt;b&gt;șanse&lt;/b&gt; are LAB?'), 'the draft is escaped');
+
+  const now = new Date().toISOString();
+  Object.assign(chatState, {
+    status: 'online',
+    convs: [{ id: 'aaaaaaaa-1', title: 'Starea <radarului>', pinned: true, count: 4, updatedAt: now, preview: 'cum stă radarul?' }, { id: 'bbbbbbbb-2', title: 'Prognoză LAB', pinned: false, count: 2, updatedAt: now, preview: 'de ce?' }],
+    activeId: 'aaaaaaaa-1',
+    title: 'Starea <radarului>',
+    messages: [
+      { id: 1, role: 'user', text: 'cum stă radarul?', at: now },
+      { id: 2, role: 'agent', text: 'Radarul e în risk-off.\n\nNiciun setup confirmat.\n\n— Agentul AI al CRI Radar — răspuns din raportul meu. Cercetare, nu sfat financiar.', at: now },
+    ],
+    draft: '',
+  });
+  const on = String(chatMarkup(snap));
+  clean('chat (online)', on);
+  assert.ok(on.includes('Starea &lt;radarului&gt;'), 'titles are escaped');
+  assert.match(on, /data-chat-pin="aaaaaaaa-1"/, 'the open conversation shows pin, rename, download and delete');
+  assert.ok(!/data-chat-fb/.test(on), 'verdict buttons exist only for the hosted assistant');
+  assert.match(on, /data-chat-delete/);
+  assert.ok(!/data-chat-delete="bbbbbbbb-2"/.test(on), 'only the open conversation has actions');
+  assert.match(on, /class="chat-sign"/, 'the signature line is apart from the text');
+  assert.ok(!on.includes('cri-agent-chat'));
+
+  chatState.sending = true;
+  chatState.progress = 'Înțeleg întrebarea…';
+  const busy = String(threadMarkup());
+  assert.match(busy, /data-pending="1"/);
+  assert.match(busy, /Înțeleg întrebarea…/);
+  assert.match(String(chatMarkup(snap)), /id="chat-send"[^>]*disabled/);
+  chatState.sending = false;
+
+  chatState.filter = 'prognoz';
+  const filtered = String(sideMarkup());
+  assert.ok(filtered.includes('Prognoză LAB') && !filtered.includes('Starea'));
+  chatState.filter = '';
+  assert.match(String(headMarkup()), /conectat/);
+  assert.equal(String(bannerMarkup()).trim(), '', 'no banner while connected');
 });

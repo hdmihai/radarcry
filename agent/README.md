@@ -92,3 +92,34 @@ cât din valorile noi cad în normele învățate și câte propuneri de cod au 
 Variabile opționale (Settings → Secrets and variables → Actions → Variables): `CRI_AGENT_LLM=off`,
 `CRI_AGENT_MODEL` (implicit `qwen2.5:3b`), `CRI_AGENT_CODE_MODEL` (implicit `qwen2.5-coder:7b`),
 `CRI_AGENT_HEAL=off`, `CRI_AGENT_ISSUES=off`, `CRI_AGENT_NARRATE=always|never`.
+
+## Chat în dashboard (tab-ul „Chat Agent”)
+
+```bash
+npm run build && npm run agent:serve      # apoi deschide http://127.0.0.1:8787/#/chat (Termux inclus)
+npm run agent:serve:demo                  # aceeași pagină, pe datele demo
+```
+
+`agent/adapters/http.js` este adaptorul de intrare: un server local (127.0.0.1) cu API-ul conversațiilor și, cu
+`--dist`, dashboard-ul însuși, deci totul e pe o singură adresă. Tab-ul scrie în câmpul de text, arată puncte de
+„se gândește” plus pașii agentului în timp real, apoi răspunsul în aceeași conversație. Meniul din stânga listează
+istoricul (căutare, fixare, redenumire, descărcare .txt, ștergere). Istoricul se salvează automat ca fișiere în
+`<memorie>/conversations/` (`.agent/conversations`), iar agentul îl caută: „ce am discutat despre LAB?” răspunde din
+conversațiile salvate, iar o întrebare liberă primește, când e cazul, schimbul anterior apropiat.
+
+Siguranță: serverul ascultă doar pe bucla locală; orice cerere cu `Origin` străin primește 403 (o pagină de pe alt site
+nu îl poate folosi), scrierile cer `application/json`, corpurile sunt limitate, iar în afara buclei locale se cere
+`CRI_AGENT_TOKEN`. Pagina de pe GitHub Pages se poate conecta la `127.0.0.1` în Chrome și Firefox (adresa se poate schimba
+din „Conexiune”); în Safari deschide direct adresa locală.
+
+## AI Assistant hostat pe GitHub (pagina „AI Assistant”)
+
+Un asistent cu model de limbaj (Groq gratuit, rezervă OpenRouter) care folosește unelte: datele radarului, documentația,
+memoria proprie, căutare pe internet (Tavily, Exa), citirea paginilor (Jina Reader) și o a doua opinie de la alte modele.
+Rulează în workflow-ul unui repo privat (`hosted/radarcry-agent`), pornit din dashboard prin `workflow_dispatch`; memoria
+(conversații, cazuri rezolvate, lecții aprobate) stă în `memory/` din acel repo. Fără model, răspunde agentul determinist.
+
+- Cod: `agent/domain/assistant.js` (instrucțiuni, unelte, garduri), `agent/application/assistant.js` (bucla de unelte și
+  operațiile chat/patch/delete/feedback/learn/approve), `agent/adapters/llm-openai.js`, `web-search.js`, `cases-fs.js`, `notes-fs.js`.
+- Comandă: `ASSIST_OP=chat ASSIST_CONVERSATION=… ASSIST_MESSAGE=… ASSIST_TEXT=… node agent/main.js assist --mem-dir <dir>`.
+- Configurare pas cu pas: `hosted/SETUP-RO.md`.

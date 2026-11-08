@@ -75,6 +75,11 @@ test('agent adapters reach only free hosts, each pinned to its own', async () =>
     'api.github.com': 'GitHub REST cu tokenul automat al workflow-ului (gratuit)',
     'api.coingecko.com': 'CoinGecko public, fără cheie (prețuri pentru registrul de calibrare)',
     '127.0.0.1': 'Ollama local, în runner',
+    'api.groq.com': 'Groq, plan gratuit cu cheie de cont (modelul asistentului)',
+    'openrouter.ai': 'OpenRouter, modele gratuite (rezerva asistentului)',
+    'api.tavily.com': 'Tavily, căutare web, plan gratuit',
+    'api.exa.ai': 'Exa, căutare web, a doua sursă',
+    'r.jina.ai': 'Jina Reader, citește pagini web pentru asistent',
   };
   const LINK_ONLY = new Set(['github.com', 'localhost']);
   for (const f of (await jsFiles(join(ROOT, 'agent', 'adapters'))).filter((x) => !x.endsWith('fixtures.js'))) {

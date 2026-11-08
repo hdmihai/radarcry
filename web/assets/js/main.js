@@ -26,6 +26,7 @@ import { bindUniverse, ensureUniverse, universeMarkup } from './views/universe.j
 import { bindValidity, validityMarkup } from './views/validity.js';
 import { forecastMarkup } from './views/forecast.js';
 import { agentMarkup, agentState, ensureAgent } from './views/agent.js';
+import { bindChat, chatMarkup, chatState, enterChat } from './views/chat.js';
 import { criTipBody, gradeTipBody, lifeTipBody, shortSignal, signalTipBody } from './views/widgets.js';
 
 /**
@@ -36,6 +37,8 @@ import { criTipBody, gradeTipBody, lifeTipBody, shortSignal, signalTipBody } fro
 const ROUTES = [
   { id: 'futures', label: 'Futures Radar', primary: true, render: futuresMarkup, count: (s) => (s.futures?.summary?.graded ?? 0) },
   { id: 'radar-small-cap', label: 'Small-Cap Radar', primary: true, render: discoveryMarkup, count: (s) => (s.discovery?.answering ?? 0) },
+  // The AI assistant: plain-text chat with a saved history, hosted in a private GitHub repo. A page of its own.
+  { id: 'asistent', label: 'AI Assistant', primary: true, render: chatMarkup, count: () => (chatState.status === 'online' ? chatState.convs.length : null), enter: () => enterChat() },
   { id: 'deep-research', label: 'Deep Research', primary: true, render: researchMarkup, count: (s) => (s.discovery?.rows ?? []).filter((r) => r.detail === 'full' || r.platforms?.length).length },
   // The whole horizon, from data/universe.json — loaded only when this screen is opened.
   { id: 'univers', label: 'Univers', render: universeMarkup, count: (s) => s.meta?.universe?.projects ?? 0, enter: (s) => (s.meta?.universe ? ensureUniverse(s.meta.universe.file ?? 'data/universe.json') : Promise.resolve()) },
@@ -133,6 +136,7 @@ function onRoute() {
   const first = state.route === null;
   const changed = state.route?.id !== route.id;
   state.route = route;
+  document.documentElement.dataset.page = route.id; // a page may restyle the frame (the assistant hides the market strip and the hero)
   if (changed) {
     renderTabs();
     renderView();
@@ -339,6 +343,7 @@ async function boot() {
   bindResearch(view, () => renderView());
   bindUniverse(view, (opts) => renderView(opts));
   bindValidity(view, (opts) => renderView(opts));
+  bindChat(view);
 
   // Opening a project from any list jumps to its full dossier when the drawer is not the better fit.
   on(document, 'click', '[data-dossier]', (e, el) => {

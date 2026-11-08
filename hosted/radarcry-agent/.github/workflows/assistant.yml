@@ -1,0 +1,100 @@
+name: Asistent AI
+
+# Rulează în repo-ul PRIVAT al asistentului. Dashboard-ul îl pornește cu workflow_dispatch (un token
+# personal limitat la acest repo) și citește răspunsul din memory/. Săptămânal își propune lecții.
+on:
+  workflow_dispatch:
+    inputs:
+      op:
+        description: 'chat | patch | delete | feedback | learn | approve | reindex'
+        required: true
+        default: chat
+        type: string
+      conversation:
+        description: 'identificatorul conversației'
+        required: false
+        default: ''
+        type: string
+      message:
+        description: 'identificatorul mesajului'
+        required: false
+        default: ''
+        type: string
+      text:
+        description: 'textul mesajului'
+        required: false
+        default: ''
+        type: string
+      extra:
+        description: 'JSON: titlu/fixare sau verdict'
+        required: false
+        default: '{}'
+        type: string
+  schedule:
+    - cron: '23 6 * * 1' # luni dimineața: propune lecții din cazurile rezolvate
+
+permissions:
+  contents: write # doar acest repo privat: memoria asistentului
+
+# Un mesaj = un grup: fiecare mesaj primește răspuns, fără să aștepte pe altul.
+concurrency:
+  group: assistant-${{ inputs.message || inputs.conversation || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  assist:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      CODE_REPO: ${{ vars.CODE_REPO || 'hdmihai/radarcry' }}
+      CODE_REF: ${{ vars.CODE_REF || 'main' }}
+    steps:
+      - name: Memoria asistentului (acest repo privat)
+        uses: actions/checkout@v4
+        with:
+          path: mem
+
+      - name: Codul radarcry (repo public, fără token)
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.CODE_REPO }}
+          ref: ${{ env.CODE_REF }}
+          path: code
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: code/.nvmrc
+          package-manager-cache: false
+
+      - name: Memoria și starea radarului (ramurile publice cri-agent și cri-state)
+        run: |
+          for pair in cri-agent:.agent cri-state:.state; do
+            branch="${pair%%:*}"; dir="${pair##*:}"
+            if git clone -q --depth=1 --branch "$branch" "https://github.com/${CODE_REPO}.git" "$dir" 2>/dev/null; then
+              rm -rf "$dir/.git"
+            else
+              mkdir -p "$dir"; echo "Ramura $branch nu există încă: asistentul pornește fără ea."
+            fi
+          done
+
+      - name: Asistentul (intrarea vine doar prin mediu, niciodată în script)
+        working-directory: code
+        env:
+          ASSIST_OP: ${{ inputs.op || 'learn' }}
+          ASSIST_CONVERSATION: ${{ inputs.conversation }}
+          ASSIST_MESSAGE: ${{ inputs.message }}
+          ASSIST_TEXT: ${{ inputs.text }}
+          ASSIST_EXTRA: ${{ inputs.extra || '{}' }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
+          EXA_API_KEY: ${{ secrets.EXA_API_KEY }}
+        run: node agent/main.js assist --mem-dir "$GITHUB_WORKSPACE/mem/memory" --memory "$GITHUB_WORKSPACE/.agent" --state "$GITHUB_WORKSPACE/.state"
+
+      - name: Salvez memoria
+        env:
+          MEM_DIR: ${{ github.workspace }}/mem
+          CODE_DIR: ${{ github.workspace }}/code
+          LABEL: ${{ inputs.op || 'learn' }} ${{ inputs.conversation }}
+        run: bash mem/scripts/commit-memory.sh

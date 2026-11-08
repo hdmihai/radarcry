@@ -29,6 +29,8 @@
     "agent": "node agent/main.js run",
     "agent:demo": "node agent/main.js run --fixtures --fresh --replay 30 --state .cri-state-demo --data data --memory .agent-demo --out data",
     "agent:chat": "node agent/main.js chat",
+    "agent:serve": "node agent/main.js serve --dist dist",
+    "agent:serve:demo": "node agent/main.js serve --fixtures --memory .agent-demo --report data --state .cri-state-demo --data data --dist dist",
     "agent:chat:demo": "node agent/main.js chat --fixtures --memory .agent-demo --report data --state .cri-state-demo --data data",
     "agent:sync": "sh -c 'mkdir -p .agent .state && git fetch -q --depth=1 origin cri-agent && git archive FETCH_HEAD | tar -x -C .agent && git fetch -q --depth=1 origin cri-state && git archive FETCH_HEAD | tar -x -C .state && echo \"memoria agentului (.agent) și starea cercetării (.state) sunt actualizate\"'"
   },

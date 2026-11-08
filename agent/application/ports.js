@@ -92,6 +92,16 @@
  */
 
 /**
+ * ConversationsPort — the owner's conversations with the agent, kept between sessions (the dashboard's
+ * chat history, and what the agent looks back at). Optional; only the chat server has one.
+ * @typedef {Object} ConversationsPort
+ * @property {() => Promise<any[]>} all                the saved conversations, the most recent first, capped
+ * @property {(id:string) => Promise<any|null>} get
+ * @property {(conversation:any) => Promise<void>} save
+ * @property {(id:string) => Promise<void>} remove
+ */
+
+/**
  * NotifierPort — one rolling GitHub issue with the open findings. Optional.
  * @typedef {Object} NotifierPort
  * @property {(o:{title:string, body:string, open:boolean}) => Promise<Result>} upsert
