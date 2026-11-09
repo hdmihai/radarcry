@@ -760,7 +760,18 @@ Pentru ca pull requestul să se deschidă singur: **Settings → Actions → Gen
 
 ![Dashboard CRI Radar](docs/img/dashboard.png)
 
-Trei secțiuni principale, în ordinea în care lucrează un cercetător, plus un meniu secundar.
+Navigarea are două niveluri, chiar sub bara „Regim piață”:
+
+- **Nivelul 1 — secțiunile principale**, ca bară de tab-uri: **Oportunități proiecte** — întrebarea
+  proiectului și răspunsul ei, „Ce seamănă acum cu LAB, BTW sau AGT” și harta oportunităților.
+- **Nivelul 2 — al doilea meniu**, pe o singură linie orizontală (se derulează pe telefon):
+  **AI Assistant · Small-Cap Radar · Futures Radar · Deep Research**, apoi meniul secundar de mai jos.
+
+Structura (ce secțiuni există, în ce meniu, în ce ordine) stă în `web/assets/js/core/navigation.js`, un
+model pur testat în Node; `web/assets/js/screens.js` leagă fiecare secțiune de ecranul ei, iar `main.js`
+rămâne rădăcina de compoziție. Frontend-ul nu calculează cercetare, doar randează `data/latest.json`.
+
+Ecranele de cercetare, în ordinea în care lucrează un cercetător:
 
 **① Futures Radar** — cinci blocuri ponderate: trend 1D (25), structură 4H (30), poziționare pe
 derivate (25), lichiditate (10), volum și volatilitate (10). Notele A++ ≥ 95 · A+ ≥ 90 · A ≥ 85 ·

@@ -191,7 +191,6 @@ button { cursor: pointer; }
 .mfact-v .sub { font-weight: 400; color: var(--ink-2); }
 
 /* ---------- hero ---------- */
-.hero { padding: 28px 0 8px; }
 .hero-grid { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: 28px; align-items: start; }
 .hero-title { font-size: var(--fs-2xl); font-weight: 780; font-stretch: 116%; letter-spacing: -0.02em; line-height: 1.05; max-width: 22ch; }
 .hero-lede { margin-top: 10px; color: var(--ink-2); max-width: 62ch; }
@@ -213,15 +212,17 @@ button { cursor: pointer; }
 .panel-title { font-size: var(--fs-md); font-weight: 680; font-stretch: 106%; }
 .panel-note { font-size: var(--fs-xs); color: var(--ink-3); }
 
-/* ---------- tabs ---------- */
-.tabs { position: sticky; top: 56px; z-index: 20; background: var(--plane); border-bottom: 1px solid var(--line); margin-top: 22px; }
-.tabs .frame { display: flex; gap: 2px; overflow-x: auto; scrollbar-width: none; }
-.tabs .frame::-webkit-scrollbar { display: none; }
+/* ---------- navigation: level 1 = main sections (tab bar), level 2 = the second menu ---------- */
+.tabs, .menu { background: var(--plane); border-bottom: 1px solid var(--line); }
+.menu { position: sticky; top: 56px; z-index: 20; }
+.tabs .frame, .menu .frame { display: flex; gap: 2px; overflow-x: auto; scrollbar-width: none; }
+.tabs .frame::-webkit-scrollbar, .menu .frame::-webkit-scrollbar { display: none; }
 .tab { position: relative; padding: 12px 12px 11px; color: var(--ink-2); text-decoration: none; white-space: nowrap; font-weight: 560; font-stretch: 96%; }
 .tab:hover { color: var(--ink); }
 .tab[aria-current='page'] { color: var(--ink); }
 .tab[aria-current='page']::after { content: ''; position: absolute; left: 10px; right: 10px; bottom: -1px; height: 2px; background: var(--accent); border-radius: 2px; }
 .tab .count { margin-left: 6px; color: var(--ink-3); font-weight: 500; font-variant-numeric: tabular-nums; }
+.tabs .tab { padding: 14px 14px 13px; font-size: var(--fs-md); font-weight: 700; font-stretch: 112%; }
 
 .view { padding: 22px 0 48px; min-height: 60vh; outline: none; }
 .view-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 24px; margin-bottom: 16px; }
@@ -774,6 +775,7 @@ details.domain .domain-facts div { display: flex; justify-content: space-between
 .qlead-a { margin: 0; font-size: 15px; line-height: 1.5; }
 .qlead-m { margin: 0; font-size: 12.5px; }
 .qlead-m a { color: var(--accent-ink); }
+.opps .qlead { margin: 0 0 22px; }
 .qlink { color: var(--good-ink); text-decoration: none; font-variant-numeric: tabular-nums; }
 .qlink:hover { text-decoration: underline; }
 
@@ -887,8 +889,9 @@ details.domain .domain-facts div { display: flex; justify-content: space-between
 @media (prefers-reduced-motion: reduce) { .chat-side { transition: none; } }
 
 /* ---------- the AI Assistant page ---------- */
-html[data-page='asistent'] #market-strip, html[data-page='asistent'] #hero { display: none; }
-html[data-page='asistent'] .chat { height: min(82vh, 860px); }
+html[data-page='asistent'] #market-strip { display: none; }
+/* The chat fills what is left under the top bar and the two menus (~176px), so the composer stays on screen. */
+html[data-page='asistent'] .chat { min-height: 0; height: clamp(420px, calc(100vh - 192px), 860px); height: clamp(420px, calc(100dvh - 192px), 860px); }
 .chat-trace { font-size: var(--fs-xs); color: var(--ink-3); padding: 0 4px; }
 .chat-fb { display: flex; gap: 6px; padding: 0 2px; }
 .chat-fb button { height: 28px; padding: 0 10px; border-radius: var(--r-sm); border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink-2); font-size: var(--fs-xs); }
@@ -899,4 +902,4 @@ html[data-page='asistent'] .chat { height: min(82vh, 860px); }
 .chat-lessons pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 8px 0; font: inherit; color: var(--ink-2); }
 .chat-conn select { height: 34px; padding: 0 8px; border-radius: var(--r-sm); border: 1px solid var(--line); background: var(--surface); color: var(--ink); width: 100%; }
 .chat-conn { grid-template-columns: 150px 1fr 1fr auto; }
-@media (max-width: 760px) { .chat-conn { grid-template-columns: 1fr; } html[data-page='asistent'] .chat { height: min(86dvh, 860px); } }
+@media (max-width: 760px) { .chat-conn { grid-template-columns: 1fr; } }

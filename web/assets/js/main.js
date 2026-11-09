@@ -1,63 +1,28 @@
 /**
- * CRI Radar dashboard — composition of the static frontend.
- * Reads data/latest.json (the engine's published contract), renders views by hash route, and hosts
- * the shared behaviours: research drawer, tooltips, theme, copy-to-clipboard.
+ * CRI Radar dashboard — composition root of the static frontend.
+ * Reads data/latest.json (the engine's published contract) and renders it: the navigation model
+ * (core/navigation.js) says which sections exist and where they sit, screens.js binds a view to
+ * each of them, and this file hosts the shared behaviours — router, the two menus, research
+ * drawer, tooltips, theme, copy-to-clipboard.
  */
 import { $, html, on, setHTML, storage } from './core/dom.js';
 import { pct, score, usd } from './core/format.js';
 import { HEALTH, L, icon, initLabels } from './core/labels.js';
+import { hrefFor, mainSections, menuSections, parseHash, sectionById } from './core/navigation.js';
 import { SnapshotError, loadSnapshot } from './core/store.js';
+import { SCREENS } from './screens.js';
 import { dnaTooltip } from './charts/dna.js';
-import { analogsMarkup } from './views/analogs.js';
-import { bindCatalysts, catalystsMarkup } from './views/catalysts.js';
+import { bindCatalysts } from './views/catalysts.js';
+import { bindChat } from './views/chat.js';
+import { bindDiscovery } from './views/discovery.js';
 import { drawerMarkup } from './views/drawer.js';
-import { healthMarkup } from './views/health.js';
-import { heroMarkup } from './views/hero.js';
-import { derivativesMarkup, narrativesMarkup } from './views/markets.js';
-import { methodologyMarkup } from './views/methodology.js';
-import { bindRadar, radarMarkup } from './views/radar.js';
-import { bindDiscovery, discoveryMarkup } from './views/discovery.js';
-import { bindFutures, futuresMarkup } from './views/futures.js';
-import { bindResearch, researchMarkup, researchState } from './views/research.js';
-import { parityMarkup } from './views/parity.js';
-import { marketStrip, noticeMarkup, notices, topMeta } from './views/shell.js';
-import { trackMarkup } from './views/track.js';
-import { bindUniverse, ensureUniverse, universeMarkup } from './views/universe.js';
-import { bindValidity, validityMarkup } from './views/validity.js';
-import { forecastMarkup } from './views/forecast.js';
-import { agentMarkup, agentState, ensureAgent } from './views/agent.js';
-import { bindChat, chatMarkup, chatState, enterChat } from './views/chat.js';
+import { bindFutures } from './views/futures.js';
+import { bindRadar } from './views/radar.js';
+import { bindResearch, researchState } from './views/research.js';
+import { mainTabsMarkup, marketStrip, menuMarkup, noticeMarkup, notices, topMeta } from './views/shell.js';
+import { bindUniverse } from './views/universe.js';
+import { bindValidity } from './views/validity.js';
 import { criTipBody, gradeTipBody, lifeTipBody, shortSignal, signalTipBody } from './views/widgets.js';
-
-/**
- * Three primary sections, then the secondary menu. The order is the order a researcher works in:
- * where is the market right now (futures), what is quietly changing (small-cap radar), and then one
- * project in full (deep research). Everything after the separator supports those three.
- */
-const ROUTES = [
-  { id: 'futures', label: 'Futures Radar', primary: true, render: futuresMarkup, count: (s) => (s.futures?.summary?.graded ?? 0) },
-  { id: 'radar-small-cap', label: 'Small-Cap Radar', primary: true, render: discoveryMarkup, count: (s) => (s.discovery?.answering ?? 0) },
-  // The AI assistant: plain-text chat with a saved history, hosted in a private GitHub repo. A page of its own.
-  { id: 'asistent', label: 'AI Assistant', primary: true, render: chatMarkup, count: () => (chatState.status === 'online' ? chatState.convs.length : null), enter: () => enterChat() },
-  { id: 'deep-research', label: 'Deep Research', primary: true, render: researchMarkup, count: (s) => (s.discovery?.rows ?? []).filter((r) => r.detail === 'full' || r.platforms?.length).length },
-  // The whole horizon, from data/universe.json — loaded only when this screen is opened.
-  { id: 'univers', label: 'Univers', render: universeMarkup, count: (s) => s.meta?.universe?.projects ?? 0, enter: (s) => (s.meta?.universe ? ensureUniverse(s.meta.universe.file ?? 'data/universe.json') : Promise.resolve()) },
-  // The gate in front of every CRI list: its rules, its counts, and every project it held back.
-  { id: 'validare', label: 'Validare', render: validityMarkup, count: (s) => s.validity?.summary?.valid ?? 0 },
-  // The ≥100× forecast for every verified project, and the learning list of the last year's winners.
-  { id: 'prognoza', label: 'Prognoză ≥100×', render: forecastMarkup, count: (s) => (s.forecast?.winners ?? []).filter((w) => w.status === 'CONFIRMED' || w.status === 'DOCUMENTED').length },
-  { id: 'alerte', label: 'Alerte', render: catalystsMarkup, count: (s) => (s.alerts?.items ?? []).length },
-  { id: 'analogi', label: 'Analogi LAB/BTW/AGT', render: analogsMarkup, count: (s) => (s.references ?? []).length },
-  { id: 'radar', label: 'Radar CRI', render: radarMarkup, count: (s) => s.candidates.length },
-  { id: 'derivate', label: 'Derivate', render: derivativesMarkup, count: (s) => (s.derivatives?.squeezeWatch ?? []).length },
-  { id: 'narative', label: 'Narative', render: narrativesMarkup },
-  { id: 'track-record', label: 'Track record', render: trackMarkup, count: (s) => (s.trackRecord?.recent ?? []).length },
-  { id: 'paritate', label: 'Paritate și bugete', render: parityMarkup },
-  // The AI quality agent's report, from data/agent.json — loaded only when this screen is opened.
-  { id: 'agent', label: 'Agent AI', render: agentMarkup, count: () => (agentState.status === 'ready' ? agentState.data.findings?.length ?? 0 : null), enter: () => ensureAgent('data/agent.json') },
-  { id: 'surse', label: 'Date și surse', render: healthMarkup },
-  { id: 'metodologie', label: 'Metodologie', render: methodologyMarkup },
-];
 
 const state = { snap: null, route: null, openKey: null, lastFocus: null };
 
@@ -71,46 +36,42 @@ function applyTheme(theme) {
   }
 }
 
-/* ---------------- routing ---------------- */
-function parseHash() {
-  const raw = location.hash.replace(/^#\/?/, '');
-  const [path, query = ''] = raw.split('?');
-  const params = new URLSearchParams(query);
-  const route = ROUTES.find((r) => r.id === path) ?? ROUTES[0];
-  return { route, token: params.get('t') };
-}
+/* ---------------- navigation ---------------- */
 
-function hrefFor(routeId, token) {
-  return `#/${routeId}${token ? `?t=${encodeURIComponent(token)}` : ''}`;
-}
-
-/** Sticky offset for table headers = sticky top of the tabs + their rendered height. */
+/** Sticky offset for table headers = sticky top of the second menu + its rendered height. */
 function measureSticky() {
-  const tabs = $('#tabs');
-  if (!tabs) return;
-  const h = (Number.parseFloat(getComputedStyle(tabs).top) || 56) + tabs.offsetHeight;
+  const menu = $('#menu');
+  if (!menu) return;
+  const h = (Number.parseFloat(getComputedStyle(menu).top) || 56) + menu.offsetHeight;
   document.documentElement.style.setProperty('--stick-top', `${h}px`);
 }
 
-/** Natural (un-stuck) document offset of the tabs, from a sentinel placed right before them. */
-function tabsNaturalTop() {
-  const anchor = $('#tabs-anchor');
-  const tabs = $('#tabs');
-  const margin = Number.parseFloat(getComputedStyle(tabs).marginTop) || 0;
-  return (anchor ? anchor.getBoundingClientRect().top + window.scrollY : 0) + margin;
+/** Natural (un-stuck) document offset of the second menu, from a sentinel placed right before it. */
+function menuNaturalTop() {
+  const anchor = $('#menu-anchor');
+  return anchor ? anchor.getBoundingClientRect().top + window.scrollY : 0;
 }
 
-function renderTabs() {
+/** Keep the horizontal position of the second menu across a re-render, and never leave the current entry off-screen. */
+function keepActiveVisible(scrollLeft) {
+  const bar = $('#menu .frame');
+  if (!bar) return;
+  bar.scrollLeft = scrollLeft;
+  const cur = $('[aria-current="page"]', bar);
+  if (!cur) return;
+  const box = bar.getBoundingClientRect();
+  const r = cur.getBoundingClientRect();
+  if (r.left < box.left || r.right > box.right) bar.scrollLeft += (r.left + r.right) / 2 - (box.left + box.right) / 2;
+}
+
+/** Both bars: level 1 (main sections, tabs) and level 2 (the second menu), each entry with its live count. */
+function renderNav() {
   const s = state.snap;
-  const tab = (r) => {
-    const n = r.count ? r.count(s) : null;
-    return html`<a class="tab" ${r.primary ? html`data-primary="1"` : ''} href="${hrefFor(r.id)}" ${state.route?.id === r.id ? html`aria-current="page"` : ''}>${r.label}${Number.isFinite(n) && n > 0 ? html`<span class="count">${n}</span>` : ''}</a>`;
-  };
-  setHTML($('#tabs'), html`<div class="frame">
-    ${ROUTES.filter((r) => r.primary).map(tab)}
-    <span class="tab-sep" aria-hidden="true"></span>
-    ${ROUTES.filter((r) => !r.primary).map(tab)}
-  </div>`);
+  const item = (sec) => ({ id: sec.id, label: sec.label, count: SCREENS[sec.id].count?.(s) ?? null });
+  const scrollLeft = $('#menu .frame')?.scrollLeft ?? 0;
+  setHTML($('#tabs'), mainTabsMarkup(mainSections().map(item), state.route?.id));
+  setHTML($('#menu'), menuMarkup({ work: menuSections('work').map(item), support: menuSections('support').map(item) }, state.route?.id));
+  keepActiveVisible(scrollLeft);
   measureSticky();
 }
 
@@ -121,7 +82,7 @@ function renderView({ keepFocus = null } = {}) {
     const el = $(keepFocus, view);
     if (el && typeof el.selectionStart === 'number') caret = el.selectionStart;
   }
-  setHTML(view, html`<div class="frame">${state.route.render(state.snap)}</div>`);
+  setHTML(view, html`<div class="frame">${SCREENS[state.route.id].render(state.snap)}</div>`);
   if (keepFocus) {
     const el = $(keepFocus, view);
     if (el) {
@@ -132,19 +93,27 @@ function renderView({ keepFocus = null } = {}) {
 }
 
 function onRoute() {
-  const { route, token } = parseHash();
+  const { id, token } = parseHash(location.hash);
+  const route = sectionById(id);
+  const screen = SCREENS[id];
   const first = state.route === null;
-  const changed = state.route?.id !== route.id;
+  const changed = state.route?.id !== id;
   state.route = route;
-  document.documentElement.dataset.page = route.id; // a page may restyle the frame (the assistant hides the market strip and the hero)
+  document.documentElement.dataset.page = id; // a page may restyle the frame (the assistant hides the market strip)
   if (changed) {
-    renderTabs();
+    renderNav();
     renderView();
     // A screen with its own data file renders a loading state first, then itself once it arrives.
-    if (route.enter) route.enter(state.snap).then(() => { if (state.route === route) renderView(); });
-    // Switching sections while scrolled down: bring the new section's start under the sticky tabs.
-    const stickTop = Number.parseFloat(getComputedStyle($('#tabs')).top) || 56;
-    const target = tabsNaturalTop() - stickTop;
+    if (screen.enter) {
+      screen.enter(state.snap).then(() => {
+        if (state.route !== route) return;
+        renderNav(); // counts that depend on the loaded data (assistant history, agent findings)
+        renderView();
+      });
+    }
+    // Switching sections while scrolled down: bring the new section's start under the sticky second menu.
+    const stickTop = Number.parseFloat(getComputedStyle($('#menu')).top) || 56;
+    const target = menuNaturalTop() - stickTop;
     if (!first && window.scrollY > target) window.scrollTo({ top: target });
   }
   if (token && token !== state.openKey) openDrawer(token, { fromRoute: true });
@@ -303,7 +272,7 @@ function renderError(err) {
     <p style="margin-top:6px">${local ? 'Pagina a fost deschisă direct din fișier; browserul blochează citirea datelor. Pornește serverul local: npm run demo (date simulate) sau npm run scan && npm run build && npm run serve (date reale).' : kind === 'MISSING' ? 'Rulează workflow-ul „Scan & deploy” din tab-ul Actions al repository-ului; după primul run, dashboard-ul se populează automat la fiecare 4 ore.' : `Detalii: ${err?.message ?? err}. Reîncarcă pagina; dacă persistă, verifică ultimul run din GitHub Actions.`}</p>
   </div></div>`);
   setHTML($('#snapshot-meta'), html`<span class="muted">fără date</span>`);
-  for (const id of ['#market-strip', '#tabs', '#hero']) {
+  for (const id of ['#market-strip', '#tabs', '#menu']) {
     const el = $(id);
     if (el) el.hidden = true;
   }
@@ -331,7 +300,6 @@ async function boot() {
   setHTML($('#snapshot-meta'), topMeta(snap));
   setHTML($('#notice'), noticeMarkup(notices(snap)));
   setHTML($('#market-strip'), marketStrip(snap));
-  setHTML($('#hero'), heroMarkup(snap));
   $('#footer-meta') && setHTML($('#footer-meta'), html`Schema ${snap.schemaVersion}, rulare ${snap.meta.runId}, ${HEALTH[snap.health?.overall]?.label ?? ''}.`);
 
 

@@ -508,6 +508,14 @@ ei permanentă, iar platforma rămâne accesibilă prin stratul LINK.
 Documentul este validat la **fiecare** publicare față de `schema/latest.schema.json`, iar un snapshot
 care nu respectă contractul nu ajunge pe Pages.
 
+**Frontend-ul are și el hexagonul lui, în mic.** `web/assets/js/core/navigation.js` este modelul pur al
+meniurilor (ce secțiuni există, pe ce nivel, în ce ordine; fără DOM, fără I/O); `screens.js` leagă fiecare
+secțiune de ecranul ei — o funcție pură din `latest.json` în markup — iar `main.js` este rădăcina de
+compoziție (rutare, cele două meniuri, sertarul de cercetare, tooltip-uri, temă). Regula „`web` importă doar
+din `web`” rămâne testul de arhitectură de mai sus, iar `test/web/navigation.test.js` verifică forma
+meniurilor: secțiunea principală, al doilea meniu pe o singură linie, nicio secțiune dispărută și fiecare
+link intern către o secțiune care există.
+
 Schema face și muncă de conținut, nu doar de formă: cere ca fiecare furnizor să își declare planul,
 ca fiecare cheie să fie descrisă ca `gratuit` sau `trial`, ca fiecare invalidator să spună ce
 falsifică și unde se urmărește, și ca politica publicată să conțină `unknownIsBearish: false`,

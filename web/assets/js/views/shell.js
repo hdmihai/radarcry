@@ -1,7 +1,8 @@
-/** Top bar meta, notices and the market-weather strip. */
+/** Top bar meta, notices, the market-weather strip and the two navigation bars. */
 import { html, tip } from '../core/dom.js';
 import { ago, dateTime, duration, pct, usd } from '../core/format.js';
 import { HEALTH, REGIME, icon } from '../core/labels.js';
+import { hrefFor } from '../core/navigation.js';
 import { statusLine } from './widgets.js';
 
 export function topMeta(s) {
@@ -38,6 +39,26 @@ export function notices(s, nowMs = Date.now()) {
 
 export function noticeMarkup(list) {
   return list.map((n) => html`<div class="notice" data-kind="${n.kind}" role="status"><div class="frame">${icon(n.ico, 15)}<p>${n.text}</p></div></div>`);
+}
+
+/** One entry of either bar. `item` = { id, label, count }; the count shows only when it is above zero. */
+function navLink(item, activeId, { primary = false } = {}) {
+  const n = item.count;
+  return html`<a class="tab" ${primary ? html`data-primary="1"` : ''} href="${hrefFor(item.id)}" ${activeId === item.id ? html`aria-current="page"` : ''}>${item.label}${Number.isFinite(n) && n > 0 ? html`<span class="count">${n}</span>` : ''}</a>`;
+}
+
+/** Level 1: the main sections as a tab bar, right under the market-regime strip. */
+export function mainTabsMarkup(items, activeId) {
+  return html`<div class="frame">${items.map((i) => navLink(i, activeId))}</div>`;
+}
+
+/** Level 2: the second menu on one horizontal line — the working set, a thin rule, the supporting screens. */
+export function menuMarkup({ work = [], support = [] }, activeId) {
+  return html`<div class="frame">
+    ${work.map((i) => navLink(i, activeId, { primary: true }))}
+    ${work.length && support.length ? html`<span class="tab-sep" aria-hidden="true"></span>` : ''}
+    ${support.map((i) => navLink(i, activeId))}
+  </div>`;
 }
 
 export function marketStrip(s) {

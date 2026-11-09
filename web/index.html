@@ -23,7 +23,7 @@
   <a class="skip" href="#view">Sari la conținut</a>
   <header class="topbar">
     <div class="frame">
-      <a class="brand" href="#/radar" aria-label="CRI Radar, pagina principală">
+      <a class="brand" href="#/oportunitati" aria-label="CRI Radar, pagina principală">
         <svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
           <circle cx="16" cy="16" r="13" fill="none" stroke="currentColor" stroke-opacity=".35" stroke-width="1.5"/>
           <circle cx="16" cy="16" r="7.5" fill="none" stroke="currentColor" stroke-opacity=".6" stroke-width="1.5"/>
@@ -43,10 +43,12 @@
   </header>
   <div id="notice"></div>
   <section class="market-strip" id="market-strip" aria-label="Contextul pieței"></section>
+  <!-- Navigation, level 1: the main sections as a tab bar, right under the market regime. -->
+  <nav class="tabs" id="tabs" aria-label="Secțiuni principale"></nav>
+  <!-- Navigation, level 2: the second menu, one horizontal line (sticky under the top bar). -->
+  <div id="menu-anchor" aria-hidden="true"></div>
+  <nav class="menu" id="menu" aria-label="Meniu secundar"></nav>
   <main>
-    <section class="hero" id="hero" aria-label="Setup-uri curente"></section>
-    <div id="tabs-anchor" aria-hidden="true"></div>
-    <nav class="tabs" id="tabs" aria-label="Secțiuni"></nav>
     <section class="view" id="view" tabindex="-1" aria-live="polite">
       <div class="frame loading">Se încarcă snapshot-ul de cercetare<div class="bar"></div></div>
     </section>

@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import { runFixtureDays } from '../fixture-run.js';
 import { indexSnapshot } from '../../web/assets/js/core/store.js';
 import { initLabels } from '../../web/assets/js/core/labels.js';
-import { heroMarkup } from '../../web/assets/js/views/hero.js';
+import { opportunitiesMarkup } from '../../web/assets/js/views/opportunities.js';
 import { radarMarkup } from '../../web/assets/js/views/radar.js';
 import { analogsMarkup } from '../../web/assets/js/views/analogs.js';
 import { catalystsMarkup } from '../../web/assets/js/views/catalysts.js';
@@ -60,7 +60,7 @@ test('escaping: interpolated values are escaped, tooltips are escaped exactly on
 });
 
 test('every view renders from the contract', () => {
-  for (const [name, fn] of Object.entries({ heroMarkup, discoveryMarkup, futuresMarkup, researchMarkup, parityMarkup, radarMarkup, analogsMarkup, catalystsMarkup, derivativesMarkup, narrativesMarkup, trackMarkup, healthMarkup, methodologyMarkup, validityMarkup, forecastMarkup, topMeta, marketStrip })) {
+  for (const [name, fn] of Object.entries({ opportunitiesMarkup, discoveryMarkup, futuresMarkup, researchMarkup, parityMarkup, radarMarkup, analogsMarkup, catalystsMarkup, derivativesMarkup, narrativesMarkup, trackMarkup, healthMarkup, methodologyMarkup, validityMarkup, forecastMarkup, topMeta, marketStrip })) {
     clean(name, fn(snap));
   }
   const n = notices(snap);
