@@ -105,6 +105,9 @@ export function discoveryView(row, ctx = {}) {
       confidenceLabel: row.thesis.confidenceLabel,
       oneLiner: row.thesis.oneLiner,
       confirms: [],
+      whatChanged: [],
+      context: [],
+      invalidates: [],
       // The verdict lines stay; the question text and the invalidator list are in the full file.
       questionAnswer: row.thesis.questionAnswer ? {
         question: null,
@@ -121,6 +124,9 @@ export function discoveryView(row, ctx = {}) {
       confidenceLabel: row.thesis.confidenceLabel,
       oneLiner: row.thesis.oneLiner,
       confirms: row.thesis.confirms,
+      whatChanged: row.thesis.whatChanged,
+      context: row.thesis.context,
+      invalidates: row.thesis.invalidates,
       questionAnswer: row.thesis.questionAnswer,
     },
 
