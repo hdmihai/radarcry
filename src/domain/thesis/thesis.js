@@ -21,6 +21,117 @@ const money = (x) => {
 const pct = (x, digits = 1) => (isNum(x) ? `${x > 0 ? '+' : ''}${round(x, digits)}%` : 'necunoscut');
 
 /**
+ * WHO IS BUYING — a compact read of on-chain flow direction and quality.
+ * Pure function: reads asset.onchain.{smartMoney,flows}, no I/O.
+ */
+function whoIsBuyingSection(asset) {
+  const sm = asset.onchain?.smartMoney;
+  const flows = asset.onchain?.flows;
+
+  if (!flows && !sm?.components?.length) {
+    return {
+      verdict: 'UNKNOWN',
+      headline: 'Date on-chain insuficiente în această rulare',
+      buyers: [],
+      sellers: [],
+      confidence: 0,
+      sources: [],
+    };
+  }
+
+  const buyers = [];
+  const sellers = [];
+
+  if (flows && flows.verdict && flows.verdict !== 'UNKNOWN') {
+    if (isNum(flows.newWhales) && flows.newWhales > 0) {
+      buyers.push({
+        label: `${flows.newWhales} portofele mari noi`,
+        evidence: flows.verdict === 'ACCUMULATING' ? (flows.verdictLabel ?? null) : null,
+        source: 'holder-flows',
+      });
+    }
+    if (isNum(flows.accumulating) && flows.accumulating > 0) {
+      buyers.push({
+        label: `${flows.accumulating} portofele acumulează`,
+        evidence: flows.verdict === 'ACCUMULATING' ? (flows.verdictLabel ?? null) : null,
+        source: 'holder-flows',
+      });
+    }
+    if (isNum(flows.distributing) && flows.distributing > 0) {
+      sellers.push({
+        label: `${flows.distributing} portofele distribuie`,
+        evidence: flows.verdict === 'DISTRIBUTING' ? (flows.verdictLabel ?? null) : null,
+        source: 'holder-flows',
+      });
+    }
+    if (isNum(flows.cexDeltaPct) && flows.cexDeltaPct > 0) {
+      sellers.push({
+        label: 'intrări nete pe CEX',
+        evidence: `+${round(flows.cexDeltaPct * 100, 1)}%`,
+        source: 'holder-flows',
+      });
+    }
+    if (isNum(flows.cexDeltaPct) && flows.cexDeltaPct < 0) {
+      buyers.push({
+        label: 'ieșiri nete din CEX',
+        evidence: `${round(flows.cexDeltaPct * 100, 1)}%`,
+        source: 'holder-flows',
+      });
+    }
+  }
+
+  for (const c of (sm?.components ?? []).slice(0, 4)) {
+    buyers.push({
+      label: c.label ?? c.key ?? 'semn',
+      evidence: c.evidence ?? (isNum(c.points) ? `${round(c.points, 1)} puncte` : null),
+      source: 'smart-money',
+    });
+  }
+  for (const p of (sm?.penalties ?? []).slice(0, 3)) {
+    sellers.push({
+      label: p.label ?? p.key ?? 'penalizare',
+      evidence: isNum(p.points) ? `${round(p.points, 0)} puncte` : null,
+      source: 'smart-money',
+    });
+  }
+
+  let verdict;
+  if (flows?.verdict === 'ACCUMULATING') verdict = 'ACCUMULATING';
+  else if (flows?.verdict === 'DISTRIBUTING') verdict = 'DISTRIBUTING';
+  else if (buyers.length > sellers.length) verdict = 'ACCUMULATING';
+  else if (sellers.length > buyers.length) verdict = 'DISTRIBUTING';
+  else if (buyers.length && sellers.length) verdict = 'MIXED';
+  else if (buyers.length) verdict = 'ACCUMULATING';
+  else if (sellers.length) verdict = 'DISTRIBUTING';
+  else verdict = 'UNKNOWN';
+
+  let headline;
+  if (verdict === 'ACCUMULATING') {
+    headline = `${buyers.length} semnale de acumulare, ${sellers.length} de distribuție`;
+  } else if (verdict === 'DISTRIBUTING') {
+    headline = `${sellers.length} semnale de distribuție domină`;
+  } else if (verdict === 'MIXED') {
+    headline = `Semne mixte: ${buyers.length} acumulare, ${sellers.length} distribuție`;
+  } else {
+    headline = 'Date on-chain insuficiente';
+  }
+
+  let confidence;
+  if (isNum(sm?.coverage)) confidence = Math.round(sm.coverage * 100);
+  else if (flows) confidence = 40;
+  else confidence = 0;
+
+  const sources = [];
+  if (flows) sources.push('holder-flows');
+  if (sm) {
+    sources.push('smart-money');
+    if (isNum(sm.measured)) sources.push(`${sm.measured}/16 componente`);
+  }
+
+  return { verdict, headline, buyers, sellers, confidence, sources };
+}
+
+/**
  * @param {{asset:any, verdict:any, changed:any, pre:any, risk:any, market:any, levels:any}} input
  * @returns {{headline:string, paragraph:string, whatChanged:any[], confirms:any[], invalidates:any[],
  *   timing:string, confidenceLabel:string, oneLiner:string, questionAnswer:any}}
@@ -118,6 +229,7 @@ export function buildThesis({ asset, verdict, changed, pre, risk, market, levels
     context: conditions,
     confirms,
     invalidates: (risk?.invalidators ?? []).map((r) => ({ label: r.label, severity: r.severity, category: r.category, invalidates: r.invalidates, watch: r.watch })),
+    whoIsBuying: whoIsBuyingSection(asset),
     timing,
     confidenceLabel: confidenceLabel(pre?.confidence ?? null),
     oneLiner,
