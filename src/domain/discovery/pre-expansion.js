@@ -32,6 +32,32 @@ export const PRE_EXPANSION_WEIGHTS = {
   narrative: 5,
 };
 
+/**
+ * Faza 4 — known providers per pre-expansion factor.
+ * Static labels describing what CAN feed each factor; `holders` is overridden at runtime
+ * from asset.onchain.holdersSource when available (the only per-asset provenance tracked today).
+ */
+const PRE_FACTOR_SOURCES = {
+  volume:    ['coingecko:market_chart', 'mexc:klines_1d'],
+  liquidity: ['dexscreener', 'geckoterminal'],
+  holders:   ['geckoterminal', 'nodereal', 'solana_rpc'],
+  whales:    ['nodereal', 'goplus', 'solana_rpc'],
+  supply:    ['coingecko:supply', 'coinmarketcap'],
+  structure: ['mexc:klines_1d', 'binance:spot'],
+  regime:    ['alternative_me', 'coingecko:global'],
+  narrative: ['coingecko:categories'],
+};
+
+function sourcesFor(key, asset) {
+  const base = PRE_FACTOR_SOURCES[key];
+  if (!base) return [];
+  if (key === 'holders' && asset && asset.onchain && asset.onchain.holdersSource) {
+    const runtime = String(asset.onchain.holdersSource);
+    return [runtime].concat(base.filter(function (s) { return s !== runtime; }));
+  }
+  return base.slice();
+}
+
 /** Factors read off the price/volume series, and therefore only as fresh as the quote behind them. */
 const PRICE_DERIVED = new Set(['volume', 'liquidity', 'structure']);
 
@@ -275,6 +301,7 @@ export function preExpansionScore({ asset, cmp, market }) {
     score: f[key].score,
     quality: gradeOfFactor(key, f[key].quality),
     evidence: f[key].evidence,
+    sources: sourcesFor(key, asset),
   }));
   const w = weightedScore(factors, { minCoverage: 0.45 });
   const b = bandOf(w.score);
