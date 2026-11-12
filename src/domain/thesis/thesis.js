@@ -132,6 +132,67 @@ function whoIsBuyingSection(asset) {
 }
 
 /**
+ * IS THE MOVE HEALTHY — quality of the price move: supported by volume/structure vs speculative/distribution.
+ * Pure: reads asset.features.daily (candles), asset.derived.turnover (universe), asset.onchain.flows.verdict.
+ */
+function isMoveHealthySection(asset) {
+  const daily = asset.features?.daily;
+  const turnover = asset.derived?.turnover;
+  const flowsVerdict = asset.onchain?.flows?.verdict;
+
+  if (!daily) {
+    return {
+      verdict: 'UNKNOWN',
+      headline: 'Date de preț insuficiente în această rulare',
+      signals: [],
+      confidence: 0,
+      sources: [],
+    };
+  }
+
+  const signals = [
+    { key: 'volAccel',   label: 'accelerare volum',    value: daily.volAccel,   healthy: isNum(daily.volAccel) && daily.volAccel > 1.2,                                       source: 'price-features' },
+    { key: 'upVolRatio', label: 'volum pe creștere',   value: daily.upVolRatio, healthy: isNum(daily.upVolRatio) && daily.upVolRatio >= 0.55,                              source: 'price-features' },
+    { key: 'rsi14',      label: 'RSI 14',              value: daily.rsi14,      healthy: isNum(daily.rsi14) && daily.rsi14 >= 40 && daily.rsi14 <= 70,                       source: 'price-features' },
+    { key: 'rangePos30', label: 'poziție în range 30', value: daily.rangePos30, healthy: isNum(daily.rangePos30) && daily.rangePos30 >= 0.4 && daily.rangePos30 <= 0.85, source: 'price-features' },
+    { key: 'dd30',       label: 'drawdown 30d',        value: daily.dd30,       healthy: isNum(daily.dd30) && daily.dd30 > -25,                                              source: 'price-features' },
+    { key: 'turnover',   label: 'turnover',            value: turnover,         healthy: isNum(turnover) && turnover >= 0.05 && turnover <= 0.5,                            source: 'universe'      },
+  ];
+
+  const dataCount = signals.filter((s) => isNum(s.value)).length;
+  const healthyCount = signals.filter((s) => s.healthy).length;
+
+  let verdict;
+  if (flowsVerdict === 'DISTRIBUTING') {
+    verdict = 'DISTRIBUTION';
+  } else if (isNum(turnover) && turnover > 0.5 && isNum(daily.volAccel) && daily.volAccel > 3) {
+    verdict = 'SPECULATIVE';
+  } else if (healthyCount >= 4 && isNum(daily.rsi14) && daily.rsi14 < 75 && isNum(daily.dd30) && daily.dd30 > -25) {
+    verdict = 'HEALTHY';
+  } else {
+    verdict = 'FRAGILE';
+  }
+
+  let headline;
+  if (verdict === 'DISTRIBUTION') {
+    headline = 'Fluxuri on-chain indică distribuție — mișcarea nu e susținută';
+  } else if (verdict === 'SPECULATIVE') {
+    headline = `Volum exploziv (${round(daily.volAccel, 1)}x) fără structură — speculativ`;
+  } else if (verdict === 'HEALTHY') {
+    headline = `${healthyCount}/6 semnale sănătoase — mișcare susținută`;
+  } else {
+    headline = `${healthyCount}/6 semnale sănătoase — mișcare fragilă`;
+  }
+
+  const confidence = Math.round((dataCount / signals.length) * 100);
+  const sources = ['price-features'];
+  if (isNum(turnover)) sources.push('universe');
+  if (flowsVerdict) sources.push('holder-flows');
+
+  return { verdict, headline, signals, confidence, sources };
+}
+
+/**
  * @param {{asset:any, verdict:any, changed:any, pre:any, risk:any, market:any, levels:any}} input
  * @returns {{headline:string, paragraph:string, whatChanged:any[], confirms:any[], invalidates:any[],
  *   timing:string, confidenceLabel:string, oneLiner:string, questionAnswer:any}}
@@ -230,6 +291,7 @@ export function buildThesis({ asset, verdict, changed, pre, risk, market, levels
     confirms,
     invalidates: (risk?.invalidators ?? []).map((r) => ({ label: r.label, severity: r.severity, category: r.category, invalidates: r.invalidates, watch: r.watch })),
     whoIsBuying: whoIsBuyingSection(asset),
+    isMoveHealthy: isMoveHealthySection(asset),
     timing,
     confidenceLabel: confidenceLabel(pre?.confidence ?? null),
     oneLiner,

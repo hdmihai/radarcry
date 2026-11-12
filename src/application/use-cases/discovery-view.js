@@ -109,6 +109,7 @@ export function discoveryView(row, ctx = {}) {
       context: [],
       invalidates: [],
       whoIsBuying: null,
+      isMoveHealthy: null,
       // The verdict lines stay; the question text and the invalidator list are in the full file.
       questionAnswer: row.thesis.questionAnswer ? {
         question: null,
@@ -129,6 +130,7 @@ export function discoveryView(row, ctx = {}) {
       context: row.thesis.context,
       invalidates: row.thesis.invalidates,
       whoIsBuying: row.thesis.whoIsBuying,
+      isMoveHealthy: row.thesis.isMoveHealthy,
       questionAnswer: row.thesis.questionAnswer,
     },
 
