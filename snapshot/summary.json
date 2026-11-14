@@ -1,0 +1,136 @@
+{
+  "schemaVersion": "4.0.0",
+  "generatedAt": "2026-11-14T14:32:22.623Z",
+  "mode": "live",
+  "overall": "HEALTHY",
+  "universe": {
+    "coingecko": 1000,
+    "coinmarketcap": 0,
+    "coinpaprika": 1600,
+    "binanceAlpha": 377,
+    "gateAlpha": 3891,
+    "alphaOnly": 3377,
+    "alphaOnlyEligible": 46,
+    "binanceAlphaOnly": 17,
+    "gateAlphaOnly": 3131,
+    "alphaPrograms": {
+      "binance": 375,
+      "gate": 3603,
+      "both": 348
+    },
+    "merged": 4377,
+    "excluded": 3877,
+    "eligible": 500,
+    "deep": 500,
+    "priority": 73,
+    "horizon": 500,
+    "discovered": 500,
+    "published": 150,
+    "validity": {
+      "valid": 383,
+      "pending": 2,
+      "rejected": 115
+    },
+    "futures": 535,
+    "rolling": {
+      "tiers": {
+        "candles": 448,
+        "dex": 388,
+        "security": {
+          "fresh": 10,
+          "carried": 381
+        },
+        "detail": {
+          "fresh": 25,
+          "carried": 427
+        },
+        "holdersInfo": 46,
+        "holderLists": 0,
+        "dev": 32,
+        "mentions": 0
+      },
+      "cache": {
+        "projects": 500,
+        "security": 391,
+        "detail": 452,
+        "holdersInfo": 139,
+        "dev": 107,
+        "mentions": 0,
+        "windowHours": 72,
+        "ttlHours": {
+          "security": 168,
+          "detail": 336
+        }
+      }
+    },
+    "crossListed": 0
+  },
+  "signals": {
+    "WATCH": 31,
+    "LATE": 3,
+    "NONE": 67,
+    "AVOID": 49
+  },
+  "top": [
+    {
+      "symbol": "OPG",
+      "cri": 64.5,
+      "signal": "WATCH",
+      "stage": "ACCELERATION"
+    },
+    {
+      "symbol": "TA",
+      "cri": 61,
+      "signal": "LATE",
+      "stage": "EXPANSION"
+    },
+    {
+      "symbol": "CAP",
+      "cri": 60.5,
+      "signal": "WATCH",
+      "stage": "BUILDING"
+    },
+    {
+      "symbol": "IDOL",
+      "cri": 59,
+      "signal": "WATCH",
+      "stage": "POST_EXPANSION"
+    },
+    {
+      "symbol": "O",
+      "cri": 58.3,
+      "signal": "WATCH",
+      "stage": "BUILDING"
+    },
+    {
+      "symbol": "ERA",
+      "cri": 56.9,
+      "signal": "WATCH",
+      "stage": "BASE"
+    },
+    {
+      "symbol": "BIRB",
+      "cri": 56.8,
+      "signal": "WATCH",
+      "stage": "BASE"
+    },
+    {
+      "symbol": "XDP",
+      "cri": 56.5,
+      "signal": "WATCH",
+      "stage": "BASE"
+    },
+    {
+      "symbol": "BARD",
+      "cri": 56.2,
+      "signal": "WATCH",
+      "stage": "ACCELERATION"
+    },
+    {
+      "symbol": "MAGMA",
+      "cri": 55.4,
+      "signal": "WATCH",
+      "stage": "BASE"
+    }
+  ]
+}
