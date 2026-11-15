@@ -44,6 +44,7 @@ import { ensureReferences, referencesView } from './references.js';
 import { researchAsset, toCandidateView } from './research.js';
 import { collectDeepData } from './deep-research.js';
 import { discoverAsset, labelIndexFrom, prescreenAsset } from './discovery.js';
+import { sevenDayMovers } from './seven-day-movers.js';
 import { futuresView, pickWatchlist, runFuturesRadar } from './futures-radar.js';
 import { appendCatalysts, appendDiscoveryHistory, appendFlows, appendHistory, appendTelemetry, discoveryPoint, historyPoint, providerSuccessRates } from './state-update.js';
 import { buildProviderHealth, chartPayload, methodology, overallHealth, quotaView, SCHEMA_VERSION } from './snapshot.js';
@@ -637,6 +638,8 @@ export async function runScan(deps, config) {
       })),
       note: 'Rândurile sunt ordonate punând candidații timpurii primii, apoi după produsul dintre oportunitate, precocitate și încredere — un scor puțin mai mic, dar încă invizibil, trece înaintea unuia mai mare pe care îl vede toată lumea.',
       coverage: discoveryCoverage,
+      // Faza 5: top 7-day gainers, filtered on quality and weighted by health (additive output).
+      sevenDayMovers: sevenDayMovers(ranked, { validityOf: (key) => validity.get(key), ...(config.discovery?.sevenDayMovers ?? {}) }),
     },
     // ① Futures Radar.
     futures: {
