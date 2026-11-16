@@ -15,6 +15,7 @@ import { catalystsMarkup } from '../../web/assets/js/views/catalysts.js';
 import { derivativesMarkup, narrativesMarkup } from '../../web/assets/js/views/markets.js';
 import { trackMarkup } from '../../web/assets/js/views/track.js';
 import { healthMarkup } from '../../web/assets/js/views/health.js';
+import { sevenDayMoversMarkup } from '../../web/assets/js/views/seven-day-movers.js';
 import { methodologyMarkup } from '../../web/assets/js/views/methodology.js';
 import { marketStrip, noticeMarkup, notices, topMeta } from '../../web/assets/js/views/shell.js';
 import { discoveryMarkup, discoveryState } from '../../web/assets/js/views/discovery.js';
@@ -506,4 +507,15 @@ test('chat: offline it says how to start the agent and keeps the draft; online i
   chatState.filter = '';
   assert.match(String(headMarkup()), /conectat/);
   assert.equal(String(bannerMarkup()).trim(), '', 'no banner while connected');
+});
+
+test('seven-day-movers: renders without leaks and covers every mover', () => {
+  const movers = snap.discovery?.sevenDayMovers ?? [];
+  const markup = String(sevenDayMoversMarkup(snap));
+  for (const bad of ['undefined', 'NaN', '[object Object]']) {
+    assert.equal(markup.includes(bad), false, `seven-day-movers leaks "${bad}"`);
+  }
+  for (const m of movers) {
+    if (m.symbol) assert.ok(markup.includes(String(m.symbol)), `row for ${m.symbol} missing`);
+  }
 });

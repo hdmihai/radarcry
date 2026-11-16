@@ -24,6 +24,7 @@ export const SECTIONS = Object.freeze([
   { id: 'asistent', label: 'AI Assistant', level: 2, group: 'work' },
   { id: 'radar-small-cap', label: 'Small-Cap Radar', level: 2, group: 'work' },
   { id: 'futures', label: 'Futures Radar', level: 2, group: 'work' },
+  { id: 'seven-day-movers', label: 'Top 7 zile', level: 2, group: 'work' },
   { id: 'deep-research', label: 'Deep Research', level: 2, group: 'work' },
 
   // Level 2 — the second menu, supporting screens.
