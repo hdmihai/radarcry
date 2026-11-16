@@ -75,7 +75,13 @@
       "type": "object",
       "required": ["answering", "earlyCandidates", "analysed", "rows"],
       "properties": {
-        "rows": { "type": "array", "items": { "$ref": "#/$defs/discoveryRow" } }
+        "rows": { "type": "array", "items": { "$ref": "#/$defs/discoveryRow" } },
+        "sevenDayMovers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/sevenDayMoversRow"
+          }
+        }
       }
     },
     "futures": {
@@ -275,6 +281,76 @@
           }
         },
         "platforms": { "type": "array", "items": { "$ref": "#/$defs/platformLink" } }
+      }
+    },
+    "sevenDayMoversRow": {
+      "type": "object",
+      "required": ["rank", "symbol", "key", "name", "chain", "change7d", "volume24h", "marketCap", "turnover", "upVolRatio", "healthVerdict", "healthBoost", "validity", "score"],
+      "properties": {
+        "rank": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "1-based rank, descending by score"
+        },
+        "symbol": {
+          "type": "string",
+          "minLength": 1,
+          "description": "ticker symbol (e.g. PEPE)"
+        },
+        "key": {
+          "type": "string",
+          "minLength": 1,
+          "description": "stable identifier (e.g. cg:rynsolmor-dao-461)"
+        },
+        "name": {
+          "type": "string",
+          "description": "project display name"
+        },
+        "chain": {
+          "type": ["string", "null"],
+          "description": "blockchain identifier (e.g. ethereum) or null for new tokens"
+        },
+        "change7d": {
+          "type": "number",
+          "description": "7-day percent change (270.01 = +270.01%)"
+        },
+        "volume24h": {
+          "type": "number",
+          "minimum": 0,
+          "description": "24h volume in USD"
+        },
+        "marketCap": {
+          "type": "number",
+          "minimum": 0,
+          "description": "market cap in USD"
+        },
+        "turnover": {
+          "type": "number",
+          "minimum": 0,
+          "description": "volume24h/marketCap as fraction (0.348 = 34.8%)"
+        },
+        "upVolRatio": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "up-volume fraction (0.949 = 94.9%)"
+        },
+        "healthVerdict": {
+          "enum": ["HEALTHY", "FRAGILE", "DISTRIBUTION", "UNKNOWN"],
+          "description": "volume-health verdict from isMoveHealthy"
+        },
+        "healthBoost": {
+          "enum": [1.3, 1, 0.5, 0.8],
+          "description": "score multiplier: HEALTHY=1.3, FRAGILE=1.0, DISTRIBUTION=0.5, UNKNOWN=0.8"
+        },
+        "validity": {
+          "enum": ["VALID", "PENDING", "REJECTED"],
+          "description": "data validity flag; REJECTED entries are excluded upstream"
+        },
+        "score": {
+          "type": "number",
+          "description": "change7d × ln(volume24h) × healthBoost"
+        }
       }
     },
     "change": {
