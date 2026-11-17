@@ -43,7 +43,10 @@
     "analyst:start": "cd services/analyst-python && python3 -m uvicorn main:app --host 127.0.0.1 --port 8000",
     "analyst:test": "cd services/analyst-python && python3 -m pytest -q",
     "compose:up": "docker compose up --build",
-    "compose:down": "docker compose down"
+    "compose:down": "docker compose down",
+    "test:termux": "node --test --test-concurrency=1 --test-reporter=spec \"test/**/*.test.js\"",
+    "test:termux:web": "node --test --test-concurrency=1 --test-reporter=spec \"test/web/**/*.test.js\" \"test/architecture.test.js\"",
+    "ci:termux": "npm run check && npm run test:termux"
   },
   "keywords": [
     "crypto",
