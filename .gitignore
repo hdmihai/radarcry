@@ -23,3 +23,10 @@ data/agent.md
 .gates-syntax.json
 # Răspunsul pregătit de agent-chat.yml (jobul think)
 .chat/
+
+# Servicii (api-node / analyst-python)
+services/api-node/node_modules/
+__pycache__/
+.pytest_cache/
+.venv/
+*.pyc

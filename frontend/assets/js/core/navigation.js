@@ -6,7 +6,7 @@
  * Where it sits in the hexagon. data/latest.json is the contract; every view is a pure function
  * from that contract to markup; screens.js binds one view to each id declared here; main.js is the
  * composition root (router, drawer, tooltips, theme). The frontend renders research, it never
- * computes it, and it imports only from web/.
+ * computes it, and it imports only from frontend/.
  *
  *   Level 1 — main sections: the tab bar right under the market-regime strip.
  *   Level 2 — the second menu, on one horizontal line: the working set first (the assistant and

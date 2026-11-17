@@ -1,0 +1,21 @@
+{
+  "name": "@radarcry/api-node",
+  "version": "1.0.0",
+  "description": "CRI Radar API — gateway Node.js (Express) peste contractul data/latest.json, cu analiză cantitativă delegată microserviciului Python (FastAPI) prin PythonBridge. Arhitectură hexagonală.",
+  "type": "module",
+  "private": true,
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test": "node --test --test-reporter=spec \"test/**/*.test.js\"",
+    "check": "node --check src/server.js"
+  },
+  "dependencies": {
+    "express": "^5.1.0"
+  }
+}

@@ -5,7 +5,7 @@
  */
 import { after, before, beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { bannerMarkup, chatMarkup, chatState, enterChat, sendText, sideMarkup, threadMarkup, timing } from '../../web/assets/js/views/chat.js';
+import { bannerMarkup, chatMarkup, chatState, enterChat, sendText, sideMarkup, threadMarkup, timing } from '../../frontend/assets/js/views/chat.js';
 
 const store = new Map();
 const realFetch = globalThis.fetch;
@@ -163,7 +163,7 @@ test('a rejected dispatch (token without the Actions permission) says so', async
 
 test('a verdict on an answer goes through the workflow and is shown at once; lessons wait for approval', async () => {
   await enterChat();
-  const { bindChat } = await import('../../web/assets/js/views/chat.js');
+  const { bindChat } = await import('../../frontend/assets/js/views/chat.js');
   assert.equal(typeof bindChat, 'function');
   chatState.activeId = 'aaaaaaaa-1111-4222-8333-444444444444';
   chatState.messages = [{ id: 2, role: 'agent', text: 'Un răspuns.', at: new Date().toISOString(), meta: { replyTo: 'm1', feedback: null, trace: [] } }];

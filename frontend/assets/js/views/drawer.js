@@ -320,6 +320,7 @@ export function drawerMarkup(c, s, { narrow = false } = {}) {
     ${walletIntel(c, s)}
     ${validity(c)}
     ${c.forecast ? html`<section><h3 class="block-title">Prognoză ≥100× și ≥20× în 12 luni <span class="muted">față de câștigătorii ultimului an, la minimul lor</span></h3>${forecastBlock(c.forecast, { base: s.forecast?.baseRates })}</section>` : ''}
+    <div data-analyst-slot></div>
     ${venues(c)}
     ${catalysts(c)}
     ${history(c, s)}

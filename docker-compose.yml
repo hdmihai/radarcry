@@ -1,0 +1,29 @@
+# CRI Radar — stack local: dashboard + API Node.js + analist Python.
+#   docker compose up --build      → http://localhost:3000
+# Snapshot-ul: ./data/latest.json dacă există (npm run scan:demo), altfel copia de pe GitHub Pages.
+services:
+  analyst:
+    build: ./services/analyst-python
+    environment:
+      RPC_TIMEOUT_S: "8"
+      # Noduri RPC proprii (opțional): RPC_BSC, RPC_ETHEREUM, RPC_BASE, ...
+    expose:
+      - "8000"
+    restart: unless-stopped
+
+  api:
+    build: ./services/api-node
+    depends_on:
+      analyst:
+        condition: service_healthy
+    environment:
+      ANALYST_URL: http://analyst:8000
+      SERVE_FRONTEND: "1"
+      CORS_ORIGINS: https://hdmihai.github.io,http://localhost:3000
+      # SNAPSHOT_SOURCE: https://hdmihai.github.io/radarcry/data/latest.json
+    volumes:
+      - ./frontend:/app/frontend:ro
+      - ./data:/app/data:ro
+    ports:
+      - "3000:3000"
+    restart: unless-stopped

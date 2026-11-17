@@ -6,7 +6,7 @@ import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const DIRS = ['src', 'web', 'scripts', 'test', 'agent'];
+const DIRS = ['src', 'frontend', 'scripts', 'test', 'agent', 'services/api-node/src', 'services/api-node/test'];
 // `--json <file>`: also write the result for the CI gate report (scripts/gates-annotate.js).
 const jsonAt = process.argv.indexOf('--json');
 const jsonOut = jsonAt >= 0 ? process.argv[jsonAt + 1] : null;

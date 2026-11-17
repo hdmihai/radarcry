@@ -496,7 +496,7 @@ export function guardAnswer(text, context) {
 export const CODE_RULES = [
   'Node.js ≥ 22, ES modules, zero dependențe npm; testele cu node:test și node:assert/strict (npm test).',
   'Arhitectură hexagonală: src/domain și agent/domain sunt pure și deterministe (fără I/O și rețea, fără citirea ceasului — timpul vine ca argument nowMs —, fără numere aleatoare); src/application și agent/application vorbesc cu lumea doar prin porturi; orice I/O stă în adaptoare.',
-  'agent/ este un modul separat: nu importă nimic din src/ sau web/, și nici ele din agent/.',
+  'agent/ este un modul separat: nu importă nimic din src/ sau frontend/, și nici ele din agent/.',
   'Doar surse gratuite: un adaptor apelează numai hosturile de pe lista aprobată; nimic cu abonament; niciun endpoint de ordine sau retragere (proiectul este exclusiv research).',
   'Cheile API stau doar în GitHub Secrets: niciodată în cod, HTML sau JS publicat.',
   'Necunoscut nu înseamnă negativ: o valoare lipsă rămâne null, nu 0.',
