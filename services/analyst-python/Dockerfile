@@ -1,5 +1,5 @@
 # radarcry analyst-python — FastAPI + Pandas + Web3. Build context: services/analyst-python
-FROM python:3.12-slim
+FROM python:3.15-slim
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
 WORKDIR /app
 COPY requirements.txt ./
