@@ -9,12 +9,12 @@ import assert from 'node:assert/strict';
 import { readdir, readFile } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 import { ROOT, runFixtureDays } from '../fixture-run.js';
-import { indexSnapshot } from '../../web/assets/js/core/store.js';
-import { initLabels } from '../../web/assets/js/core/labels.js';
-import { HOME, SECTIONS, hrefFor, mainSections, menuSections, parseHash, sectionById } from '../../web/assets/js/core/navigation.js';
-import { SCREENS } from '../../web/assets/js/screens.js';
-import { mainTabsMarkup, menuMarkup } from '../../web/assets/js/views/shell.js';
-import { pickSetups, strongSetups } from '../../web/assets/js/views/opportunities.js';
+import { indexSnapshot } from '../../frontend/assets/js/core/store.js';
+import { initLabels } from '../../frontend/assets/js/core/labels.js';
+import { HOME, SECTIONS, hrefFor, mainSections, menuSections, parseHash, sectionById } from '../../frontend/assets/js/core/navigation.js';
+import { SCREENS } from '../../frontend/assets/js/screens.js';
+import { mainTabsMarkup, menuMarkup } from '../../frontend/assets/js/views/shell.js';
+import { pickSetups, strongSetups } from '../../frontend/assets/js/views/opportunities.js';
 
 let run;
 let snap;
@@ -105,7 +105,7 @@ test('"Oportunități proiecte" carries the question, the setups that resemble L
 });
 
 test('index.html: the bars sit right under the market regime and above the content, and the old hero band is gone', async () => {
-  const page = await readFile(join(ROOT, 'web/index.html'), 'utf8');
+  const page = await readFile(join(ROOT, 'frontend/index.html'), 'utf8');
   const at = (needle) => {
     const i = page.indexOf(needle);
     assert.ok(i > 0, `index.html lacks ${needle}`);
@@ -118,7 +118,7 @@ test('index.html: the bars sit right under the market regime and above the conte
 });
 
 test('every internal link in the frontend points at a section that exists', async () => {
-  const files = [join(ROOT, 'web/index.html')];
+  const files = [join(ROOT, 'frontend/index.html')];
   const walk = async (dir) => {
     for (const e of await readdir(dir, { withFileTypes: true })) {
       const p = join(dir, e.name);
@@ -126,7 +126,7 @@ test('every internal link in the frontend points at a section that exists', asyn
       else if (e.name.endsWith('.js')) files.push(p);
     }
   };
-  await walk(join(ROOT, 'web/assets/js'));
+  await walk(join(ROOT, 'frontend/assets/js'));
   for (const f of files) {
     const src = await readFile(f, 'utf8');
     for (const m of src.matchAll(/href="#\/([a-z0-9-]+)/g)) assert.ok(sectionById(m[1]), `${relative(ROOT, f)} links to #/${m[1]}, which is not a section`);

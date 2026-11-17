@@ -6,27 +6,27 @@
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { runFixtureDays } from '../fixture-run.js';
-import { indexSnapshot } from '../../web/assets/js/core/store.js';
-import { initLabels } from '../../web/assets/js/core/labels.js';
-import { opportunitiesMarkup } from '../../web/assets/js/views/opportunities.js';
-import { radarMarkup } from '../../web/assets/js/views/radar.js';
-import { analogsMarkup } from '../../web/assets/js/views/analogs.js';
-import { catalystsMarkup } from '../../web/assets/js/views/catalysts.js';
-import { derivativesMarkup, narrativesMarkup } from '../../web/assets/js/views/markets.js';
-import { trackMarkup } from '../../web/assets/js/views/track.js';
-import { healthMarkup } from '../../web/assets/js/views/health.js';
-import { sevenDayMoversMarkup } from '../../web/assets/js/views/seven-day-movers.js';
-import { methodologyMarkup } from '../../web/assets/js/views/methodology.js';
-import { marketStrip, noticeMarkup, notices, topMeta } from '../../web/assets/js/views/shell.js';
-import { discoveryMarkup, discoveryState } from '../../web/assets/js/views/discovery.js';
-import { futuresMarkup, futuresState } from '../../web/assets/js/views/futures.js';
-import { researchMarkup, researchState } from '../../web/assets/js/views/research.js';
-import { parityMarkup } from '../../web/assets/js/views/parity.js';
-import { drawerMarkup } from '../../web/assets/js/views/drawer.js';
-import { validityMarkup, validityState } from '../../web/assets/js/views/validity.js';
-import { forecastMarkup } from '../../web/assets/js/views/forecast.js';
-import { agentMarkup, agentState } from '../../web/assets/js/views/agent.js';
-import { bannerMarkup, chatMarkup, chatState, headMarkup, sideMarkup, threadMarkup } from '../../web/assets/js/views/chat.js';
+import { indexSnapshot } from '../../frontend/assets/js/core/store.js';
+import { initLabels } from '../../frontend/assets/js/core/labels.js';
+import { opportunitiesMarkup } from '../../frontend/assets/js/views/opportunities.js';
+import { radarMarkup } from '../../frontend/assets/js/views/radar.js';
+import { analogsMarkup } from '../../frontend/assets/js/views/analogs.js';
+import { catalystsMarkup } from '../../frontend/assets/js/views/catalysts.js';
+import { derivativesMarkup, narrativesMarkup } from '../../frontend/assets/js/views/markets.js';
+import { trackMarkup } from '../../frontend/assets/js/views/track.js';
+import { healthMarkup } from '../../frontend/assets/js/views/health.js';
+import { sevenDayMoversMarkup } from '../../frontend/assets/js/views/seven-day-movers.js';
+import { methodologyMarkup } from '../../frontend/assets/js/views/methodology.js';
+import { marketStrip, noticeMarkup, notices, topMeta } from '../../frontend/assets/js/views/shell.js';
+import { discoveryMarkup, discoveryState } from '../../frontend/assets/js/views/discovery.js';
+import { futuresMarkup, futuresState } from '../../frontend/assets/js/views/futures.js';
+import { researchMarkup, researchState } from '../../frontend/assets/js/views/research.js';
+import { parityMarkup } from '../../frontend/assets/js/views/parity.js';
+import { drawerMarkup } from '../../frontend/assets/js/views/drawer.js';
+import { validityMarkup, validityState } from '../../frontend/assets/js/views/validity.js';
+import { forecastMarkup } from '../../frontend/assets/js/views/forecast.js';
+import { agentMarkup, agentState } from '../../frontend/assets/js/views/agent.js';
+import { bannerMarkup, chatMarkup, chatState, headMarkup, sideMarkup, threadMarkup } from '../../frontend/assets/js/views/chat.js';
 import { identificationEfficiency } from '../../agent/domain/identification.js';
 import { createFixturePorts } from '../../agent/adapters/fixtures.js';
 import { runAll } from '../../agent/application/monitor.js';
@@ -35,8 +35,8 @@ import { ROOT } from '../fixture-run.js';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { validityBadge } from '../../web/assets/js/views/widgets.js';
-import { esc, html, tip } from '../../web/assets/js/core/dom.js';
+import { validityBadge } from '../../frontend/assets/js/views/widgets.js';
+import { esc, html, tip } from '../../frontend/assets/js/core/dom.js';
 
 let run;
 let snap;
@@ -220,7 +220,7 @@ test('the Small-Cap Radar renders every level of evidence and pages the long lis
 });
 
 test('the Univers screen renders while loading, once loaded, and when the table is missing', async () => {
-  const { universeMarkup, universeState, decodeTable } = await import('../../web/assets/js/views/universe.js');
+  const { universeMarkup, universeState, decodeTable } = await import('../../frontend/assets/js/views/universe.js');
   const { readFile } = await import('node:fs/promises');
   const { join } = await import('node:path');
   const saved = { ...universeState };
@@ -333,7 +333,7 @@ test('the validity badge: verified, verified with warnings, pending, rejected', 
 });
 
 test('the Univers screen shows only verified projects by default, and every held-back one on request', async () => {
-  const { universeMarkup, universeState, decodeTable } = await import('../../web/assets/js/views/universe.js');
+  const { universeMarkup, universeState, decodeTable } = await import('../../frontend/assets/js/views/universe.js');
   const { readFile } = await import('node:fs/promises');
   const { join } = await import('node:path');
   const saved = { ...universeState };

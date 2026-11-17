@@ -35,7 +35,7 @@ aici stau deciziile care nu se văd din cod și pragurile care ar părea arbitra
             data/latest.json + data/universe.json  ◄── contractul
                                         │
                        ┌────────────────▼─────────────────────────┐
-                       │  web/  dashboard static (GitHub Pages)   │
+                       │  frontend/  dashboard static (Pages)     │
                        │  nu calculează cercetare — o randează    │
                        └──────────────────────────────────────────┘
 ```
@@ -508,7 +508,7 @@ ei permanentă, iar platforma rămâne accesibilă prin stratul LINK.
 Documentul este validat la **fiecare** publicare față de `schema/latest.schema.json`, iar un snapshot
 care nu respectă contractul nu ajunge pe Pages.
 
-**Frontend-ul are și el hexagonul lui, în mic.** `web/assets/js/core/navigation.js` este modelul pur al
+**Frontend-ul are și el hexagonul lui, în mic.** `frontend/assets/js/core/navigation.js` este modelul pur al
 meniurilor (ce secțiuni există, pe ce nivel, în ce ordine; fără DOM, fără I/O); `screens.js` leagă fiecare
 secțiune de ecranul ei — o funcție pură din `latest.json` în markup — iar `main.js` este rădăcina de
 compoziție (rutare, cele două meniuri, sertarul de cercetare, tooltip-uri, temă). Regula „`web` importă doar
@@ -603,7 +603,7 @@ calibrarea reală se măsoară în timp de agent (registrul săptămânal, regul
 ## 14. Agentul AI de calitate
 
 Un modul separat (agent/), cu propriul hexagon și propriile teste de arhitectură: nu importă nimic din
-src/ sau web/, iar acestea nu îl importă. Contractul lui cu scannerul este doar ce publică scannerul
+src/ sau frontend/, iar acestea nu îl importă. Contractul lui cu scannerul este doar ce publică scannerul
 (ramura `cri-state`) și ce înregistrează GitHub.
 
 - **domain/** — catalogul celor 39 de porți și evaluatorii lor; cron și cadență; norme robuste (mediană
@@ -728,7 +728,53 @@ Agentul nu face merge și nu scrie niciodată în main.
 
 ---
 
-## 15. Ce nu face, și de ce
+## 15. Microserviciile: api-node și analyst-python
+
+**De ce peste contract, nu în motor.** Scannerul are o constrângere pe care nimic nu o negociază:
+zero dependențe, rulează în GitHub Actions la 4 ore și publică un fișier static. Express, Pandas și
+Web3 sunt dependențe reale, cu actualizări și vulnerabilități proprii; dacă ar intra în `src/`, o
+actualizare de pachet ar putea opri cercetarea. De aceea serviciile citesc `data/latest.json` —
+același contract pe care îl citește dashboard-ul — și nu importă nimic din `src/`. Motorul nu știe
+că ele există.
+
+**Două hexagoane, același stil.**
+
+| | api-node (Node.js) | analyst-python |
+|---|---|---|
+| domeniu pur | `src/domain/radar.js` | `analyzer.py` |
+| porturi | `src/ports` (Snapshot, Analyst, Cache, Clock) | `ports.py` (Onchain) |
+| intrare | `src/routes` (Express) | `main.py` (FastAPI), `cli.py` |
+| ieșire | `src/services/PythonBridge.js`, `SnapshotRepository.js` | `adapters/onchain_web3.py` |
+| verificare | `test/architecture.test.js` | `tests/test_analyzer.py::test_domain_is_pure` |
+
+**Granița Node ↔ Python este un payload mic și numeric.** `analystPayload()` trimite doar cheia,
+lanțul, contractul, piața și seriile (rânduri `[t, close]` sau `[t, o, h, l, c, v]`), nu dosarul
+întreg. Python nu poate deveni dependent de forma restului contractului, iar schema Pydantic din
+`schemas.py` îl validează la intrare. Același set de scheme validează și transportul `spawn`, iar un
+test verifică faptul că `cli.py` și HTTP-ul întorc rezultate identice.
+
+**De ce două transporturi.** `http` este forma normală (Docker, server). `spawn` există pentru
+locurile unde un server Python permanent nu are sens — un job GitHub Actions, un laptop — și pentru
+testul de integrare din CI, care rulează lanțul real scanner → api-node → Python fără porturi deschise.
+
+**Un singur scor pentru ambele endpoint-uri.** `/asset` și `/universe` trec prin aceeași funcție
+`_asset_metrics()`; testul de integrare verifică egalitatea scorului pentru același proiect.
+
+**Cache per rulare.** Rezultatul analizei se ține sub cheia `runId + key`: un snapshot nou invalidează
+automat cache-ul, fără TTL-uri ghicite. `?refresh=1` îl ocolește.
+
+**Dashboard-ul rămâne static.** Pe GitHub Pages nu se face nicio cerere către un API decât dacă este
+configurat (`?api=`, `localStorage`, `<meta name="cri-api">`); pe `localhost`, servit de api-node, se
+folosește același origin. Fără API, secțiunea „Analiză cantitativă” nu apare deloc — nu apare goală.
+
+**Aceleași reguli de onestitate.** Web3 citește doar (bytecode, `name`, `symbol`, `decimals`,
+`totalSupply`) prin noduri RPC publice, fără cheie; nicio metodă nu semnează. Necunoscutul intră
+neutru în scorul cantitativ și scade încrederea. Scorul cantitativ este complementar scorului CRI și
+nu îl suprascrie nicăieri.
+
+---
+
+## 16. Ce nu face, și de ce
 
 - **Nu execută nimic.** Nu există endpoint de ordine sau de retragere nicăieri în `src/`, iar un test
   verifică asta la fiecare commit.

@@ -1,0 +1,153 @@
+# Microservices CI/CD: services/api-node (Express) + services/analyst-python (FastAPI).
+#
+#   api-node        unit + route + architecture tests on Node 22 and 24
+#   analyst-python  pytest on Python 3.12 and 3.13 (domain purity, HTTP contract, spawn transport)
+#   integration     the real chain: offline DEMO scan → data/latest.json → api-node → PythonBridge
+#                   (spawn and http) → analyst-python, plus HTTP smoke tests on the running stack
+#   images          on main only: build both Docker images and push them to GHCR
+#
+# No crypto API is called: the integration uses the scanner's deterministic simulated market. The
+# only network call is the Docker push to ghcr.io on main.
+name: Services
+
+on:
+  push:
+    branches-ignore: [cri-state, cri-agent]
+    paths:
+      - 'services/**'
+      - 'frontend/**'
+      - 'docker-compose.yml'
+      - 'scripts/dev-services.js'
+      - '.github/workflows/services.yml'
+  pull_request:
+    paths:
+      - 'services/**'
+      - 'frontend/**'
+      - 'docker-compose.yml'
+      - '.github/workflows/services.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: services-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  api-node:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['22', '24']
+    defaults:
+      run:
+        working-directory: services/api-node
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: services/api-node/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm test
+
+  analyst-python:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.12', '3.13']
+    defaults:
+      run:
+        working-directory: services/analyst-python
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: services/analyst-python/requirements*.txt
+      - run: pip install -r requirements-dev.txt
+      - run: python -m pytest -q
+
+  integration:
+    needs: [api-node, analyst-python]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: services/api-node/package-lock.json
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: services/analyst-python/requirements*.txt
+      - name: Install both services
+        run: |
+          npm --prefix services/api-node ci --no-audit --no-fund
+          pip install -r services/analyst-python/requirements-dev.txt
+      - name: Offline DEMO scan → data/latest.json (the contract both services read)
+        run: |
+          node src/main.js scan --fixtures --simulate-days 10 --state .cri-state-demo --out data
+          node scripts/validate-snapshot.js data/latest.json
+      - name: Node ↔ Python through PythonBridge (spawn transport)
+        working-directory: services/api-node
+        run: ANALYST_PYTHON="$(which python)" npm test
+      - name: Running stack (http transport) — smoke tests
+        run: |
+          (cd services/analyst-python && python -m uvicorn main:app --host 127.0.0.1 --port 8000 > /tmp/analyst.log 2>&1 &)
+          (cd services/api-node && SERVE_FRONTEND=1 PORT=3000 node src/server.js > /tmp/api.log 2>&1 &)
+          for i in $(seq 1 30); do curl -fsS http://127.0.0.1:3000/api/health >/dev/null 2>&1 && break; sleep 1; done
+          set -e
+          curl -fsS http://127.0.0.1:3000/api/health | tee /tmp/health.json | head -c 400; echo
+          node -e 'const h=require("/tmp/health.json"); if (h.status!=="ok") { console.error(h); process.exit(1); }'
+          KEY=$(curl -fsS 'http://127.0.0.1:3000/api/radar?limit=200' | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const r=JSON.parse(s);const x=r.items.find(i=>i.analysable);if(!x)process.exit(1);process.stdout.write(encodeURIComponent(x.key))})')
+          curl -fsS "http://127.0.0.1:3000/api/analysis/$KEY" | head -c 400; echo
+          curl -fsS "http://127.0.0.1:3000/api/analysis/universe?limit=60" | head -c 300; echo
+          curl -fsS -o /dev/null http://127.0.0.1:3000/
+          curl -fsS -o /dev/null http://127.0.0.1:3000/data/latest.json
+          test "$(curl -s -o /dev/null -w '%{http_code}' 'http://127.0.0.1:3000/api/radar?sort=nope')" = 400
+      - name: Service logs
+        if: failure()
+        run: tail -n 100 /tmp/analyst.log /tmp/api.log || true
+
+  images:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        service: [api-node, analyst-python]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Image name (lowercase owner)
+        id: img
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/radarcry-${{ matrix.service }}" >> "$GITHUB_OUTPUT"
+      - uses: docker/build-push-action@v6
+        with:
+          context: services/${{ matrix.service }}
+          push: true
+          tags: |
+            ${{ steps.img.outputs.name }}:latest
+            ${{ steps.img.outputs.name }}:${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}

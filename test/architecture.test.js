@@ -56,9 +56,9 @@ test('adapters never import the composition root', async () => {
 });
 
 test('frontend is self-contained: it only reads the published contract', async () => {
-  for (const f of await jsFiles(join(ROOT, 'web'))) {
+  for (const f of await jsFiles(join(ROOT, 'frontend'))) {
     for (const i of await importsOf(f)) {
-      assert.ok(i.path && i.path.startsWith('web/'), `${relative(ROOT, f)} imports ${i.spec}`);
+      assert.ok(i.path && i.path.startsWith('frontend/'), `${relative(ROOT, f)} imports ${i.spec}`);
     }
   }
 });

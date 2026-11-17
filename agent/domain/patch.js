@@ -26,7 +26,7 @@ import { scanSecrets } from './secrets.js';
 export const PATCH_POLICY = Object.freeze({
   maxFiles: 8,
   maxLines: 400,
-  forbidden: [/^\.github\//, /^\.git\//, /(^|\/)node_modules\//, /^test\/architecture\.test\.js$/, /^test\/agent\/architecture\.test\.js$/, /^LICENSE/, /^config\/labels\//, /^data\//, /^dist\//],
+  forbidden: [/^\.github\//, /^\.git\//, /(^|\/)node_modules\//, /^test\/architecture\.test\.js$/, /^test\/agent\/architecture\.test\.js$/, /^services\/api-node\/test\/architecture\.test\.js$/, /^LICENSE/, /^config\/labels\//, /^data\//, /^dist\//],
   allowedExt: /\.(js|mjs|cjs|json|md|css|html|txt|svg|yml|yaml)$/i,
 });
 

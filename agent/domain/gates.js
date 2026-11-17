@@ -40,7 +40,7 @@ export const GROUPS = Object.freeze([
  */
 export const GATES = Object.freeze([
   { id: 'ci.run', group: 'cod', severity: 'critical', title: 'CI verde pe ultimul commit din main', what: 'Suita completă rulează pe Node 22 și 24 la fiecare push.' },
-  { id: 'ci.syntax', group: 'cod', severity: 'critical', ci: ['syntax'], title: 'Sintaxă validă în toate fișierele JS', what: 'node --check pe src, web, scripts, test și agent.' },
+  { id: 'ci.syntax', group: 'cod', severity: 'critical', ci: ['syntax'], title: 'Sintaxă validă în toate fișierele JS', what: 'node --check pe src, frontend, scripts, test, agent și services/api-node.' },
   { id: 'ci.arch', group: 'cod', severity: 'critical', ci: ['arch.layers', 'arch.deterministic', 'arch.parity', 'arch.workflows', 'arch.other'], title: 'Arhitectură hexagonală respectată', what: 'Domeniul pur și determinist, aplicația doar spre domeniu și porturi, simulatorul cu aceeași suprafață ca adaptoarele reale, workflow-uri fără grup de concurență comun.' },
   { id: 'ci.free', group: 'cod', severity: 'critical', ci: ['arch.free'], title: 'Doar surse gratuite: hosturi aprobate, niciun abonament', what: 'Fiecare URL din adaptoare este pe lista aprobată; hosturile cu abonament (CoinGlass API, Dune API, X API, CoinGecko Pro…) sunt interzise.' },
   { id: 'ci.research', group: 'cod', severity: 'critical', ci: ['arch.research'], title: 'Exclusiv research: niciun endpoint de ordine sau retragere', what: 'Niciun endpoint de tranzacționare nu există în cod, nici nefolosit.' },

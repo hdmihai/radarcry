@@ -34,7 +34,7 @@ on:
     branches: [main]
     paths:
       - 'src/**'
-      - 'web/**'
+      - 'frontend/**'
       - 'config/**'
       - 'schema/**'
       - 'scripts/**'

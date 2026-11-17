@@ -7,3 +7,26 @@ updates:
       interval: monthly
     commit-message:
       prefix: ci
+
+  - package-ecosystem: npm
+    directory: /services/api-node
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: api-node
+
+  - package-ecosystem: pip
+    directory: /services/analyst-python
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: analyst-python
+
+  - package-ecosystem: docker
+    directories:
+      - /services/api-node
+      - /services/analyst-python
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: docker

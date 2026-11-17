@@ -10,8 +10,10 @@ import { pct, score, usd } from './core/format.js';
 import { HEALTH, L, icon, initLabels } from './core/labels.js';
 import { hrefFor, mainSections, menuSections, parseHash, sectionById } from './core/navigation.js';
 import { SnapshotError, loadSnapshot } from './core/store.js';
+import { createAnalystClient, resolveApiBase } from './core/analyst.js';
 import { SCREENS } from './screens.js';
 import { dnaTooltip } from './charts/dna.js';
+import { analystMarkup } from './views/analyst.js';
 import { bindCatalysts } from './views/catalysts.js';
 import { bindChat } from './views/chat.js';
 import { bindDiscovery } from './views/discovery.js';
@@ -25,6 +27,24 @@ import { bindValidity } from './views/validity.js';
 import { criTipBody, gradeTipBody, lifeTipBody, shortSignal, signalTipBody } from './views/widgets.js';
 
 const state = { snap: null, route: null, openKey: null, lastFocus: null };
+
+/* ---------------- optional API (services/api-node + analyst-python) ---------------- */
+// On GitHub Pages there is no API unless one is configured: the client then never makes a request.
+const analyst = createAnalystClient(resolveApiBase(location, storage, document.querySelector('meta[name="cri-api"]')?.content || null));
+
+async function fillAnalysis(key) {
+  const c = state.snap?.byKey.get(key);
+  const hasSeries = (c?.chart?.d1?.length ?? 0) >= 20 || (c?.chart?.h4?.length ?? 0) >= 20 || (c?.sparkline?.length ?? 0) >= 20;
+  if (!hasSeries || !(await analyst.available()) || state.openKey !== key) return;
+  const slot = () => (state.openKey === key ? $('#drawer [data-analyst-slot]') : null);
+  setHTML(slot(), analystMarkup({ status: 'loading' }));
+  try {
+    const data = await analyst.asset(key);
+    setHTML(slot(), analystMarkup({ status: 'ready', data }));
+  } catch (err) {
+    setHTML(slot(), analystMarkup({ status: 'error', error: String(err?.message ?? err) }));
+  }
+}
 
 /* ---------------- theme ---------------- */
 function applyTheme(theme) {
@@ -138,6 +158,7 @@ function openDrawer(key, { fromRoute = false } = {}) {
   drawer.scrollTop = 0;
   $('[data-close]', drawer)?.focus();
   document.title = `${c.symbol} | CRI Radar`;
+  fillAnalysis(key);
 }
 
 function closeDrawer({ fromRoute = false } = {}) {

@@ -275,7 +275,7 @@ nu este listată ca îndeplinită.
 ### C. Agentul AI
 
 20. **Modul separat** care monitorizează gratuit toate verificările proiectului și învață din istoricul
-    lui. *Acceptare:* nu importă nimic din `src/` sau `web/` (și invers); 39 de porți evaluate la
+    lui. *Acceptare:* nu importă nimic din `src/` sau `frontend/` (și invers); 39 de porți evaluate la
     fiecare rulare; normele, incidentele și commiturile care le-au rezolvat reținute în memorie.
     *Verificat:* testele de arhitectură ale agentului, `agent.memory`.
 21. **Criteriile și regulile fundamentale în memoria agentului** — de evaluare și de monitorizare a
@@ -767,8 +767,8 @@ Navigarea are două niveluri, chiar sub bara „Regim piață”:
 - **Nivelul 2 — al doilea meniu**, pe o singură linie orizontală (se derulează pe telefon):
   **AI Assistant · Small-Cap Radar · Futures Radar · Deep Research**, apoi meniul secundar de mai jos.
 
-Structura (ce secțiuni există, în ce meniu, în ce ordine) stă în `web/assets/js/core/navigation.js`, un
-model pur testat în Node; `web/assets/js/screens.js` leagă fiecare secțiune de ecranul ei, iar `main.js`
+Structura (ce secțiuni există, în ce meniu, în ce ordine) stă în `frontend/assets/js/core/navigation.js`, un
+model pur testat în Node; `frontend/assets/js/screens.js` leagă fiecare secțiune de ecranul ei, iar `main.js`
 rămâne rădăcina de compoziție. Frontend-ul nu calculează cercetare, doar randează `data/latest.json`.
 
 Ecranele de cercetare, în ordinea în care lucrează un cercetător:
@@ -879,7 +879,7 @@ declară mereu propria vechime.
 
 ### Pași de configurare
 1. **Settings → Pages → Build and deployment → Source: GitHub Actions** — *înainte* de prima
-   scanare. Un push pe `main` care atinge `src/`, `web/`, `config/`, `schema/` sau `scripts/`
+   scanare. Un push pe `main` care atinge `src/`, `frontend/`, `config/`, `schema/` sau `scripts/`
    pornește automat `Scan & deploy`; fără Pages activat, scanarea își salvează starea, dar pasul de
    publicare se oprește cu un mesaj care spune exact această setare.
 2. Rulează o dată `Scan & deploy` din tab-ul Actions, dacă nu a pornit deja de la push.
@@ -902,6 +902,51 @@ zile din DefiLlama) și afișează explicit câte proiecte au deja normă. Un re
 rulări înseamnă „încă nu se poate măsura”, nu „piață liniștită”.
 
 > Workflow-urile programate se dezactivează automat după 60 de zile fără activitate în repository.
+
+---
+
+## Microservicii: API Node.js + analist Python
+
+Motorul de scanare rămâne exact cum era: Node.js, zero dependențe, publică `data/latest.json` pe
+GitHub Pages. Peste acest contract stau două servicii opționale, fiecare cu hexagonul lui:
+
+```
+ frontend/ (Pages, static) ──► data/latest.json ◄── src/ (scanner, GitHub Actions)
+        │  opțional: ?api=… sau <meta name="cri-api">          │
+        ▼                                                      │ SnapshotPort
+ services/api-node  (Express)  ─────────────────────────────────┘
+   routes/  →  application/use-cases  →  domain/radar.js (pur)
+                          │ AnalystPort
+                          ▼
+   services/PythonBridge.js  ── http (FastAPI) | spawn (cli.py, JSON pe stdin/stdout)
+                          ▼
+ services/analyst-python  (FastAPI)
+   main.py / cli.py  →  analyzer.py (Pandas, NumPy — pur)   adapters/onchain_web3.py (Web3, RPC public)
+```
+
+| Endpoint (api-node) | Ce face |
+|---|---|
+| `GET /api/health` | starea API-ului, a snapshot-ului și a analistului Python (`ok` / `degraded` / `down`) |
+| `GET /api/radar` | lista filtrată și paginată: `q, stage, signal, validity, chain, minScore, maxRisk, deep, sort, order, limit, offset` |
+| `GET /api/radar/:key[?full=1]` | un proiect (rând compact sau dosarul complet din contract) |
+| `GET /api/analysis/:key` | metrici cantitative (Pandas): volatilitate, Sharpe/Sortino, VaR/CVaR, drawdown, tendință și R², Hurst, comprimare Bollinger, volum robust, OBV, ATR + scor cantitativ |
+| `GET /api/analysis/universe` | rang transversal (z-scor median/MAD), clustere de corelație, beta față de univers |
+| `POST /api/analysis/series` | orice serie `{closes[], volumes?[], periodsPerYear?}` |
+| `GET /api/analysis/onchain/:chain/:address` | fapte ERC-20 citite cu Web3 pe RPC public (fără cheie, doar citire) |
+
+```bash
+npm run services:install      # npm ci în api-node + pip install în analyst-python
+npm run scan:demo             # opțional: snapshot local; altfel API-ul citește copia de pe Pages
+npm run services:dev          # http://localhost:3000 = dashboard + /api, analist pe :8000/docs
+npm run services:test         # testele Node (35) + Python (21)
+docker compose up --build     # același stack în containere
+```
+
+Scorul cantitativ este **complementar** scorului CRI, nu îl înlocuiește: se calculează doar din preț
+și volum, cu ponderi fixe și scrise în `analyzer.py`. Aceleași reguli ca în scanner: domeniul nu are
+I/O, ceas sau aleatoriu, iar necunoscutul este neutru, nu negativ — ambele verificate de teste.
+Detalii: [services/api-node/README.md](services/api-node/README.md),
+[services/analyst-python/README.md](services/analyst-python/README.md).
 
 ---
 
@@ -934,7 +979,14 @@ agent/             agentul AI de calitate — modul separat, nu importă nimic d
                    local, spațiul de lucru git al comenzii de cod, simulator
   knowledge/       rules.json — regulile fundamentale de evaluare și monitorizare
   main.js          rădăcina de compoziție (analyze · narrate · act · run · chat)
-web/               dashboard static, ES module native, fără build step
+frontend/          dashboard static, ES module native, fără build step (fost web/); secțiunea
+                   „Analiză cantitativă” apare doar când API-ul opțional este disponibil
+services/
+  api-node/        API Express hexagonal peste data/latest.json: domain · ports · application ·
+                   routes (adaptor de intrare) · services/PythonBridge.js (adaptor de ieșire)
+  analyst-python/  microserviciu FastAPI: analyzer.py (Pandas/NumPy, pur), adapters/ (Web3),
+                   main.py (HTTP), cli.py (transportul spawn)
+docker-compose.yml stack-ul local: dashboard + API + analist
 schema/            contractele: latest, universe, agent — validate la fiecare publicare
 config/            praguri, referințe LAB/BTW/AGT, câștigătorii documentați (winners.json), etichete
 test/              363 de teste, inclusiv cele de arhitectură ale scannerului și ale agentului

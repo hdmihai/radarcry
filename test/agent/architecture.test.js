@@ -1,6 +1,6 @@
 /**
  * Architecture fitness of the AI agent — the same mechanical checks the scanner lives under:
- *   · a separate module: the agent never imports the scanner (src/) or the dashboard (web/), and
+ *   · a separate module: the agent never imports the scanner (src/) or the dashboard (frontend/), and
  *     neither of them imports the agent;
  *   · hexagonal inside: agent/domain pure and deterministic, agent/application only domain + itself;
  *   · free hosts only, each adapter pinned to its own;
@@ -38,7 +38,7 @@ test('the agent is a separate module: it never imports the scanner or the dashbo
       else assert.ok(i.path.startsWith('agent/'), `${relative(ROOT, f)} importă ${i.spec} — agentul citește doar ce publică scannerul, nu codul lui`);
     }
   }
-  for (const dir of ['src', 'web']) {
+  for (const dir of ['src', 'frontend']) {
     for (const f of await jsFiles(join(ROOT, dir))) {
       for (const i of await importsOf(f)) assert.ok(!i.path?.startsWith('agent/'), `${relative(ROOT, f)} importă agentul (${i.spec})`);
     }

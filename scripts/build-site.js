@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Assemble the static site: dist/ = web/ (frontend) + data/latest.json + data/summary.json +
+ * Assemble the static site: dist/ = frontend/ + data/latest.json + data/summary.json +
  * data/universe.json (the whole research horizon, loaded by the dashboard on demand) +
  * data/agent.json (the AI quality agent's report, when present; also loaded on demand).
  * The frontend has no build step (native ES modules); this only copies and validates inputs.
@@ -32,7 +32,7 @@ async function exists(p) {
 async function main() {
   await rm(outDir, { recursive: true, force: true });
   await mkdir(outDir, { recursive: true });
-  await cp(join(root, 'web'), outDir, { recursive: true });
+  await cp(join(root, 'frontend'), outDir, { recursive: true });
   await mkdir(join(outDir, 'data'), { recursive: true });
 
   const latest = join(dataDir, 'latest.json');
