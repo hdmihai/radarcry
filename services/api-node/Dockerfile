@@ -1,10 +1,10 @@
 # radarcry api-node — Express gateway. Build context: services/api-node
-FROM node:22-alpine AS deps
+FROM node:26-alpine AS deps
 WORKDIR /app/services/api-node
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --no-audit --no-fund
 
-FROM node:22-alpine
+FROM node:26-alpine
 ENV NODE_ENV=production PORT=3000 HOST=0.0.0.0
 # REPO_ROOT resolves to /app: mount ./data and ./frontend there (docker-compose.yml does it).
 WORKDIR /app/services/api-node
