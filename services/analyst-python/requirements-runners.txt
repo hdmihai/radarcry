@@ -1,0 +1,7 @@
+# Potențiali runneri (python -m runners). Toate gratuite, open-source.
+pandas>=2.2,<4.0
+numpy>=2.0,<3.0
+scipy>=1.11,<2.0
+scikit-learn>=1.4,<2.0
+lightgbm>=4.3,<5.0
+pyarrow>=15,<30

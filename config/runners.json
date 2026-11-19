@@ -1,0 +1,14 @@
+{
+  "$comment": "Configurarea modulului Potențiali runneri (services/analyst-python/runners). Referințele sunt tokenurile ale căror creșteri bruște servesc drept tipar; adaugă/scoate liber. Dacă `key` lipsește, se caută după simbol în universul radarului.",
+  "horizonDays": 7,
+  "targetReturn": 0.5,
+  "jumpReturn": 0.25,
+  "historyDays": 730,
+  "maxCandidates": 40,
+  "references": [
+    { "symbol": "EVAA", "key": "cg:evaa-protocol", "gate": "EVAA_USDT", "note": "TON lending; +290% în 4 zile (13→17 nov 2026), OI Binance +155%, short squeeze, float mic" },
+    { "symbol": "IRYS", "key": "cg:irys", "gate": "IRYS_USDT", "note": "+1200% din ATL (18→23 oct 2026), $21M short-uri lichidate, ~20% float, flux coreean" },
+    { "symbol": "BR", "key": "cg:bedrock-token", "gate": "BR_USDT", "note": "Bedrock: breakout din canal descendent, OI $32M→$100M, +393% într-o săptămână" },
+    { "symbol": "SAMD", "key": null, "gate": "SAMD_USDT", "note": "Nerezolvat pe CoinGecko/DexScreener la 18 nov 2026 — completează `key` (ex. cg:<id>) sau `gate` (PERECHE_USDT) când îl identifici" }
+  ]
+}

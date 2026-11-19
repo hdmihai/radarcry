@@ -188,3 +188,32 @@ test('the real snapshot shape works end to end (fake analyst)', async () => {
     await app.close();
   }
 });
+
+test('GET /api/runners filters by tier/stage, hides factors unless full, 503 when missing', async () => {
+  let app = await startApp();
+  try {
+    const r = await fetch(`${app.base}/api/runners?tier=A,B&stage=PRE`);
+    assert.equal(r.status, 200);
+    const body = await r.json();
+    assert.deepEqual(body.items.map((x) => x.symbol), ['C0']);
+    assert.equal(body.items[0].factors, undefined);
+    assert.equal(body.meta.total, 3);
+    const full = await (await fetch(`${app.base}/api/runners?full=1&limit=2`)).json();
+    assert.equal(full.items.length, 2);
+    assert.ok(Array.isArray(full.items[0].factors));
+  } finally {
+    await app.close();
+  }
+  app = await startApp({ runners: { load: async () => { throw new Error('ENOENT'); }, info: () => ({ source: 'x' }) } });
+  try {
+    assert.equal((await fetch(`${app.base}/api/runners`)).status, 503);
+  } finally {
+    await app.close();
+  }
+});
+
+test('createRunnersRepository reads runners.json next to latest.json', async () => {
+  const { createRunnersRepository } = await import('../src/services/SnapshotRepository.js');
+  assert.equal(createRunnersRepository({ snapshotSource: 'https://hdmihai.github.io/radarcry/data/latest.json' }).url, 'https://hdmihai.github.io/radarcry/data/runners.json');
+  assert.equal(createRunnersRepository({ snapshotSource: '/repo/data/latest.json' }).path, '/repo/data/runners.json');
+});

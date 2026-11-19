@@ -2,7 +2,8 @@
 /**
  * Assemble the static site: dist/ = frontend/ + data/latest.json + data/summary.json +
  * data/universe.json (the whole research horizon, loaded by the dashboard on demand) +
- * data/agent.json (the AI quality agent's report, when present; also loaded on demand).
+ * data/agent.json (the AI quality agent's report, when present; also loaded on demand) +
+ * data/runners.json (potențialii runneri pe 7 zile, din modulul Python; loaded on demand).
  * The frontend has no build step (native ES modules); this only copies and validates inputs.
  *
  *   node scripts/build-site.js [--data data] [--out dist]
@@ -48,6 +49,14 @@ async function main() {
       JSON.parse(ubody); // same rule: never publish a truncated file
       await writeFile(join(outDir, 'data', 'universe.json'), ubody);
       extra = `, univers ${(ubody.length / 1024).toFixed(0)} KB`;
+    }
+    // Potențialii runneri pe 7 zile (modulul Python services/analyst-python/runners), când există.
+    const runners = join(dataDir, 'runners.json');
+    if (await exists(runners)) {
+      const rbody = await readFile(runners, 'utf8');
+      JSON.parse(rbody);
+      await writeFile(join(outDir, 'data', 'runners.json'), rbody);
+      extra += `, runneri ${(rbody.length / 1024).toFixed(0)} KB`;
     }
     // The AI agent's report (from the cri-agent branch, or the demo agent), when there is one.
     const agent = join(dataDir, 'agent.json');

@@ -72,7 +72,7 @@ jobs:
           python-version: ${{ matrix.python }}
           cache: pip
           cache-dependency-path: services/analyst-python/requirements*.txt
-      - run: pip install -r requirements-dev.txt
+      - run: pip install -r requirements-dev.txt -r requirements-runners.txt
       - run: python -m pytest -q
 
   integration:

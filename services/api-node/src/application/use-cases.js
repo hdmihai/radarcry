@@ -12,7 +12,7 @@ const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
 /**
  * @param {{snapshots: import('../ports/index.js').SnapshotPort, analyst: import('../ports/index.js').AnalystPort, cache: import('../ports/index.js').CachePort, clock: import('../ports/index.js').ClockPort, universeMax?: number}} deps
  */
-export function createUseCases({ snapshots, analyst, cache, clock, universeMax = 150 }) {
+export function createUseCases({ snapshots, analyst, cache, clock, universeMax = 150, runners = null }) {
   assertPort('SnapshotPort', snapshots);
   assertPort('AnalystPort', analyst);
   assertPort('CachePort', cache);
@@ -96,6 +96,28 @@ export function createUseCases({ snapshots, analyst, cache, clock, universeMax =
       const result = { runId, assets: payloads.length, analyzedAt: new Date(clock.now()).toISOString(), analysis, cached: false };
       cache.set(cacheKey, result);
       return result;
+    },
+
+    /** Potențiali runneri pe 7 zile (data/runners.json, produs de modulul Python), filtrabili. */
+    async listRunners(q = {}) {
+      if (!runners) throw unavailable('lista de runneri nu este configurată');
+      let doc;
+      try {
+        doc = await runners.load();
+      } catch (err) {
+        throw unavailable('data/runners.json nu este disponibil încă', { reason: String(err?.message ?? err) });
+      }
+      const tiers = q.tier ? new Set(String(q.tier).toUpperCase().split(',')) : null;
+      const stages = q.stage ? new Set(String(q.stage).toUpperCase().split(',')) : null;
+      const minProb = Number.isFinite(Number(q.minProbability)) ? Number(q.minProbability) : 0;
+      const limit = Math.max(1, Math.min(100, Number.parseInt(q.limit ?? '40', 10) || 40));
+      const full = q.full === '1' || q.full === 'true';
+      const items = doc.candidates
+        .filter((c) => (!tiers || tiers.has(c.tier)) && (!stages || stages.has(c.stage)) && (c.probability ?? 0) >= minProb)
+        .slice(0, limit)
+        .map((c) => (full ? c : { ...c, factors: undefined }));
+      const meta = { generatedAt: doc.generatedAt, horizonDays: doc.horizonDays, target: doc.target, metrics: doc.metrics, total: doc.candidates.length, returned: items.length };
+      return full ? { meta, items, factors: doc.factors, rules: doc.rules, references: doc.references, events: doc.events } : { meta, items, rules: doc.rules };
     },
 
     async analyzeSeries(body) {

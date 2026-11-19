@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hdmihai.github.io/radarcry/schema/runners.schema.json",
+  "title": "radarcry — Potențiali runneri pe 7 zile (data/runners.json)",
+  "description": "Produs de services/analyst-python/runners (python -m runners run). Probabilitățile sunt calibrate out-of-time; factorii au contribuții TreeSHAP în log-odds.",
+  "type": "object",
+  "required": ["version", "generatedAt", "horizonDays", "target", "metrics", "factors", "rules", "references", "events", "candidates", "notes"],
+  "properties": {
+    "version": { "type": "string" },
+    "generatedAt": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T" },
+    "horizonDays": { "type": "integer", "minimum": 1, "maximum": 30 },
+    "target": { "type": "object", "required": ["fwdMaxReturn", "definition"], "properties": { "fwdMaxReturn": { "type": "number", "minimum": 0 }, "jumpReturn": { "type": "number" }, "definition": { "type": "string" } } },
+    "universe": { "type": "object" },
+    "sources": { "type": "object" },
+    "metrics": { "type": "object", "properties": { "auc": { "type": ["number", "null"], "minimum": 0, "maximum": 1 }, "prAuc": { "type": ["number", "null"] }, "baseRate": { "type": ["number", "null"] }, "folds": { "type": "array" } } },
+    "importance": { "type": "array" },
+    "factors": {
+      "type": "array",
+      "items": { "type": "object", "required": ["key", "label", "auc", "runnersText", "othersText", "significant"], "properties": { "auc": { "type": "number", "minimum": 0, "maximum": 1 }, "significant": { "type": "boolean" } } }
+    },
+    "rules": {
+      "type": "array",
+      "items": { "type": "object", "required": ["id", "text", "conds", "precision", "lift", "support"], "properties": { "id": { "type": "string", "pattern": "^R\\d+$" }, "precision": { "type": "number", "minimum": 0, "maximum": 1 }, "support": { "type": "integer", "minimum": 1 } } }
+    },
+    "references": { "type": "array", "items": { "type": "object", "required": ["symbol", "resolved"], "properties": { "resolved": { "type": "boolean" } } } },
+    "events": { "type": "array", "items": { "type": "object", "required": ["key", "symbol", "date", "gain", "factors"] } },
+    "candidates": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "type": "object",
+        "required": ["key", "symbol", "rank", "probability", "lift", "tier", "stage", "drivers", "factors", "rulesMatched", "similarTo", "references", "risks"],
+        "properties": {
+          "rank": { "type": "integer", "minimum": 1 },
+          "probability": { "type": "number", "minimum": 0, "maximum": 1 },
+          "lift": { "type": "number", "minimum": 0 },
+          "tier": { "enum": ["A", "B", "C"] },
+          "stage": { "enum": ["PRE", "APRINDERE", "EXTINS"] },
+          "factors": { "type": "array", "items": { "type": "object", "required": ["key", "label", "text", "contribution"] } },
+          "rulesMatched": { "type": "array", "items": { "type": "string" } },
+          "risks": { "type": "array", "items": { "type": "object", "required": ["key", "label", "severity"], "properties": { "severity": { "enum": ["high", "medium", "info"] } } } }
+        }
+      }
+    },
+    "notes": { "type": "array", "items": { "type": "string" } }
+  }
+}

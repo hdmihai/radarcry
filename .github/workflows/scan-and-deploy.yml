@@ -7,8 +7,11 @@
 #     lists, every venue, and deep research on every eligible project (up to 1000) — candles and DEX
 #     liquidity each run, holder lists for the priority, contract security, development and attention
 #     through a rolling cache — all on public or free-account APIs;
-#  3. validates the published contract against schema/latest.schema.json;
-#  4. saves the new state (with data/latest.json and the whole-horizon table data/universe.json)
+#  3. runs the Python research module „Potențiali runneri” (services/analyst-python/runners):
+#     free Gate/CoinGecko history, factors, rules, LightGBM walk-forward → data/runners.json;
+#     its parquet panel lives in .state/runners, so each run only downloads the newest candles;
+#  4. validates the published contract against schema/latest.schema.json;
+#  5. saves the new state (with data/latest.json and the whole-horizon table data/universe.json)
 #     and deploys the static dashboard to GitHub Pages.
 #
 # If the live scan fails (both aggregators down, say) the last valid snapshot is redeployed, so the
@@ -38,6 +41,8 @@ on:
       - 'config/**'
       - 'schema/**'
       - 'scripts/**'
+      - 'services/analyst-python/runners/**'
+      - 'services/analyst-python/requirements-runners.txt'
       - '.github/workflows/scan-and-deploy.yml'
 
 permissions:
@@ -55,8 +60,9 @@ concurrency:
 jobs:
   scan:
     runs-on: ubuntu-latest
-    # runtime.maxMinutes (22) bounds the scan itself; the rest is CI, state and the site build.
-    timeout-minutes: 40
+    # runtime.maxMinutes (22) bounds the scan itself, the runners module has its own 15-minute
+    # bound; the rest is CI, state and the site build.
+    timeout-minutes: 50
     env:
       MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || 'live' }}
     steps:
@@ -129,8 +135,41 @@ jobs:
         if: env.MODE == 'demo'
         run: node src/main.js scan --fixtures --simulate-days 30 --state .state-demo --out data
 
+      # Potențiali runneri (7 zile) — Python, gratuit. Un eșec aici nu oprește publicarea: se
+      # republică ultima listă bună din .state/runners/runners.json.
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: services/analyst-python/requirements-runners.txt
+
+      - name: Install the runners module (pandas, scikit-learn, LightGBM, pyarrow, scipy)
+        run: pip install -q -r services/analyst-python/requirements-runners.txt
+
+      - name: Potential runners (live)
+        if: env.MODE == 'live'
+        continue-on-error: true
+        timeout-minutes: 15
+        env:
+          PYTHONPATH: services/analyst-python
+          # Opțional, gratuit: crește bugetul CoinGecko pentru tokenurile care nu sunt pe Gate.
+          COINGECKO_DEMO_API_KEY: ${{ secrets.COINGECKO_DEMO_API_KEY }}
+        run: |
+          python -m runners run --data data --state .state/runners --catalysts .state/catalysts.json \
+            --config config/runners.json --budget-minutes 9 \
+            || { echo "::warning::Modulul de runneri a eșuat; republic ultima listă validă."; \
+                 cp .state/runners/runners.json data/runners.json 2>/dev/null || true; }
+
+      - name: Potential runners (demo, simulated market)
+        if: env.MODE == 'demo'
+        env:
+          PYTHONPATH: services/analyst-python
+        run: python -m runners run --synthetic --data data --state .state-demo/runners --config config/runners.json
+
       - name: Validate the published contract
-        run: node scripts/validate-snapshot.js data/latest.json
+        run: |
+          node scripts/validate-snapshot.js data/latest.json
+          if [ -f data/runners.json ]; then node scripts/validate-snapshot.js --runners data/runners.json || rm -f data/runners.json; fi
 
       - name: Save research state (single-commit orphan branch)
         if: env.MODE == 'live'
