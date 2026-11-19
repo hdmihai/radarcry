@@ -519,3 +519,44 @@ test('seven-day-movers: renders without leaks and covers every mover', () => {
     if (m.symbol) assert.ok(markup.includes(String(m.symbol)), `row for ${m.symbol} missing`);
   }
 });
+
+test('seven-day-movers: potential runners render every candidate with factors, rules and risks', async () => {
+  const { runnersState, runnersMarkup } = await import('../../frontend/assets/js/views/runners.js');
+  const { SCREENS } = await import('../../frontend/assets/js/screens.js');
+  assert.equal(typeof SCREENS['seven-day-movers'].enter, 'function', 'screen loads data/runners.json on enter');
+  runnersState.status = 'idle';
+  assert.match(String(runnersMarkup()), /Se încarcă/);
+  const doc = {
+    generatedAt: '2026-11-18T08:00:00Z', horizonDays: 7,
+    target: { fwdMaxReturn: 0.5, definition: 'runner = maximul din următoarele 7 zile ≥ +50%' },
+    universe: { assets: 400, runnerEvents: 900 },
+    metrics: { engine: 'LightGBM 4.7.0', auc: 0.78, prAuc: 0.21, baseRate: 0.06, precisionAt10: 0.24, liftTop1pct: 4.1, folds: [{}], validation: 'walk-forward' },
+    factors: [{ key: 'vol_z30', label: 'Volum anormal', auc: 0.71, runnersText: '+2.1σ', othersText: '+0.1σ', significant: true, direction: 'mai mare', thresholdText: '+1.5σ', lift: 2.4, hint: 'x' }],
+    rules: [{ id: 'R1', text: 'Volum anormal > +1.5σ ȘI Funding ≤ 0', conds: [], precision: 0.31, lift: 5.2, support: 80, recall: 0.1 }],
+    references: [{ symbol: 'EVAA', resolved: true, date: '2026-11-12', gain: 2.9, factors: [{ label: 'OI 7z', text: '+155%', percentile: 99 }] }, { symbol: 'SAMD', resolved: false, note: 'nerezolvat' }],
+    events: [{ key: 'cg:evaa-protocol', symbol: 'EVAA', date: '2026-11-12', gain: 2.9, factors: [{ label: 'OI 7z', text: '+155%', percentile: 99 }] }],
+    candidates: [{
+      key: 'cg:x', symbol: 'XRUN', name: 'X Runner', chain: 'bsc', marketCap: 4e7, volume24h: 9e6, asOf: '2026-11-18', partialDay: true,
+      probability: 0.31, lift: 5.1, tier: 'A', stage: 'PRE', stageWhy: 'încă neaprins', rank: 1,
+      drivers: [{ key: 'vol_z30', label: 'Volum anormal', family: 'volum', text: '+3.0σ', contribution: 0.8, runnersMedian: '+2.1σ', othersMedian: '+0.1σ' }],
+      factors: [{ key: 'vol_z30', label: 'Volum anormal', family: 'volum', text: '+3.0σ', contribution: 0.8 }, { key: 'rsi_14', label: 'RSI 14', family: 'momentum', text: '55', contribution: -0.1 }],
+      rulesMatched: ['R1'], similarTo: [{ symbol: 'IRYS', date: '2026-10-20', gain: 11, similarity: 0.7 }],
+      references: [{ symbol: 'EVAA', date: '2026-11-12', gain: 2.9, similarity: 0.82 }],
+      context: { spot: ['Gate', 'MEXC'], perps: 2, korean: true, alpha: 'B', catalysts: ['explozie de open interest'] },
+      risks: [{ key: 'unlock', label: 'verifică deblocările', severity: 'info' }, { key: 'rsi', label: 'RSI 85', severity: 'medium' }],
+    }],
+    notes: ['Nu e recomandare de investiții.'],
+  };
+  runnersState.status = 'ready';
+  runnersState.data = doc;
+  const markup = String(sevenDayMoversMarkup(snap));
+  for (const bad of ['undefined', 'NaN', '[object Object]']) assert.equal(markup.includes(bad), false, `runners leaks "${bad}"`);
+  for (const want of ['XRUN', '31%', 'A ×5.1', 'pre-aprindere', 'Volum anormal', 'R1', 'EVAA', '82%', 'RSI 85', 'toți factorii (2)', 'SAMD', 'nerezolvat', 'Top 7 zile — creșteri realizate']) {
+    assert.ok(markup.includes(want), `missing "${want}"`);
+  }
+  assert.equal(markup.includes('verifică deblocările</span>'), false, 'info risks stay out of the risk column');
+  assert.equal(SCREENS['seven-day-movers'].count(snap), 1);
+  runnersState.status = 'error';
+  runnersState.error = 'data/runners.json nu există încă';
+  assert.match(String(runnersMarkup()), /nu există încă/);
+});

@@ -55,8 +55,13 @@ export function fakeAnalyst(over = {}) {
   };
 }
 
-export async function startApp({ snapshots = fakeSnapshots(), analyst = fakeAnalyst(), config = {} } = {}) {
-  const useCases = createUseCases({ snapshots, analyst, cache: new MemoryCache(), clock: { now: () => Date.parse('2026-11-17T18:00:00Z') } });
+export function runnersDoc() {
+  const c = (i, tier, stage) => ({ key: `cg:coin-${i}`, symbol: `C${i}`, probability: 0.4 - i * 0.05, lift: 4 - i * 0.5, tier, stage, rank: i + 1, factors: [{ key: 'vol_z30', contribution: 0.3 }], drivers: [], rulesMatched: ['R1'] });
+  return { generatedAt: '2026-11-18T08:00:00Z', horizonDays: 7, target: { fwdMaxReturn: 0.5 }, metrics: { auc: 0.8 }, rules: [{ id: 'R1', text: 'x' }], factors: [], references: [], events: [], candidates: [c(0, 'A', 'PRE'), c(1, 'B', 'APRINDERE'), c(2, 'C', 'PRE')] };
+}
+
+export async function startApp({ snapshots = fakeSnapshots(), analyst = fakeAnalyst(), config = {}, runners = { load: async () => runnersDoc(), info: () => ({ source: 'memory' }) } } = {}) {
+  const useCases = createUseCases({ snapshots, analyst, runners, cache: new MemoryCache(), clock: { now: () => Date.parse('2026-11-17T18:00:00Z') } });
   const app = createApp({ useCases, config: { version: 'test', corsOrigins: ['https://hdmihai.github.io'], ...config }, logger: { error() {} } });
   const server = await new Promise((resolve) => {
     const s = app.listen(0, '127.0.0.1', () => resolve(s));

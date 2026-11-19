@@ -4,6 +4,8 @@
  * a decis deja sortarea (score desc), filtrele și boost-ul. Acest view doar
  * randează ce e în contract.
  *
+ * Deasupra: Potențiali runneri pe următoarele 7 zile (views/runners.js, din data/runners.json).
+ *
  * Decizii (Briefing Faza 6 §4):
  *  · fără sortare/filtrare UI în v1 — backend-ul a făcut deja ambele;
  *  · badge health colorat: HEALTHY good, FRAGILE warning, DISTRIBUTION serious, UNKNOWN muted;
@@ -12,6 +14,7 @@
 import { html, tip } from '../core/dom.js';
 import { pct, usd, frac, num, signClass, DASH } from '../core/format.js';
 import { validityBadge } from './widgets.js';
+import { runnersMarkup } from './runners.js';
 
 const HEALTH_TONE = {
   HEALTHY: 'good',
@@ -35,12 +38,17 @@ function healthBadge(verdict, boost) {
 }
 
 export function sevenDayMoversMarkup(snap) {
+  return html`${runnersMarkup()}${realizedMarkup(snap)}`;
+}
+
+/** Creșterile deja realizate (output-ul `discovery.sevenDayMovers` din scanerul Node). */
+export function realizedMarkup(snap) {
   const movers = snap?.discovery?.sevenDayMovers ?? [];
   if (!movers.length) {
     return html`<div class="frame"><p class="muted">Niciun token nu trece filtrele de calitate în această rulare.</p></div>`;
   }
   return html`<div class="frame">
-    <h2>Top 7 zile — creșteri filtrate pe calitate</h2>
+    <h2>Top 7 zile — creșteri realizate, filtrate pe calitate</h2>
     <p class="muted">Cele mai puternice creșteri pe 7 zile, filtrate pe lichiditate,
        turnover și validitate, ponderate după sănătatea mișcării.
        Scor = change7d × ln(volume24h) × boost sănătate.</p>

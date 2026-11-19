@@ -7,6 +7,7 @@
  *
  *   node scripts/validate-snapshot.js data/latest.json
  *   node scripts/validate-snapshot.js --agent data/agent.json     (the AI agent's report)
+ *   node scripts/validate-snapshot.js --runners data/runners.json (potențialii runneri, modulul Python)
  */
 import { readFile, stat } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
@@ -33,6 +34,28 @@ if (process.argv[2] === '--agent') {
     process.exit(0);
   } catch (err) {
     console.error(`INVALID ${aFile}: ${err.message}`);
+    process.exit(1);
+  }
+}
+
+// `--runners <file>`: validate data/runners.json against schema/runners.schema.json.
+if (process.argv[2] === '--runners') {
+  const rFile = resolve(process.cwd(), process.argv[3] ?? 'data/runners.json');
+  try {
+    const schema = JSON.parse(await readFile(resolve(root, 'schema/runners.schema.json'), 'utf8'));
+    const doc = JSON.parse(await readFile(rFile, 'utf8'));
+    const errors = validateSchema(doc, schema);
+    if (errors.length) {
+      console.error(`INVALID ${rFile}: ${errors.length} erori`);
+      for (const e of errors.slice(0, 25)) console.error(`  - ${e}`);
+      process.exit(1);
+    }
+    const m = doc.metrics ?? {};
+    console.log(`OK ${rFile}`);
+    console.log(`  ${doc.candidates.length} candidați, ${doc.rules.length} reguli, ${doc.factors.length} factori · AUC out-of-time ${m.auc ?? '—'} · bază ${m.baseRate ?? '—'}`);
+    process.exit(0);
+  } catch (err) {
+    console.error(`INVALID ${rFile}: ${err.message}`);
     process.exit(1);
   }
 }

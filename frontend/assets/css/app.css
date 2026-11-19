@@ -903,3 +903,26 @@ html[data-page='asistent'] .chat { min-height: 0; height: clamp(420px, calc(100v
 .chat-conn select { height: 34px; padding: 0 8px; border-radius: var(--r-sm); border: 1px solid var(--line); background: var(--surface); color: var(--ink); width: 100%; }
 .chat-conn { grid-template-columns: 150px 1fr 1fr auto; }
 @media (max-width: 760px) { .chat-conn { grid-template-columns: 1fr; } }
+
+/* Potențiali runneri (Top 7 zile) */
+.movers.runners td { vertical-align: top; }
+.movers.runners .chips { margin: 0 0 4px; max-width: 520px; }
+details.runner-all > summary { cursor: pointer; font-size: var(--fs-xs); color: var(--ink-2); }
+details.runner-all table { margin-top: 6px; font-size: var(--fs-xs); }
+details.runner-block { margin-top: 14px; }
+details.runner-block > summary { cursor: pointer; list-style: none; }
+details.runner-block > summary::-webkit-details-marker { display: none; }
+details.runner-block > summary h3 { display: inline; }
+details.runner-block > summary::before { content: '▸ '; color: var(--ink-3); }
+details.runner-block[open] > summary::before { content: '▾ '; }
+@media (max-width: 760px) {
+  .movers.runners thead { display: none; }
+  .movers.runners, .movers.runners tbody, .movers.runners tr, .movers.runners td { display: block; width: 100%; }
+  .movers.runners tr { border: 1px solid var(--line, rgba(255,255,255,.12)); border-radius: 10px; padding: 10px 12px; margin: 0 0 12px; }
+  .movers.runners td { padding: 4px 0; border: 0; }
+  .movers.runners td[data-label]:not([data-label="Token"]):not([data-label="#"])::before { content: attr(data-label); display: block; font-size: var(--fs-xs); color: var(--ink-3); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 2px; }
+  .movers.runners td[data-label="#"] { font-weight: 700; color: var(--ink-3); }
+  .movers.runners .chips { max-width: none; }
+  .movers.runners .chip, .movers.runners .chips > * { white-space: normal; word-break: normal; overflow-wrap: anywhere; }
+  details.runner-all table, details.runner-block table { display: block; overflow-x: auto; }
+}

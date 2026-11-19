@@ -2,6 +2,7 @@
 /**
  * Composition root — the only file that knows every concrete adapter. Wires:
  *   SnapshotPort  ← File/HttpSnapshotRepository   (the scanner's published contract)
+ *   runners       ← same adapters on data/runners.json (Python runners module)
  *   AnalystPort   ← PythonBridge                   (services/analyst-python, http or spawn)
  *   CachePort     ← MemoryCache
  *   ClockPort     ← system clock
@@ -12,7 +13,7 @@ import { createUseCases } from './application/use-cases.js';
 import { loadConfig } from './config.js';
 import { MemoryCache } from './services/MemoryCache.js';
 import { PythonBridge } from './services/PythonBridge.js';
-import { createSnapshotRepository } from './services/SnapshotRepository.js';
+import { createRunnersRepository, createSnapshotRepository } from './services/SnapshotRepository.js';
 
 const config = loadConfig();
 const useCases = createUseCases({
@@ -20,6 +21,7 @@ const useCases = createUseCases({
   analyst: new PythonBridge(config.analyst),
   cache: new MemoryCache({ max: 1000, ttlMs: 15 * 60_000 }),
   clock: { now: () => Date.now() },
+  runners: createRunnersRepository({ snapshotSource: config.snapshotSource, ttlMs: config.snapshotTtlMs }),
 });
 
 const app = createApp({ useCases, config });

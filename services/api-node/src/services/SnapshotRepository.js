@@ -9,6 +9,13 @@
  */
 import { readFile, stat } from 'node:fs/promises';
 
+export function validateRunners(doc, where) {
+  if (!doc || typeof doc !== 'object' || !Array.isArray(doc.candidates)) {
+    throw new Error(`${where}: contract neașteptat (lipsește candidates în runners.json)`);
+  }
+  return doc;
+}
+
 function validate(doc, where) {
   if (!doc || typeof doc !== 'object' || !doc.meta || !Array.isArray(doc.candidates)) {
     throw new Error(`${where}: contract neașteptat (lipsesc meta/candidates)`);
@@ -17,8 +24,9 @@ function validate(doc, where) {
 }
 
 export class FileSnapshotRepository {
-  constructor({ path, now = Date.now }) {
+  constructor({ path, now = Date.now, validator = validate }) {
     this.path = path;
+    this.validator = validator;
     this.now = now;
     this.cached = null;
     this.mtimeMs = 0;
@@ -28,7 +36,7 @@ export class FileSnapshotRepository {
   async load() {
     const st = await stat(this.path);
     if (this.cached && st.mtimeMs === this.mtimeMs) return this.cached;
-    const doc = validate(JSON.parse(await readFile(this.path, 'utf8')), this.path);
+    const doc = this.validator(JSON.parse(await readFile(this.path, 'utf8')), this.path);
     this.cached = doc;
     this.mtimeMs = st.mtimeMs;
     this.loadedAt = this.now();
@@ -41,8 +49,9 @@ export class FileSnapshotRepository {
 }
 
 export class HttpSnapshotRepository {
-  constructor({ url, ttlMs = 5 * 60_000, timeoutMs = 20_000, fetchImpl = globalThis.fetch, now = Date.now }) {
+  constructor({ url, ttlMs = 5 * 60_000, timeoutMs = 20_000, fetchImpl = globalThis.fetch, now = Date.now, validator = validate }) {
     this.url = url;
+    this.validator = validator;
     this.ttlMs = ttlMs;
     this.timeoutMs = timeoutMs;
     this.fetch = fetchImpl;
@@ -58,7 +67,7 @@ export class HttpSnapshotRepository {
       try {
         const res = await this.fetch(this.url, { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(this.timeoutMs) });
         if (!res.ok) throw new Error(`${this.url}: HTTP ${res.status}`);
-        const doc = validate(await res.json(), this.url);
+        const doc = this.validator(await res.json(), this.url);
         this.cached = doc;
         this.loadedAt = this.now();
         return doc;
@@ -78,7 +87,13 @@ export class HttpSnapshotRepository {
   }
 }
 
-export function createSnapshotRepository({ source, ttlMs }) {
-  if (/^https?:\/\//i.test(source)) return new HttpSnapshotRepository({ url: source, ttlMs });
-  return new FileSnapshotRepository({ path: source });
+export function createSnapshotRepository({ source, ttlMs, validator }) {
+  if (/^https?:\/\//i.test(source)) return new HttpSnapshotRepository({ url: source, ttlMs, validator });
+  return new FileSnapshotRepository({ path: source, validator });
+}
+
+/** data/runners.json lângă latest.json (același director local sau aceeași origine Pages). */
+export function createRunnersRepository({ snapshotSource, ttlMs }) {
+  const source = String(snapshotSource).replace(/latest\.json(\?.*)?$/, 'runners.json');
+  return createSnapshotRepository({ source, ttlMs, validator: validateRunners });
 }

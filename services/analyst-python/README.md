@@ -44,3 +44,19 @@ echo '{"closes":[1,1.1,1.05,1.2,1.25,1.3,1.28,1.4,1.5,1.45,1.6]}' | python cli.p
 Noduri RPC proprii (opțional): `RPC_ETHEREUM`, `RPC_BSC`, `RPC_BASE`, `RPC_ARBITRUM`, `RPC_POLYGON`,
 `RPC_OPTIMISM`, `RPC_AVALANCHE`; timeout `RPC_TIMEOUT_S` (8). Adaptorul nu are nicio metodă care
 semnează sau trimite tranzacții.
+
+## Potențiali runneri (Top 7 zile)
+
+Modulul `runners/` învață, din istoricul zilnic al tuturor tokenilor, ce factori apar înaintea unei creșteri de ≥ +50% în următoarele 7 zile (tipul EVAA, IRYS, BR) și scorează tokenii de azi.
+
+```bash
+pip install -r requirements-runners.txt
+PYTHONPATH=. python -m runners run --data ../../data --state ../../.state/runners \
+  --catalysts ../../.state/catalysts.json --config ../../config/runners.json --budget-minutes 8
+python -m runners run --synthetic   # date sintetice, fără rețea
+python -m runners run --offline     # doar panelul local
+```
+
+Arhitectură hexagonală: `domain/` (features fără look-ahead, etichete, factori Mann-Whitney + FDR, reguli tip skope-rules, LightGBM cu walk-forward purge + embargo și calibrare izotonică, TreeSHAP, similaritate cu referințele), `application/pipeline.py` (refresh incremental + analiză), `adapters/` (Gate.io public, CoinGecko keyless/Demo, fișierele radarului, panel Parquet).
+
+Ieșire: `data/runners.json` (schema `schema/runners.schema.json`), servit de `GET /api/runners` și afișat în ecranul „Top 7 zile”. Rulat în GitHub Actions la fiecare 4 ore, cu starea păstrată pe ramura `cri-state`. Cheie opțională: `COINGECKO_DEMO_API_KEY`.
