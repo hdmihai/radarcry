@@ -142,7 +142,7 @@ jobs:
       - name: Image name (lowercase owner)
         id: img
         run: echo "name=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/radarcry-${{ matrix.service }}" >> "$GITHUB_OUTPUT"
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@v7
         with:
           context: services/${{ matrix.service }}
           push: true
