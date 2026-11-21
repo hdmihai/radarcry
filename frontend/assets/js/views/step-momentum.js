@@ -57,7 +57,7 @@ export function stepMomentumMarkup() {
   } else {
     body = html`<table class="movers">
       <thead><tr>
-        <th>#</th><th>Proiect</th><th>Scor</th><th>7 zile vs BTC</th><th>De la minimul de 20 zile</th><th>Open interest 14 zile</th>
+        <th>#</th><th>Proiect</th><th>Sectoare</th><th>Scor</th><th>7 zile vs BTC</th><th>De la minimul de 20 zile</th><th>Open interest 14 zile</th>
       </tr></thead>
       <tbody>
         ${items.map((item, idx) => html`<tr>
@@ -69,6 +69,11 @@ export function stepMomentumMarkup() {
             <details><summary>condiții ${isNum(item.score) ? item.score : DASH}/${isNum(item.known) ? item.known : DASH}</summary>
               ${conditionPills(item, rulesByKey)}
             </details>
+          </td>
+          <td>
+            ${(item.sectors || []).map(s => html`<span class="pill" data-tone="muted">${s}</span>`).join(' ')}
+            ${item.sectorMomentum && isNum(item.sectorMomentum[item.sectors[0]]) ? html`<br><small class="muted">${pct(item.sectorMomentum[item.sectors[0]], {dec: 1})}</small>` : ''}
+            ${!(item.sectors || []).length ? DASH : ''}
           </td>
           <td><b>${isNum(item.score) ? item.score : DASH}/${isNum(item.known) ? item.known : DASH}</b></td>
           <td>${pct(item.metrics?.outperformance7dPct, { dec: 1 })}</td>

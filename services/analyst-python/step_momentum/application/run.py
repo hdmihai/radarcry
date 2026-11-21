@@ -10,6 +10,7 @@ from ..adapters.cache import read_candles, write_candles
 from ..adapters.synthetic import build_rows
 from ..domain.rules import RULES, compute_step_momentum
 from ..domain.universe import select_gate_assets
+from ..domain.sectors import compute_sector_momentum
 from .publish import clean
 
 NOTES = (
@@ -105,10 +106,16 @@ def _cached_hourly(gate, cache_dir: Path | None, market: str, instrument: str, n
     return frame
 
 
-def execute(*, rows, gate, now, budget_s: float = 8 * 60, cache_dir: Path | None = None) -> dict:
+def execute(*, rows, gate, coingecko=None, now, budget_s: float = 8 * 60, cache_dir: Path | None = None) -> dict:
     now = pd.Timestamp(now)
     if now.tzinfo is None:
         now = now.tz_localize("UTC")
+    sector_map = {}
+    if coingecko:
+        try:
+            sector_map = coingecko.build_sector_map(["ai-agents", "bnb-chain-ecosystem", "meme-token"])
+        except Exception:
+            pass
     deadline = time.monotonic() + max(1.0, budget_s)
     spot_last = gate.spot_last()
     futures_last = gate.futures_last()
@@ -152,6 +159,8 @@ def execute(*, rows, gate, now, budget_s: float = 8 * 60, cache_dir: Path | None
         if not result["isStepMomentum"]:
             continue
         meta["signaledCount"] += 1
+        sectors = sector_map.get(asset["symbol"].upper(), [])
+        sector_mom = compute_sector_momentum(sector_map, {asset["symbol"].upper(): result["metrics"].get("tokenChange7dPct", 0) or 0})
         signals.append({
             "key": asset["key"],
             "symbol": asset["symbol"],
@@ -161,7 +170,8 @@ def execute(*, rows, gate, now, budget_s: float = 8 * 60, cache_dir: Path | None
             "gateSpotPair": asset["gateSpotPair"],
             "gateFuturesContract": asset["gateFuturesContract"],
             "futuresOnly": asset["futuresOnly"],
-            "sectors": [],
+            "sectors": sectors,
+            "sectorMomentum": sector_mom,
             **result,
         })
     signals.sort(key=lambda row: (-row["score"], -row["known"], row["symbol"]))

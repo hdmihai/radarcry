@@ -14,6 +14,7 @@ import pandas as pd
 
 from .application.publish import write_json
 from .application.run import execute, load_rows, synthetic_document
+from .adapters.coingecko_sectors import CoinGeckoSectorsClient
 
 
 def main(argv=None) -> int:
@@ -39,6 +40,7 @@ def main(argv=None) -> int:
             doc = execute(
                 rows=rows,
                 gate=GateStepClient(),
+                coingecko=CoinGeckoSectorsClient(),
                 now=pd.Timestamp.now(tz="UTC"),
                 budget_s=args.budget_minutes * 60,
                 cache_dir=state,
