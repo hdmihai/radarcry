@@ -137,7 +137,7 @@ jobs:
 
       # Potențiali runneri (7 zile) — Python, gratuit. Un eșec aici nu oprește publicarea: se
       # republică ultima listă bună din .state/runners/runners.json.
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
           cache: pip
