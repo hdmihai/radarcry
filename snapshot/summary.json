@@ -1,0 +1,137 @@
+{
+  "schemaVersion": "4.0.0",
+  "generatedAt": "2026-11-21T14:58:47.986Z",
+  "mode": "live",
+  "overall": "HEALTHY",
+  "universe": {
+    "coingecko": 1000,
+    "coinmarketcap": 0,
+    "coinpaprika": 1600,
+    "binanceAlpha": 378,
+    "gateAlpha": 3569,
+    "alphaOnly": 3061,
+    "alphaOnlyEligible": 48,
+    "binanceAlphaOnly": 18,
+    "gateAlphaOnly": 2811,
+    "alphaPrograms": {
+      "binance": 376,
+      "gate": 3282,
+      "both": 348
+    },
+    "merged": 4061,
+    "excluded": 3530,
+    "eligible": 531,
+    "deep": 531,
+    "priority": 81,
+    "horizon": 531,
+    "discovered": 531,
+    "published": 150,
+    "validity": {
+      "valid": 409,
+      "pending": 0,
+      "rejected": 122
+    },
+    "futures": 530,
+    "rolling": {
+      "tiers": {
+        "candles": 475,
+        "dex": 426,
+        "security": {
+          "fresh": 3,
+          "carried": 419
+        },
+        "detail": {
+          "fresh": 2,
+          "carried": 510
+        },
+        "holdersInfo": 47,
+        "holderLists": 0,
+        "dev": 31,
+        "mentions": 0
+      },
+      "cache": {
+        "projects": 531,
+        "security": 423,
+        "detail": 513,
+        "holdersInfo": 282,
+        "dev": 115,
+        "mentions": 0,
+        "windowHours": 72,
+        "ttlHours": {
+          "security": 168,
+          "detail": 336
+        }
+      }
+    },
+    "crossListed": 0
+  },
+  "signals": {
+    "ACCUMULATE": 1,
+    "WATCH": 32,
+    "LATE": 3,
+    "NONE": 55,
+    "AVOID": 59
+  },
+  "top": [
+    {
+      "symbol": "ELSA",
+      "cri": 65.8,
+      "signal": "ACCUMULATE",
+      "stage": "BASE"
+    },
+    {
+      "symbol": "UP",
+      "cri": 62.3,
+      "signal": "WATCH",
+      "stage": "BUILDING"
+    },
+    {
+      "symbol": "CT",
+      "cri": 62.1,
+      "signal": "WATCH",
+      "stage": "DECLINE"
+    },
+    {
+      "symbol": "BLESS",
+      "cri": 61.8,
+      "signal": "WATCH",
+      "stage": "ACCELERATION"
+    },
+    {
+      "symbol": "NAORIS",
+      "cri": 61.7,
+      "signal": "WATCH",
+      "stage": "BASE"
+    },
+    {
+      "symbol": "KGEN",
+      "cri": 61.7,
+      "signal": "WATCH",
+      "stage": "BASE"
+    },
+    {
+      "symbol": "BARD",
+      "cri": 61.6,
+      "signal": "WATCH",
+      "stage": "DECLINE"
+    },
+    {
+      "symbol": "EVAA",
+      "cri": 61,
+      "signal": "LATE",
+      "stage": "EXPANSION"
+    },
+    {
+      "symbol": "ERA",
+      "cri": 60.8,
+      "signal": "WATCH",
+      "stage": "BASE"
+    },
+    {
+      "symbol": "OPG",
+      "cri": 58.2,
+      "signal": "WATCH",
+      "stage": "BUILDING"
+    }
+  ]
+}
