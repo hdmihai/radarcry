@@ -8,6 +8,7 @@
  *   node scripts/validate-snapshot.js data/latest.json
  *   node scripts/validate-snapshot.js --agent data/agent.json     (the AI agent's report)
  *   node scripts/validate-snapshot.js --runners data/runners.json (potențialii runneri, modulul Python)
+ *   node scripts/validate-snapshot.js --step-momentum data/step-momentum.json
  */
 import { readFile, stat } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
@@ -56,6 +57,28 @@ if (process.argv[2] === '--runners') {
     process.exit(0);
   } catch (err) {
     console.error(`INVALID ${rFile}: ${err.message}`);
+    process.exit(1);
+  }
+}
+
+// `--step-momentum <file>`: regulile de momentum în trepte (nu un model).
+if (process.argv[2] === '--step-momentum') {
+  const sFile = resolve(process.cwd(), process.argv[3] ?? 'data/step-momentum.json');
+  try {
+    const schema = JSON.parse(await readFile(resolve(root, 'schema/step-momentum.schema.json'), 'utf8'));
+    const doc = JSON.parse(await readFile(sFile, 'utf8'));
+    const errors = validateSchema(doc, schema);
+    if (errors.length) {
+      console.error(`INVALID ${sFile}: ${errors.length} erori`);
+      for (const e of errors.slice(0, 25)) console.error(`  - ${e}`);
+      process.exit(1);
+    }
+    const m = doc.stepMomentumMeta ?? {};
+    console.log(`OK ${sFile}`);
+    console.log(`  method ${doc.method}, semnalate ${doc.stepMomentum.length} (meta ${m.signaledCount ?? '—'}), evaluate ${m.evaluatedCount ?? '—'}`);
+    process.exit(0);
+  } catch (err) {
+    console.error(`INVALID ${sFile}: ${err.message}`);
     process.exit(1);
   }
 }

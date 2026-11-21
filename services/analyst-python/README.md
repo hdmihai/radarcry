@@ -60,3 +60,15 @@ python -m runners run --offline     # doar panelul local
 Arhitectură hexagonală: `domain/` (features fără look-ahead, etichete, factori Mann-Whitney + FDR, reguli tip skope-rules, LightGBM cu walk-forward purge + embargo și calibrare izotonică, TreeSHAP, similaritate cu referințele), `application/pipeline.py` (refresh incremental + analiză), `adapters/` (Gate.io public, CoinGecko keyless/Demo, fișierele radarului, panel Parquet).
 
 Ieșire: `data/runners.json` (schema `schema/runners.schema.json`), servit de `GET /api/runners` și afișat în ecranul „Top 7 zile”. Rulat în GitHub Actions la fiecare 4 ore, cu starea păstrată pe ramura `cri-state`. Cheie opțională: `COINGECKO_DEMO_API_KEY`.
+
+## Momentum în trepte
+
+Modulul `step_momentum/` este un ecran de **reguli**, nu un al doilea LightGBM. Șapte condiții pe lumânări de 1h (structura confirmată și pe 4h) pentru proiectele deja verificate din `data/universe.json`, identificate pe Gate după preț. O condiție fără date rămâne necunoscută și iese din ponderare. Semnalul cere cel puțin 4 condiții măsurate și o fracție de îndeplinire ≥ 5/7.
+
+```bash
+pip install -r requirements-runners.txt
+PYTHONPATH=. python -m step_momentum run --data ../../data --state ../../.state/step-momentum --budget-minutes 8
+PYTHONPATH=. python -m step_momentum run --synthetic
+```
+
+Ieșire: `data/step-momentum.json` (schema `schema/step-momentum.schema.json`), `GET /api/step-momentum`, ecranul „Momentum în trepte”. Nu măsoară lift și nu înlocuiește `runners/`.

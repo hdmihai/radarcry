@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hdmihai.github.io/radarcry/schema/step-momentum.schema.json",
+  "title": "radarcry — Momentum în trepte (data/step-momentum.json)",
+  "description": "Produs de services/analyst-python/step_momentum (python -m step_momentum run). Reguli fixe pe lumânări 1h/4h. Nu este un model și nu are probabilități calibrate.",
+  "type": "object",
+  "required": ["version", "generatedAt", "method", "model", "notes", "rules", "stepMomentumMeta", "stepMomentum"],
+  "additionalProperties": false,
+  "properties": {
+    "version": { "type": "string" },
+    "generatedAt": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T" },
+    "method": { "const": "rules" },
+    "model": { "type": "null" },
+    "notes": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+    "rules": {
+      "type": "array",
+      "minItems": 7,
+      "maxItems": 7,
+      "items": {
+        "type": "object",
+        "required": ["id", "key", "text"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "pattern": "^R\\d$" },
+          "key": { "type": "string" },
+          "text": { "type": "string", "minLength": 8 }
+        }
+      }
+    },
+    "stepMomentumMeta": {
+      "type": "object",
+      "required": ["withGate", "evaluatedCount", "signaledCount", "futuresOnlyCount", "deferredByBudget", "insufficientHistory", "missingCandles"],
+      "properties": {
+        "universeRows": { "type": "integer", "minimum": 0 },
+        "notVerified": { "type": "integer", "minimum": 0 },
+        "outsideCap": { "type": "integer", "minimum": 0 },
+        "thinVolume": { "type": "integer", "minimum": 0 },
+        "priceUnconfirmed": { "type": "integer", "minimum": 0 },
+        "notOnGate": { "type": "integer", "minimum": 0 },
+        "withGate": { "type": "integer", "minimum": 0 },
+        "futuresOnlyCount": { "type": "integer", "minimum": 0 },
+        "evaluatedCount": { "type": "integer", "minimum": 0 },
+        "signaledCount": { "type": "integer", "minimum": 0 },
+        "deferredByBudget": { "type": "integer", "minimum": 0 },
+        "insufficientHistory": { "type": "integer", "minimum": 0 },
+        "missingCandles": { "type": "integer", "minimum": 0 },
+        "oiUnavailable": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "stepMomentum": {
+      "type": "array",
+      "maxItems": 40,
+      "items": {
+        "type": "object",
+        "required": ["key", "symbol", "name", "score", "known", "isStepMomentum", "futuresOnly", "conditions", "metrics", "sources", "sectors"],
+        "additionalProperties": false,
+        "properties": {
+          "key": { "type": ["string", "null"] },
+          "symbol": { "type": "string" },
+          "name": { "type": "string" },
+          "marketCap": { "type": ["number", "null"] },
+          "volume24h": { "type": ["number", "null"] },
+          "gateSpotPair": { "type": ["string", "null"] },
+          "gateFuturesContract": { "type": ["string", "null"] },
+          "futuresOnly": { "type": "boolean" },
+          "sectors": { "type": "array", "items": { "type": "string" } },
+          "score": { "type": "integer", "minimum": 0, "maximum": 7 },
+          "known": { "type": "integer", "minimum": 0, "maximum": 7 },
+          "isStepMomentum": { "const": true },
+          "conditions": {
+            "type": "object",
+            "required": ["outperformance7dGt15pct", "gain15To60PctFrom20dLow", "risingLows", "marketDown7d", "volumeTrendUp", "openInterestGrowth14dGt20pct", "openInterestFasterThanPrice"],
+            "additionalProperties": false,
+            "properties": {
+              "outperformance7dGt15pct": { "type": ["boolean", "null"] },
+              "gain15To60PctFrom20dLow": { "type": ["boolean", "null"] },
+              "risingLows": { "type": ["boolean", "null"] },
+              "marketDown7d": { "type": ["boolean", "null"] },
+              "volumeTrendUp": { "type": ["boolean", "null"] },
+              "openInterestGrowth14dGt20pct": { "type": ["boolean", "null"] },
+              "openInterestFasterThanPrice": { "type": ["boolean", "null"] }
+            }
+          },
+          "metrics": { "type": "object" },
+          "sources": { "type": "object" }
+        }
+      }
+    }
+  }
+}

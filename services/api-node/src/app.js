@@ -7,6 +7,7 @@ import { analysisRoutes } from './routes/analysis.js';
 import { healthRoutes } from './routes/health.js';
 import { radarRoutes } from './routes/radar.js';
 import { runnersRoutes } from './routes/runners.js';
+import { stepMomentumRoutes } from './routes/step-momentum.js';
 import { cors, errorHandler, notFoundHandler, rateLimit, requestId } from './middleware/http.js';
 
 export function createApp({ useCases, config, logger = console }) {
@@ -30,6 +31,7 @@ export function createApp({ useCases, config, logger = console }) {
   api.use('/radar', radarRoutes(useCases));
   api.use('/analysis', analysisRoutes(useCases));
   api.use('/runners', runnersRoutes(useCases));
+  api.use('/step-momentum', stepMomentumRoutes(useCases));
   app.use('/api', api);
 
   // Optional local preview: the same static dashboard GitHub Pages serves, plus the snapshot —

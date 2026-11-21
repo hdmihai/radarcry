@@ -217,3 +217,40 @@ test('createRunnersRepository reads runners.json next to latest.json', async () 
   assert.equal(createRunnersRepository({ snapshotSource: 'https://hdmihai.github.io/radarcry/data/latest.json' }).url, 'https://hdmihai.github.io/radarcry/data/runners.json');
   assert.equal(createRunnersRepository({ snapshotSource: '/repo/data/latest.json' }).path, '/repo/data/runners.json');
 });
+
+test('GET /api/step-momentum returns only signals, and 503 when the file is missing', async () => {
+  const doc = {
+    generatedAt: '2026-11-20T00:00:00Z', method: 'rules', notes: ['reguli, nu model'],
+    rules: [{ id: 'R1', key: 'risingLows', text: 'minime în urcare' }],
+    stepMomentumMeta: { signaledCount: 1 },
+    stepMomentum: [
+      { symbol: 'AAA', key: 'cg:a', score: 5, known: 5, isStepMomentum: true, futuresOnly: false },
+      { symbol: 'BBB', key: 'cg:b', score: 1, known: 7, isStepMomentum: false },
+    ],
+  };
+  let app = await startApp({ stepMomentum: { load: async () => doc, info: () => ({ source: 'memory' }) } });
+  try {
+    const res = await fetch(`${app.base}/api/step-momentum?limit=10`);
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get('cache-control'), 'public, max-age=120');
+    const body = await res.json();
+    assert.deepEqual(body.items.map((x) => x.symbol), ['AAA']);
+    assert.equal(body.meta.method, 'rules');
+    assert.equal(body.meta.total, 2);
+    assert.equal(body.rules[0].id, 'R1');
+  } finally {
+    await app.close();
+  }
+  app = await startApp({ stepMomentum: { load: async () => { throw new Error('ENOENT'); }, info: () => ({ source: 'x' }) } });
+  try {
+    assert.equal((await fetch(`${app.base}/api/step-momentum`)).status, 503);
+  } finally {
+    await app.close();
+  }
+});
+
+test('createStepMomentumRepository reads step-momentum.json next to latest.json', async () => {
+  const { createStepMomentumRepository } = await import('../src/services/SnapshotRepository.js');
+  assert.equal(createStepMomentumRepository({ snapshotSource: 'https://hdmihai.github.io/radarcry/data/latest.json' }).url, 'https://hdmihai.github.io/radarcry/data/step-momentum.json');
+  assert.equal(createStepMomentumRepository({ snapshotSource: '/repo/data/latest.json' }).path, '/repo/data/step-momentum.json');
+});

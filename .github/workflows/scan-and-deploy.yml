@@ -166,10 +166,30 @@ jobs:
           PYTHONPATH: services/analyst-python
         run: python -m runners run --synthetic --data data --state .state-demo/runners --config config/runners.json
 
+      # Momentum în trepte — reguli pe 1h/4h, nu model. Un eșec nu oprește publicarea:
+      # se republică ultima listă bună din .state/step-momentum/step-momentum.json.
+      - name: Step momentum (live)
+        if: env.MODE == 'live'
+        continue-on-error: true
+        timeout-minutes: 12
+        env:
+          PYTHONPATH: services/analyst-python
+        run: |
+          python -m step_momentum run --data data --state .state/step-momentum --budget-minutes 8 \
+            || { echo "::warning::Momentum în trepte a eșuat; republic ultima listă validă."; \
+                 cp .state/step-momentum/step-momentum.json data/step-momentum.json 2>/dev/null || true; }
+
+      - name: Step momentum (demo, synthetic)
+        if: env.MODE == 'demo'
+        env:
+          PYTHONPATH: services/analyst-python
+        run: python -m step_momentum run --synthetic --data data --state .state-demo/step-momentum
+
       - name: Validate the published contract
         run: |
           node scripts/validate-snapshot.js data/latest.json
           if [ -f data/runners.json ]; then node scripts/validate-snapshot.js --runners data/runners.json || rm -f data/runners.json; fi
+          if [ -f data/step-momentum.json ]; then node scripts/validate-snapshot.js --step-momentum data/step-momentum.json || rm -f data/step-momentum.json; fi
 
       - name: Save research state (single-commit orphan branch)
         if: env.MODE == 'live'

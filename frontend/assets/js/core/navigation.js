@@ -25,6 +25,7 @@ export const SECTIONS = Object.freeze([
   { id: 'radar-small-cap', label: 'Small-Cap Radar', level: 2, group: 'work' },
   { id: 'futures', label: 'Futures Radar', level: 2, group: 'work' },
   { id: 'seven-day-movers', label: 'Top 7 zile', level: 2, group: 'work' },
+  { id: 'step-momentum', label: 'Momentum în trepte', level: 2, group: 'work' },
   { id: 'deep-research', label: 'Deep Research', level: 2, group: 'work' },
 
   // Level 2 — the second menu, supporting screens.

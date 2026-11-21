@@ -13,7 +13,7 @@ import { createUseCases } from './application/use-cases.js';
 import { loadConfig } from './config.js';
 import { MemoryCache } from './services/MemoryCache.js';
 import { PythonBridge } from './services/PythonBridge.js';
-import { createRunnersRepository, createSnapshotRepository } from './services/SnapshotRepository.js';
+import { createRunnersRepository, createSnapshotRepository, createStepMomentumRepository } from './services/SnapshotRepository.js';
 
 const config = loadConfig();
 const useCases = createUseCases({
@@ -22,6 +22,7 @@ const useCases = createUseCases({
   cache: new MemoryCache({ max: 1000, ttlMs: 15 * 60_000 }),
   clock: { now: () => Date.now() },
   runners: createRunnersRepository({ snapshotSource: config.snapshotSource, ttlMs: config.snapshotTtlMs }),
+  stepMomentum: createStepMomentumRepository({ snapshotSource: config.snapshotSource, ttlMs: config.snapshotTtlMs }),
 });
 
 const app = createApp({ useCases, config });

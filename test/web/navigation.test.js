@@ -34,7 +34,7 @@ test('navigation model: the main section is a tab, the second menu opens with th
   assert.deepEqual(ids(mainSections()), ['oportunitati']);
   assert.equal(HOME, 'oportunitati');
   assert.equal(sectionById(HOME).label, 'Oportunități proiecte');
-  assert.deepEqual(ids(menuSections('work')), ['asistent', 'radar-small-cap', 'futures', 'seven-day-movers', 'deep-research']);
+  assert.deepEqual(ids(menuSections('work')), ['asistent', 'radar-small-cap', 'futures', 'seven-day-movers', 'step-momentum', 'deep-research']);
   assert.deepEqual(menuSections('work').slice(0, 3).map((s) => s.label), ['AI Assistant', 'Small-Cap Radar', 'Futures Radar']);
   assert.deepEqual(ids(menuSections()), [...ids(menuSections('work')), ...ids(menuSections('support'))], 'the second menu is the working set, then the supporting screens');
 });
@@ -44,7 +44,7 @@ test('navigation model: ids are unique and URL-safe, and every section that exis
   assert.equal(new Set(all).size, all.length, 'duplicate section id');
   for (const id of all) assert.match(id, /^[a-z0-9-]+$/, `${id} is not usable in a hash`);
   for (const id of BEFORE) assert.ok(menuSections().some((s) => s.id === id), `${id} disappeared from the second menu`);
-  assert.equal(all.length, BEFORE.length + 2, 'the new sections are the main one and Top 7 zile');
+  assert.equal(all.length, BEFORE.length + 3, 'the new sections are the main one, Top 7 zile and Momentum în trepte');
 });
 
 test('routing: hash and section round-trip; an empty or unknown hash lands on the main section; the drawer token survives', () => {

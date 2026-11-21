@@ -14,6 +14,7 @@ import { discoveryMarkup } from './views/discovery.js';
 import { forecastMarkup } from './views/forecast.js';
 import { futuresMarkup } from './views/futures.js';
 import { ensureRunners, runnersState } from './views/runners.js';
+import { ensureStepMomentum, stepMomentumMarkup, stepMomentumState } from './views/step-momentum.js';
 import { sevenDayMoversMarkup } from './views/seven-day-movers.js';
 import { healthMarkup } from './views/health.js';
 import { derivativesMarkup, narrativesMarkup } from './views/markets.js';
@@ -35,6 +36,11 @@ export const SCREENS = {
   asistent: { render: chatMarkup, count: () => (chatState.status === 'online' ? chatState.convs.length : null), enter: () => enterChat() },
   'radar-small-cap': { render: discoveryMarkup, count: (s) => (s.discovery?.answering ?? 0) },
   futures: { render: futuresMarkup, count: (s) => (s.futures?.summary?.graded ?? 0) },
+  'step-momentum': {
+    render: stepMomentumMarkup,
+    count: () => (stepMomentumState.status === 'ready' ? (stepMomentumState.data?.stepMomentum?.length ?? 0) : 0),
+    enter: () => ensureStepMomentum('data/step-momentum.json'),
+  },
   'seven-day-movers': { render: sevenDayMoversMarkup, count: (s) => (runnersState.status === 'ready' ? runnersState.data.candidates.length : (s.discovery?.sevenDayMovers ?? []).length), enter: () => ensureRunners('data/runners.json') },
   'deep-research': { render: researchMarkup, count: (s) => (s.discovery?.rows ?? []).filter((r) => r.detail === 'full' || r.platforms?.length).length },
 

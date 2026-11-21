@@ -60,8 +60,8 @@ export function runnersDoc() {
   return { generatedAt: '2026-11-18T08:00:00Z', horizonDays: 7, target: { fwdMaxReturn: 0.5 }, metrics: { auc: 0.8 }, rules: [{ id: 'R1', text: 'x' }], factors: [], references: [], events: [], candidates: [c(0, 'A', 'PRE'), c(1, 'B', 'APRINDERE'), c(2, 'C', 'PRE')] };
 }
 
-export async function startApp({ snapshots = fakeSnapshots(), analyst = fakeAnalyst(), config = {}, runners = { load: async () => runnersDoc(), info: () => ({ source: 'memory' }) } } = {}) {
-  const useCases = createUseCases({ snapshots, analyst, runners, cache: new MemoryCache(), clock: { now: () => Date.parse('2026-11-17T18:00:00Z') } });
+export async function startApp({ snapshots = fakeSnapshots(), analyst = fakeAnalyst(), config = {}, runners = { load: async () => runnersDoc(), info: () => ({ source: 'memory' }) }, stepMomentum = null } = {}) {
+  const useCases = createUseCases({ snapshots, analyst, runners, stepMomentum, cache: new MemoryCache(), clock: { now: () => Date.parse('2026-11-17T18:00:00Z') } });
   const app = createApp({ useCases, config: { version: 'test', corsOrigins: ['https://hdmihai.github.io'], ...config }, logger: { error() {} } });
   const server = await new Promise((resolve) => {
     const s = app.listen(0, '127.0.0.1', () => resolve(s));

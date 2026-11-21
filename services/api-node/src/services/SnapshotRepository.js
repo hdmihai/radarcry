@@ -97,3 +97,16 @@ export function createRunnersRepository({ snapshotSource, ttlMs }) {
   const source = String(snapshotSource).replace(/latest\.json(\?.*)?$/, 'runners.json');
   return createSnapshotRepository({ source, ttlMs, validator: validateRunners });
 }
+
+export function validateStepMomentum(doc, where) {
+  if (!doc || typeof doc !== 'object' || !Array.isArray(doc.stepMomentum) || doc.method !== 'rules') {
+    throw new Error(`${where}: contract neașteptat (step-momentum.json trebuie să fie method=rules și să aibă stepMomentum)`);
+  }
+  return doc;
+}
+
+/** data/step-momentum.json lângă latest.json (același director local sau aceeași origine Pages). */
+export function createStepMomentumRepository({ snapshotSource, ttlMs }) {
+  const source = String(snapshotSource).replace(/latest\.json(\?.*)?$/, 'step-momentum.json');
+  return createSnapshotRepository({ source, ttlMs, validator: validateStepMomentum });
+}
