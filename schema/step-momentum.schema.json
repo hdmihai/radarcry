@@ -44,7 +44,9 @@
         "deferredByBudget": { "type": "integer", "minimum": 0 },
         "insufficientHistory": { "type": "integer", "minimum": 0 },
         "missingCandles": { "type": "integer", "minimum": 0 },
-        "oiUnavailable": { "type": "integer", "minimum": 0 }
+        "oiUnavailable": { "type": "integer", "minimum": 0 },
+        "sectorCategoriesLoaded": { "type": "integer", "minimum": 0 },
+        "sectorCategoriesFailed": { "type": "integer", "minimum": 0 }
       }
     },
     "stepMomentum": {
@@ -63,7 +65,12 @@
           "gateSpotPair": { "type": ["string", "null"] },
           "gateFuturesContract": { "type": ["string", "null"] },
           "futuresOnly": { "type": "boolean" },
-          "sectors": { "type": "array", "items": { "type": "string" } },
+          "sectors": { "type": "array", "items": { "type": "string" }, "description": "Categorii CoinGecko din care face parte activul (id-uri, ex. ai-agents); [] când identitatea nu e cg:<id> sau sectorul nu a putut fi încărcat." },
+          "sectorMomentum": {
+            "type": "object",
+            "description": "Media randamentelor pe 7 zile (%) ale membrilor evaluați ai fiecărui sector al activului, doar pentru sectoarele cu cel puțin 3 membri. Cheile sunt o submulțime a lui `sectors`.",
+            "additionalProperties": { "type": "number" }
+          },
           "score": { "type": "integer", "minimum": 0, "maximum": 7 },
           "known": { "type": "integer", "minimum": 0, "maximum": 7 },
           "isStepMomentum": { "const": true },

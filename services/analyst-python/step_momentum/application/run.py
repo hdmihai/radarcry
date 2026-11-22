@@ -1,6 +1,7 @@
 """Orchestrează: universul radarului → Gate (cu buget și cache) → regulile pure → documentul publicat."""
 from __future__ import annotations
 
+import math
 import time
 from pathlib import Path
 
@@ -9,8 +10,8 @@ import pandas as pd
 from ..adapters.cache import read_candles, write_candles
 from ..adapters.synthetic import build_rows
 from ..domain.rules import RULES, compute_step_momentum
-from ..domain.universe import select_gate_assets
-from ..domain.sectors import compute_sector_momentum
+from ..domain.sectors import build_sector_index, compute_sector_momentum, resolve_sectors
+from ..domain.universe import MCAP_MIN, select_gate_assets
 from .publish import clean
 
 NOTES = (
@@ -20,6 +21,9 @@ NOTES = (
     "Nu măsoară lift-ul de identificare și nu este sfat de tranzacționare. Cercetare.",
 )
 MAX_SIGNALS = 40
+# Id-urile din /coins/categories/list: AI Agents, BNB Chain Ecosystem, Meme.
+SECTOR_CATEGORIES = ("ai-agents", "binance-smart-chain", "meme-token")
+SECTOR_BUDGET_S = 60.0
 
 
 def _empty(now: pd.Timestamp, reasons: dict | None = None, note: str | None = None) -> dict:
@@ -28,6 +32,7 @@ def _empty(now: pd.Timestamp, reasons: dict | None = None, note: str | None = No
         "priceUnconfirmed": 0, "notOnGate": 0, "withGate": 0, "futuresOnlyCount": 0,
         "evaluatedCount": 0, "signaledCount": 0, "deferredByBudget": 0,
         "insufficientHistory": 0, "missingCandles": 0, "oiUnavailable": 0,
+        "sectorCategoriesLoaded": 0, "sectorCategoriesFailed": 0,
     }
     if reasons:
         meta.update(reasons)
@@ -106,16 +111,47 @@ def _cached_hourly(gate, cache_dir: Path | None, market: str, instrument: str, n
     return frame
 
 
+def _finite_number(value):
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    number = float(value)
+    return number if math.isfinite(number) else None
+
+
+def _add_sectors(doc: dict, returns: dict, coingecko) -> None:
+    """Sectoarele și momentumul lor, doar pentru semnale. Adaos: un eșec lasă lista intactă, cu `sectors: []`."""
+    signals = doc["stepMomentum"]
+    if not signals or coingecko is None:
+        return
+    meta = doc["stepMomentumMeta"]
+    try:
+        fetched = coingecko.fetch_members(
+            SECTOR_CATEGORIES,
+            min_market_cap=MCAP_MIN,
+            deadline=time.monotonic() + SECTOR_BUDGET_S,
+        )
+        index = build_sector_index(fetched.get("members"))
+        loaded = list(fetched.get("loaded") or [])
+        failed = list(fetched.get("failed") or [])
+    except Exception:  # noqa: BLE001 — sectoarele sunt un adaos, nu condiție de publicare
+        index, loaded, failed = {}, [], list(SECTOR_CATEGORIES)
+    meta["sectorCategoriesLoaded"] = len(loaded)
+    meta["sectorCategoriesFailed"] = len(failed)
+    if failed:
+        doc["notes"].append("Sectoare incomplete: CoinGecko nu a răspuns pentru " + ", ".join(failed) + ".")
+    keys = set(returns) | {signal["key"] for signal in signals if signal.get("key")}
+    sectors_by_asset = {key: resolve_sectors(index, key) for key in keys}
+    momentum = compute_sector_momentum(sectors_by_asset, returns)
+    for signal in signals:
+        sectors = sectors_by_asset.get(signal.get("key"), [])
+        signal["sectors"] = sectors
+        signal["sectorMomentum"] = {sector: momentum[sector] for sector in sectors if sector in momentum}
+
+
 def execute(*, rows, gate, coingecko=None, now, budget_s: float = 8 * 60, cache_dir: Path | None = None) -> dict:
     now = pd.Timestamp(now)
     if now.tzinfo is None:
         now = now.tz_localize("UTC")
-    sector_map = {}
-    if coingecko:
-        try:
-            sector_map = coingecko.build_sector_map(["ai-agents", "bnb-chain-ecosystem", "meme-token"])
-        except Exception:
-            pass
     deadline = time.monotonic() + max(1.0, budget_s)
     spot_last = gate.spot_last()
     futures_last = gate.futures_last()
@@ -129,6 +165,7 @@ def execute(*, rows, gate, coingecko=None, now, budget_s: float = 8 * 60, cache_
         return clean(doc)
     market = _cached_hourly(gate, cache_dir, "spot", "BTC_USDT", now)
     signals = []
+    returns: dict[str, float] = {}
     for asset in selected:
         if time.monotonic() > deadline:
             meta["deferredByBudget"] += 1
@@ -156,11 +193,13 @@ def execute(*, rows, gate, coingecko=None, now, budget_s: float = 8 * 60, cache_
             meta["insufficientHistory"] += 1
             continue
         meta["evaluatedCount"] += 1
+        change_7d = _finite_number(result["metrics"].get("tokenChange7dPct"))
+        if change_7d is not None and asset.get("key"):
+            # Momentumul unui sector se măsoară pe toți membrii evaluați, nu doar pe cei semnalați.
+            returns[asset["key"]] = change_7d
         if not result["isStepMomentum"]:
             continue
         meta["signaledCount"] += 1
-        sectors = sector_map.get(asset["symbol"].upper(), [])
-        sector_mom = compute_sector_momentum(sector_map, {asset["symbol"].upper(): result["metrics"].get("tokenChange7dPct", 0) or 0})
         signals.append({
             "key": asset["key"],
             "symbol": asset["symbol"],
@@ -170,12 +209,13 @@ def execute(*, rows, gate, coingecko=None, now, budget_s: float = 8 * 60, cache_
             "gateSpotPair": asset["gateSpotPair"],
             "gateFuturesContract": asset["gateFuturesContract"],
             "futuresOnly": asset["futuresOnly"],
-            "sectors": sectors,
-            "sectorMomentum": sector_mom,
+            "sectors": [],
+            "sectorMomentum": {},
             **result,
         })
     signals.sort(key=lambda row: (-row["score"], -row["known"], row["symbol"]))
     doc["stepMomentum"] = signals[:MAX_SIGNALS]
+    _add_sectors(doc, returns, coingecko)
     doc["generatedAt"] = _generated_at(now)
     return clean(doc)
 
@@ -201,6 +241,7 @@ def synthetic_document(now=None) -> dict:
             "gateFuturesContract": f"{symbol}_USDT" if fut else None,
             "futuresOnly": fut,
             "sectors": [],
+            "sectorMomentum": {},
             **result,
         })
     doc = _empty(now, {

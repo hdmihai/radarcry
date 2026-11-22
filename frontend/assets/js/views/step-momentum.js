@@ -39,6 +39,23 @@ function conditionPills(item, rulesByKey) {
   })}</div>`;
 }
 
+const SECTOR_LABELS = { 'ai-agents': 'AI Agents', 'binance-smart-chain': 'BNB Chain', 'meme-token': 'Meme' };
+const sectorLabel = (id) => SECTOR_LABELS[id] ?? id;
+
+/** Sectoarele proiectului ca pastile. Procentul este media pe 7 zile a sectorului, calculată de motor. */
+function sectorCell(item) {
+  const sectors = Array.isArray(item.sectors) ? item.sectors : [];
+  if (!sectors.length) return html`${DASH}`;
+  const momentum = item.sectorMomentum ?? {};
+  const pills = sectors.map((id) => {
+    const value = momentum[id];
+    const known = isNum(value);
+    const tipAttr = known ? html` data-tip="${tip('Media pe 7 zile a membrilor sectorului evaluați în această rulare.')}"` : '';
+    return html`<span class="pill" data-tone="muted"${tipAttr}>${sectorLabel(id)}${known ? html` ${pct(value, { dec: 1 })}` : ''}</span>`;
+  });
+  return html`<div class="chips">${pills}</div>`;
+}
+
 export function stepMomentumMarkup() {
   const doc = stepMomentumState.data;
   const meta = doc?.stepMomentumMeta;
@@ -70,11 +87,7 @@ export function stepMomentumMarkup() {
               ${conditionPills(item, rulesByKey)}
             </details>
           </td>
-          <td>
-            ${(item.sectors || []).map(s => html`<span class="pill" data-tone="muted">${s}</span>`).join(' ')}
-            ${item.sectorMomentum && isNum(item.sectorMomentum[item.sectors[0]]) ? html`<br><small class="muted">${pct(item.sectorMomentum[item.sectors[0]], {dec: 1})}</small>` : ''}
-            ${!(item.sectors || []).length ? DASH : ''}
-          </td>
+          <td>${sectorCell(item)}</td>
           <td><b>${isNum(item.score) ? item.score : DASH}/${isNum(item.known) ? item.known : DASH}</b></td>
           <td>${pct(item.metrics?.outperformance7dPct, { dec: 1 })}</td>
           <td>${pct(item.metrics?.gainFrom20dLowPct, { dec: 1 })}</td>

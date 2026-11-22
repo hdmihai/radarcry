@@ -14,7 +14,6 @@ import pandas as pd
 
 from .application.publish import write_json
 from .application.run import execute, load_rows, synthetic_document
-from .adapters.coingecko_sectors import CoinGeckoSectorsClient
 
 
 def main(argv=None) -> int:
@@ -36,6 +35,7 @@ def main(argv=None) -> int:
             doc = synthetic_document()
         else:
             rows = load_rows(data / "universe.json")
+            from .adapters.coingecko_sectors import CoinGeckoSectorsClient
             from .adapters.gate import GateStepClient
             doc = execute(
                 rows=rows,

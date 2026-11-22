@@ -1,59 +1,74 @@
-"""Regresie Pieverse — mock cu structura reală (3-6 nov): preț în trepte crescătoare,
-OI accelerat exponențial, piață în scădere. Toate cele 7 condiții trebuie True.
+"""Regresie Pieverse: un proiect mic care urcă în trepte într-o piață slabă trebuie semnalat devreme.
 
-De ce 4 faze, nu 3:
-  risingLows pe 4h compară minimul ultimelor 24h cu cel din următoarele 24h înainte.
-  Cu doar 3 faze, bara 4h care traversează granița 2/3 are low amestecat, iar strict >  eșuează.
-  4 faze crescătoare (9.9 → 10.9 → 11.9 → 14.9) garantează că fereastra 4h recentă
-  e strict peste fereastra precedentă.
+Date sintetice, deterministe, fără rețea. Ultima lumânare: 2026-11-06 00:00 UTC (fereastra 3–6 nov).
+Scenariul respectă toate cele 7 reguli, cu margini largi, ca verdictul să nu atârne de zgomot numeric:
+  R1  token +20% pe 7 zile față de BTC −3,6% (supraperformanță ≈ 23,6 puncte, peste pragul de 15)
+  R2  +32,5% față de minimul de 20 de zile (în banda 15–60%: treaptă, nu mișcare epuizată)
+  R3  minime în urcare pe 1h și pe 4h
+  R4  BTC pe minus pe 7 zile
+  R5  volumul din ultimele 24h peste cele 24h precedente
+  R6  open interest +75% pe 14 zile (prag 20%)
+  R7  open interest crește mai repede decât prețul (+75% față de +26%)
 """
+import numpy as np
 import pandas as pd
+
 from step_momentum.domain.rules import compute_step_momentum
+
+BARS = 500
+
+
+def _pieverse_like():
+    dates = pd.date_range(end="2026-11-06 00:00", periods=BARS, freq="h", tz="UTC")
+    i = np.arange(BARS)
+
+    # BTC: scădere lentă și constantă (−3,6% pe ultimele 7 zile).
+    market = pd.DataFrame({"close": 100.0 - 0.02 * i}, index=dates)
+
+    # Token: bază lentă de la 10,0 la 11,0 (până la 7 zile înainte de final), apoi urcare până la 13,2.
+    split = BARS - 1 - 168
+    close = np.where(
+        i <= split,
+        10.0 + 1.0 * i / split,
+        11.0 + 2.2 * (i - split) / (BARS - 1 - split),
+    )
+    token = pd.DataFrame({
+        "open": close - 0.05,
+        "high": close + 0.2,
+        "low": close - 0.1,
+        "close": close,
+        "volume": 1000.0 + 10.0 * i,
+    }, index=dates)
+
+    # Open interest: crește mult mai repede decât prețul.
+    oi = pd.DataFrame({
+        "open_interest_usd": 10_000.0 * (1.0 + 0.0035 * i),
+        "lsr_taker": 1.2,
+    }, index=dates)
+    return token, market, oi
 
 
 def test_pieverse_detected_early():
-    dates = pd.date_range(end="2026-11-06 00:00", periods=500, freq="h", tz="UTC")
-
-    # BTC scade liniar: 100 → 90 (piață în scădere pe 7 zile)
-    market_close = [100.0 - i * 0.02 for i in range(500)]
-    market_df = pd.DataFrame({"close": market_close}, index=dates)
-
-    # Token: 4 faze crescătoare (minime strict în urcare, preț comprimat sub nivel apoi accelerat)
-    # F1 i=  0..299:  close 10.0, low 9.9,  vol 1000
-    # F2 i=300..399:  close 11.0, low 10.9, vol 1500
-    # F3 i=400..449:  close 12.0, low 11.9, vol 2000
-    # F4 i=450..499:  close 15.0, low 14.9, vol 3000
-    close_prices, low_prices, high_prices, open_prices, volume = [], [], [], [], []
-    for i in range(500):
-        if i < 300:
-            c, l, v = 10.0, 9.9, 1000.0
-        elif i < 400:
-            c, l, v = 11.0, 10.9, 1500.0
-        elif i < 450:
-            c, l, v = 12.0, 11.9, 2000.0
-        else:
-            c, l, v = 15.0, 14.9, 3000.0
-        close_prices.append(c)
-        low_prices.append(l)
-        high_prices.append(c + 0.1)
-        open_prices.append(c - 0.05)
-        volume.append(v)
-
-    token_df = pd.DataFrame({
-        "close": close_prices, "low": low_prices, "high": high_prices,
-        "open": open_prices, "volume": volume,
-    }, index=dates)
-
-    # OI exponențial: +174% pe 14 zile, mult peste preț (~+50% pe 14 zile)
-    oi_series = [10000.0 * (1.003 ** i) for i in range(500)]
-    oi_df = pd.DataFrame({"open_interest_usd": oi_series, "lsr_taker": [1.2] * 500}, index=dates)
-
-    result = compute_step_momentum(candles1h=token_df, futures_stats=oi_df, market1h=market_df)
+    token, market, oi = _pieverse_like()
+    result = compute_step_momentum(candles1h=token, futures_stats=oi, market1h=market)
 
     assert result is not None
-    assert result["isStepMomentum"] is True, "Tokenul ar fi trebuit semnalat"
-    # Toate cele 7 condiții trebuie să fie True pe acest mock
-    for key, val in result["conditions"].items():
-        assert val is True, f"Condiția {key} ar fi trebuit True, dar e {val}"
-    assert result["known"] == 7, f"toate condițiile trebuie măsurabile, dar known={result['known']}"
-    assert result["score"] == 7
+    metrics = result["metrics"]
+    # Marginile scenariului: dacă datele de test derivă, eșecul spune care condiție s-a mutat.
+    assert metrics["outperformance7dPct"] > 15 + 5
+    assert 15 + 5 < metrics["gainFrom20dLowPct"] < 60 - 5
+    assert metrics["marketChange7dPct"] < 0
+    assert metrics["openInterestChange14dPct"] > 20 + 20
+    assert metrics["openInterestChange14dPct"] > metrics["priceChange14dPct"] + 20
+
+    assert result["conditions"] == {
+        "outperformance7dGt15pct": True,
+        "gain15To60PctFrom20dLow": True,
+        "risingLows": True,
+        "marketDown7d": True,
+        "volumeTrendUp": True,
+        "openInterestGrowth14dGt20pct": True,
+        "openInterestFasterThanPrice": True,
+    }
+    assert result["score"] == 7 and result["known"] == 7
+    assert result["isStepMomentum"] is True, "Pieverse ar fi trebuit semnalat devreme"
