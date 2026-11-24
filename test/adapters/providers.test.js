@@ -8,6 +8,7 @@ import { createMexc } from '../../src/adapters/outbound/providers/exchanges.js';
 import { arkhamClass, createArkham, createDexScreener, createGoPlus, normalizeEvm, normalizeTopFlows } from '../../src/adapters/outbound/providers/onchain.js';
 import { normalizeMarket } from '../../src/adapters/outbound/providers/coingecko.js';
 import { createCoinMarketCap, listingCredits, normalizeListing } from '../../src/adapters/outbound/providers/coinmarketcap.js';
+import { createDefiLlama } from '../../src/adapters/outbound/providers/onchain.js';
 
 function stubHttp(routes) {
   const seen = [];
@@ -220,4 +221,63 @@ test('Arkham adapter: documented endpoint + API-Key header; NOT_CONFIGURED witho
   const custom = stubHttp([[/top_flow/, []]]);
   await createArkham({ http: custom, cfg, apiKey: 'k', baseUrl: 'https://proxy.example/arkham/' }).tokenFlows('lab');
   assert.ok(custom.seen[0].startsWith('https://proxy.example/arkham/token/top_flow/lab'), 'ARKHAM_API_BASE override');
+});
+
+// --- DefiLlama (FundamentalsPort: protocols + fees) ---
+
+test('DefiLlama protocols: filtreaza fara gecko_id / tvl invalid, URL fara query', async () => {
+  const rows = [
+    { id: 1, name: 'Uniswap', slug: 'uniswap', gecko_id: 'uniswap', category: 'Dexs', tvl: 5_000_000, change_1d: 1.2, change_7d: 2.3, parentProtocol: null },
+    { id: 2, name: 'NoGecko', slug: 'no-gecko', gecko_id: null, category: 'Lending', tvl: 1_000_000 },
+    { id: 3, name: 'NoTvl',  slug: 'no-tvl',  gecko_id: 'no-tvl',  tvl: null },
+    { id: 4, name: 'BadTvl', slug: 'bad-tvl', gecko_id: 'bad-tvl', tvl: 'not-a-number' },
+  ];
+  const http = stubHttp([[/\/api\.llama\.fi\/protocols(\?|$)/, rows]]);
+  const llama = createDefiLlama({ http, cfg: { ...cfg, enabled: true, timeoutMs: 1000 } });
+  const res = await llama.protocols();
+
+  assert.equal(res.ok, true);
+  assert.equal(res.data.length, 1, 'doar randul cu gecko_id si tvl numeric trece filtrul');
+  assert.equal(res.data[0].slug, 'uniswap');
+  assert.equal(res.data[0].geckoId, 'uniswap');
+  assert.equal(res.data[0].tvl, 5_000_000);
+  assert.equal(res.data[0].change7d, 2.3);
+  assert.equal(res.data[0].parentProtocol, null);
+  assert.match(http.seen[0], /^https:\/\/api\.llama\.fi\/protocols$/, 'fara query string');
+});
+
+test('DefiLlama fees: query params exacte (excludeTotalDataChart & excludeTotalDataChartBreakdown)', async () => {
+  const payload = {
+    protocols: [
+      { defillamaId: 123, parentProtocol: null, slug: 'uniswap', name: 'Uniswap', total24h: 500_000, total30d: 15_000_000, change_1m: 5.2 },
+      { defillamaId: null, parentProtocol: 'parent-x', slug: 'child', name: 'Child', total24h: 1_000, total30d: 30_000, change_1m: null },
+    ],
+  };
+  const http = stubHttp([[/\/api\.llama\.fi\/overview\/fees\?/, payload]]);
+  const llama = createDefiLlama({ http, cfg: { ...cfg, enabled: true, timeoutMs: 1000 } });
+  const res = await llama.fees();
+
+  assert.equal(res.ok, true);
+  assert.equal(res.data.length, 2);
+  assert.equal(res.data[0].defillamaId, '123', 'id numeric -> string');
+  assert.equal(res.data[0].total24h, 500_000);
+  assert.equal(res.data[0].total30d, 15_000_000);
+  assert.equal(res.data[0].change1m, 5.2);
+  assert.equal(res.data[1].defillamaId, null);
+  assert.equal(res.data[1].parentProtocol, 'parent-x');
+  assert.ok(http.seen[0].includes('excludeTotalDataChart=true'), 'query param 1');
+  assert.ok(http.seen[0].includes('excludeTotalDataChartBreakdown=true'), 'query param 2');
+});
+
+test('DefiLlama: cfg.enabled=false -> disabled (SKIPPED) pentru ambele metode, zero cereri', async () => {
+  const http = stubHttp([]);
+  const llama = createDefiLlama({ http, cfg: { ...cfg, enabled: false } });
+  const p = await llama.protocols();
+  const f = await llama.fees();
+
+  assert.equal(p.ok, false);
+  assert.equal(p.status, 'SKIPPED', 'disabled() returneaza SKIPPED, nu NOT_CONFIGURED');
+  assert.equal(f.ok, false);
+  assert.equal(f.status, 'SKIPPED');
+  assert.equal(http.seen.length, 0, 'nicio cerere HTTP cand e dezactivat');
 });
