@@ -29,6 +29,7 @@ import { createGithub, createYouTube } from './adapters/outbound/providers/socia
 import { createCryptoQuant } from './adapters/outbound/providers/cryptoquant.js';
 import { createFsStateRepository } from './adapters/outbound/state/fs-state-repository.js';
 import { createFsSnapshotPublisher } from './adapters/outbound/publishing/fs-snapshot-publisher.js';
+import { attachResearch } from './application/use-cases/attach-research.js';
 import { createLogger, createTelemetry, fixedClock, systemClock } from './adapters/outbound/system/system.js';
 import { createDemoMarket } from './adapters/outbound/fixtures/demo-market.js';
 import { createFixtureProviders } from './adapters/outbound/fixtures/fixture-providers.js';
@@ -206,6 +207,36 @@ function report(logger, result) {
   logger.info(`sănătate ${s.overall} · ${(s.durationMs / 1000).toFixed(1)}s`);
 }
 
+async function readJsonOptional(path) {
+  try { return JSON.parse(await readFile(path, 'utf8')); } catch { return null; }
+}
+
+async function attachResearchCommand(opts) {
+  const outDir = resolve(opts.out ?? join(ROOT, 'data'));
+  const latestPath = join(outDir, 'latest.json');
+  const snapshot = await readJsonOptional(latestPath);
+  if (!snapshot) {
+    console.log('[attach-research] latest.json missing — skipping');
+    return 0;
+  }
+  const research = {
+    momentum: await readJsonOptional(join(outDir, 'research', 'momentum.json')),
+    liquidity: await readJsonOptional(join(outDir, 'research', 'liquidity.json')),
+  };
+  const next = attachResearch(snapshot, research);
+  if (next === snapshot) {
+    console.log('[attach-research] no research found — latest.json untouched');
+    return 0;
+  }
+  const publisher = createFsSnapshotPublisher({
+    outDir,
+    schemaPath: join(ROOT, 'schema', 'latest.schema.json'),
+  });
+  const r = await publisher.publish(next);
+  console.log(`[attach-research] published ${r.path} (${r.bytes} bytes)`);
+  return 0;
+}
+
 const HELP = `CRI Radar 4.0 — Crypto Research Intelligence
 
 Întrebarea la care răspunde proiectul:
@@ -240,6 +271,8 @@ async function main(argv) {
       return scan(opts);
     case 'pulse':
       return pulse(opts);
+    case 'attach-research':
+      return attachResearchCommand(opts);
     case 'probe': {
       const { probeSources } = await import('../scripts/probe-sources.js');
       const settle = Number(opts.settle);

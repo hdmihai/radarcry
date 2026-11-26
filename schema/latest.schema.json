@@ -146,6 +146,14 @@
         "rejected": { "type": "array", "items": { "$ref": "#/$defs/validityListed" } },
         "pending": { "type": "array", "items": { "$ref": "#/$defs/validityListed" } }
       }
+    },
+    "research": {
+      "description": "Research features din motorul Python (momentum, liquidity). Opțional — snapshot-urile fără Python research nu îl au.",
+      "type": "object",
+      "properties": {
+        "momentum":  { "type": ["object", "null"] },
+        "liquidity": { "type": ["object", "null"] }
+      }
     }
   },
   "$defs": {

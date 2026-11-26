@@ -30,3 +30,8 @@ __pycache__/
 .pytest_cache/
 .venv/
 *.pyc
+
+# Faza 6 — research artifacts (generated)
+data/research/*
+!data/research/.gitkeep
+services/analyst-python/research/**/__pycache__/

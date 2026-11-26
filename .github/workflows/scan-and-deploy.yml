@@ -160,6 +160,18 @@ jobs:
             || { echo "::warning::Modulul de runneri a eșuat; republic ultima listă validă."; \
                  cp .state/runners/runners.json data/runners.json 2>/dev/null || true; }
 
+      - name: Research features — momentum + liquidity (python -m research)
+        if: env.MODE == 'live'
+        continue-on-error: true
+        timeout-minutes: 2
+        env:
+          PYTHONPATH: services/analyst-python
+        run: python -m research .
+
+      - name: Attach research to snapshot
+        if: env.MODE == 'live'
+        continue-on-error: true
+        run: node src/main.js attach-research
       - name: Potential runners (demo, simulated market)
         if: env.MODE == 'demo'
         env:
