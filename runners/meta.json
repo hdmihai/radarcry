@@ -1,0 +1,13 @@
+{
+ "lastRefresh": "2026-11-28T12:03:27.206357+00:00",
+ "lastStats": {
+  "gatePairs": 391,
+  "gateFull": 3,
+  "gateIncremental": 388,
+  "coingecko": 2,
+  "errors": 0,
+  "skippedBudget": 0,
+  "seconds": 140.2,
+  "coingeckoKey": true
+ }
+}

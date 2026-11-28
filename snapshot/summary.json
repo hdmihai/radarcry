@@ -1,0 +1,137 @@
+{
+  "schemaVersion": "4.0.0",
+  "generatedAt": "2026-11-28T11:53:17.580Z",
+  "mode": "live",
+  "overall": "HEALTHY",
+  "universe": {
+    "coingecko": 1000,
+    "coinmarketcap": 0,
+    "coinpaprika": 1600,
+    "binanceAlpha": 378,
+    "gateAlpha": 3294,
+    "alphaOnly": 2802,
+    "alphaOnlyEligible": 35,
+    "binanceAlphaOnly": 27,
+    "gateAlphaOnly": 2551,
+    "alphaPrograms": {
+      "binance": 376,
+      "gate": 3018,
+      "both": 344
+    },
+    "merged": 3802,
+    "excluded": 3323,
+    "eligible": 479,
+    "deep": 479,
+    "priority": 84,
+    "horizon": 479,
+    "discovered": 479,
+    "published": 150,
+    "validity": {
+      "valid": 376,
+      "pending": 1,
+      "rejected": 102
+    },
+    "futures": 528,
+    "rolling": {
+      "tiers": {
+        "candles": 435,
+        "dex": 378,
+        "security": {
+          "fresh": 36,
+          "carried": 342
+        },
+        "detail": {
+          "fresh": 1,
+          "carried": 461
+        },
+        "holdersInfo": 47,
+        "holderLists": 0,
+        "dev": 32,
+        "mentions": 0
+      },
+      "cache": {
+        "projects": 479,
+        "security": 379,
+        "detail": 463,
+        "holdersInfo": 192,
+        "dev": 110,
+        "mentions": 0,
+        "windowHours": 72,
+        "ttlHours": {
+          "security": 168,
+          "detail": 336
+        }
+      }
+    },
+    "crossListed": 0
+  },
+  "signals": {
+    "WATCH": 31,
+    "ACCUMULATE": 2,
+    "LATE": 3,
+    "NONE": 76,
+    "AVOID": 38
+  },
+  "top": [
+    {
+      "symbol": "SPACE",
+      "cri": 66.2,
+      "signal": "WATCH",
+      "stage": "BUILDING"
+    },
+    {
+      "symbol": "ELSA",
+      "cri": 65.2,
+      "signal": "WATCH",
+      "stage": "BUILDING"
+    },
+    {
+      "symbol": "VELVET",
+      "cri": 63,
+      "signal": "WATCH",
+      "stage": "BUILDING"
+    },
+    {
+      "symbol": "PRL",
+      "cri": 60.7,
+      "signal": "WATCH",
+      "stage": "DECLINE"
+    },
+    {
+      "symbol": "YB",
+      "cri": 59.9,
+      "signal": "WATCH",
+      "stage": "BUILDING"
+    },
+    {
+      "symbol": "OPG",
+      "cri": 59.7,
+      "signal": "WATCH",
+      "stage": "ACCELERATION"
+    },
+    {
+      "symbol": "B2",
+      "cri": 58.4,
+      "signal": "ACCUMULATE",
+      "stage": "BASE"
+    },
+    {
+      "symbol": "TA",
+      "cri": 58.3,
+      "signal": "WATCH",
+      "stage": "BUILDING"
+    },
+    {
+      "symbol": "CT",
+      "cri": 58.2,
+      "signal": "ACCUMULATE",
+      "stage": "BASE"
+    },
+    {
+      "symbol": "COLLECT",
+      "cri": 57.6,
+      "signal": "WATCH",
+      "stage": "BUILDING"
+    }
+  ]
+}
