@@ -23,6 +23,7 @@ import { opportunitiesMarkup, strongSetups } from './views/opportunities.js';
 import { parityMarkup } from './views/parity.js';
 import { radarMarkup } from './views/radar.js';
 import { researchMarkup } from './views/research.js';
+import { researchPythonCount, researchPythonMarkup } from './views/research-python.js';
 import { trackMarkup } from './views/track.js';
 import { ensureUniverse, universeMarkup } from './views/universe.js';
 import { validityMarkup } from './views/validity.js';
@@ -43,6 +44,7 @@ export const SCREENS = {
   },
   'seven-day-movers': { render: sevenDayMoversMarkup, count: (s) => (runnersState.status === 'ready' ? runnersState.data.candidates.length : (s.discovery?.sevenDayMovers ?? []).length), enter: () => ensureRunners('data/runners.json') },
   'deep-research': { render: researchMarkup, count: (s) => (s.discovery?.rows ?? []).filter((r) => r.detail === 'full' || r.platforms?.length).length },
+  'research-python': { render: researchPythonMarkup, count: researchPythonCount },
 
   // Level 2 — supporting screens.
   // The whole horizon, from data/universe.json — loaded only when this screen is opened.

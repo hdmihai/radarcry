@@ -27,6 +27,7 @@ export const SECTIONS = Object.freeze([
   { id: 'seven-day-movers', label: 'Top 7 zile', level: 2, group: 'work' },
   { id: 'step-momentum', label: 'Momentum în trepte', level: 2, group: 'work' },
   { id: 'deep-research', label: 'Deep Research', level: 2, group: 'work' },
+  { id: 'research-python', label: 'Research Python', level: 2, group: 'work' },
 
   // Level 2 — the second menu, supporting screens.
   { id: 'univers', label: 'Univers', level: 2, group: 'support' },
